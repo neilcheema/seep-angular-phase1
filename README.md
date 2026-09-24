@@ -178,3 +178,27 @@ The two-player and four-player games are both complete and verified end to end. 
 choice, not oversight: the computer AI doesn't voluntarily grow/cement a house over capturing it,
 for the structural reason documented in the Phase 4 section above. Worth a look if you want a
 noticeably smarter computer partner later, but it's a real design task, not a quick patch.
+
+## Post-Phase-5: per-move pause/reveal (requested for manual QA)
+
+The four-player page now pauses after **every** move — the human's own included — on a blocking
+overlay before play continues. This replaces the auto-advancing narration banner from Phase 4;
+the move-log drawer stays, listing every move's text after the fact.
+
+- Shows who moved, the card played, and (for a capture) the exact floor cards captured, (for a
+  house build) the loose cards it was combined with, or (for cementing/breaking) the house's
+  cards — all as real `<app-card>` renders, not just text.
+- For computer moves, also shows the AI's reason (already generated for the Phase 4 narration —
+  reused here).
+- Advances only when "Next" is clicked. The computer-automation `effect()` in
+  `FourPlayerComponent` reads a new `pendingReveal` signal alongside `state` specifically so
+  that dismissing a reveal (which doesn't itself change `state`) re-triggers the effect and lets
+  the next computer move get scheduled — otherwise a reveal appearing mid-effect-run would leave
+  the game silently stuck.
+- This was built as a genuine QA tool, not just a UX flourish: it's the closest thing to a
+  click-through browser test available in an environment with no browser — every capture, house
+  build, cement, and break can now be checked by eye, move by move, the same way the Phase 5
+  transcript was checked by reading, just interactively.
+
+Verified: 71/71 tests still passing (this was a UI-only change, engine untouched), ESLint clean,
+production build clean.
