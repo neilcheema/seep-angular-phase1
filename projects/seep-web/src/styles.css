@@ -643,3 +643,71 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
   background: rgba(212, 175, 55, 0.18);
   color: var(--gold-lt);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   MOVE REVEAL — the per-move pause overlay (four-player QA mode)
+═══════════════════════════════════════════════════════════════ */
+.reveal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(2px);
+}
+.reveal-card {
+  width: 100%;
+  max-width: 420px;
+  background: linear-gradient(180deg, #1a2418, #10160f);
+  border: 1.5px solid rgba(212, 175, 55, 0.55);
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(212, 175, 55, 0.15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+.reveal-seat {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+.reveal-label {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--gold-lt);
+  margin-bottom: 10px;
+}
+.reveal-section {
+  width: 100%;
+  margin-top: 8px;
+}
+.reveal-section-title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+}
+.reveal-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.reveal-reason {
+  margin: 14px 0 4px;
+  font-size: 13px;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.65);
+}
+.reveal-card .btn-gold {
+  margin-top: 16px;
+  min-width: 120px;
+}
