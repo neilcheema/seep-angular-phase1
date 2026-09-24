@@ -97,11 +97,46 @@ govern them, on top of Phase 2's foundation:
 - 66/66 tests passing (22 two-player + 44 new four-player), ESLint clean, production build clean.
   Nothing in the two-player engine or UI changed.
 
+## Phase 4 status (this delivery)
+
+The four-player game is wired up end to end — `/four-player` is a real, playable table now, not a
+placeholder:
+
+- `computer4p.ts` (new, in `seep-engine`): team-aware heuristic AI for all three computer seats
+  (spec §8.10) — `chooseFourPlayerBid`, `chooseFourPlayerOpeningMove`, `chooseFourPlayerMove`.
+  Every decision carries a `reason` string for narration, not just the move itself.
+  **One thing worth knowing**: a "cement/grow a house instead of capturing it" team-aware move
+  was deliberately left out. Structurally, any card that could cement or merge toward a partner's
+  house always matches an existing floor house's value — which means that same card can *always*
+  just capture that house outright instead. With "always take the best available capture" as the
+  AI's first priority, those team-building moves can never actually be reached; they'd only ever
+  compete with a *less appealing* capture, never with "no capture." Weighing "capture now" against
+  "grow the house for later" well is a real judgment call beyond a simple heuristic — the §8.5
+  team ownership *rules* are still fully implemented and tested (Phase 3), a human player can use
+  them, but this AI won't volunteer to grow a house when it could cash it in instead. Caught this
+  via a failing test, not by inspection — worth knowing since "AI is team-aware" could otherwise
+  read as a stronger claim than what's actually implemented.
+- Four-seat Angular UI behind `/four-player`: `FourPlayerComponent` (state orchestration, mirrors
+  `TwoPlayerComponent`'s signals/computed/effect pattern), `FourPlayerStatusPanelComponent` (team
+  scores), `FourPlayerFloorItemComponent` (houses tagged "Yours" / "Partner's" / "Team B's" /
+  "Shared" for multi-owner cemented houses). `CardComponent`, `PlayerHandComponent`, and
+  `OpponentHandComponent` are reused unchanged from the two-player UI — they never referenced
+  player-specific ids, so they needed no changes.
+- **Move narration (spec §8.9)**: a persistent banner shows the latest computer move — seat,
+  reason, and outcome — framed as teammate context for Player 3 ("Your partner captured..."). A
+  collapsible move-log drawer lists every move of the hand; clicking any entry re-displays its
+  full text in the banner (the "replay" behavior from spec §12), and it snaps back to the latest
+  move on the next play rather than blocking the game.
+- Deep-linking (`/four-player?new=1`) wired the same way as two-player; the landing page's
+  four-player card now links there directly instead of to the old placeholder.
+- Full verification: 71/71 engine tests still pass (unchanged from Phase 3), ESLint clean,
+  production build clean. No component-level (rendering/interaction) test harness is configured
+  in this workspace — same as the two-player UI in Phase 1 — so the build's strict AOT template
+  type-checking is what's catching UI bugs here, not a dedicated test suite.
+
 ## Next steps
 
-Phase 4 (spec UI requirements, §8.9-8.10): the four-seat Angular UI wired to this engine behind
-`/four-player`, including the move-narration panel (with AI reasoning, pause/replay via a move
-log) and the team-aware computer AI for all three computer seats. Phase 5: final QA pass against
-the full §8.5 rule table and the assumptions in the spec's §12. The `/four-player` route still
-shows the "coming soon" placeholder — the engine underneath it is now fully playable and tested,
-but nothing is wired to a UI yet.
+Phase 5 (final QA): a manual pass against the full §8.5 rule table and the assumptions in the
+spec's §12, playing through the four-player table by hand rather than relying only on the engine
+fuzz tests and AOT type-checking. Also worth deciding: whether the "no team-building AI" gap noted
+above is acceptable as-is, or worth a follow-up once the rest of the app is settled.

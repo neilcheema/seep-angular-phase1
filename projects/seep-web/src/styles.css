@@ -549,3 +549,97 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
   padding: 2px 8px;
   border-radius: 999px;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   FOUR-PLAYER TABLE — side hands, narration banner, move log
+═══════════════════════════════════════════════════════════════ */
+.four-seat-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1;
+  width: 100%;
+}
+.four-seat-row .side-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 64px;
+}
+.four-seat-row .side-hand .seat-label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+.four-seat-row .floor-row {
+  flex: 1;
+}
+.partner-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 6px;
+}
+.partner-row .seat-label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.narration-banner {
+  margin: 0 12px 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(212, 175, 55, 0.4);
+  background: rgba(212, 175, 55, 0.08);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+.narration-banner .seat-tag {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--gold-lt);
+}
+.narration-banner .narration-text {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.move-log-drawer summary {
+  cursor: pointer;
+  color: var(--gold-lt);
+  font-size: 12px;
+  padding: 4px 14px;
+}
+.move-log-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 0 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.move-log-entry {
+  text-align: left;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.move-log-entry:hover {
+  background: rgba(212, 175, 55, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+}
+.move-log-entry.active {
+  background: rgba(212, 175, 55, 0.18);
+  color: var(--gold-lt);
+}
