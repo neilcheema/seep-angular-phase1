@@ -15,3 +15,5 @@ export * from './lib/scoring';
 export * from './lib/player';
 export * from './lib/gameEngine';
 export * from './lib/computer';
+export * from './lib/seats';
+export * from './lib/fourPlayerEngine';
