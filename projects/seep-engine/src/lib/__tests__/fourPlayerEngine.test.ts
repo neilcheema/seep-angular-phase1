@@ -77,9 +77,10 @@ describe('startFourPlayerMatch', () => {
     expect(state.bidder).toBe(nextSeat(SeatId.P2))
   })
 
-  it('picks some valid seat as dealer when none is given', () => {
+  it('defaults to p4 as dealer (deterministically) when none is given, so p1 is always the first bidder', () => {
     const state = startFourPlayerMatch()
-    expect([SeatId.P1, SeatId.P2, SeatId.P3, SeatId.P4]).toContain(state.dealer)
+    expect(state.dealer).toBe(SeatId.P4)
+    expect(state.bidder).toBe(SeatId.P1)
   })
 })
 

@@ -134,9 +134,47 @@ placeholder:
   in this workspace — same as the two-player UI in Phase 1 — so the build's strict AOT template
   type-checking is what's catching UI bugs here, not a dedicated test suite.
 
+## Phase 5 status (this delivery) — final QA pass
+
+No browser is available in the environment this was built in, so this couldn't be a click-through
+QA pass in the literal sense. What it is instead: a systematic line-by-line audit of every §8.5
+rule and every §12 assumption against what's actually shipped, plus a full traced transcript of
+real matches run through the actual engine and AI functions (not a mock) so the narration text,
+team scoring, and phase transitions could be inspected the way clicking through a browser would
+surface issues. Two real problems turned up:
+
+- **Fixed — first-dealer default didn't match the spec.** §12 says the default dealer should be
+  Player 4 (so Player 1 is always the first bidder), explicitly "matching how the two-player game
+  auto-assigns the first bidder" — but two-player's `startMatch` is fully deterministic
+  (`firstBidder = 'player'`, no randomness at all), while `startFourPlayerMatch()` was picking a
+  **random** dealer by default. Fixed to default to `SeatId.P4` deterministically, matching both
+  the spec text and the two-player precedent it points to. Test updated to match.
+- **Fixed — accessibility gap against §11.** The non-functional requirements call for move
+  narration and score changes to be announced to screen readers via an aria-live region; neither
+  the narration banner nor the team score header had one. Added `aria-live="polite"` (plus
+  `role="status"` on the banner) to both.
+- **Reviewed, not changed — the "Add / break house" button doesn't pre-check self-ownership.**
+  Selecting your own house plus a matching card enables the button; clicking it surfaces the
+  engine's rejection ("You cannot break a house you already own...") as an error message rather
+  than disabling the button beforehand. This matches the existing pattern used everywhere else in
+  both UIs (optimistic enable, engine validates, error message on rejection) rather than
+  duplicating cement-vs-break branching logic client-side just for button state — cementing your
+  own house is legal (with a reserve card) using the exact same button, so a precise pre-check
+  would need to replicate real engine logic in the UI layer. Left as-is deliberately.
+- **Confirmed via transcript, not just unit tests**: team card pools sum correctly across a full
+  hand (34 + 18 = 52, every card accounted for), narration reads naturally in context ("Your
+  partner captured the largest available combination on the floor."), and a match reaches
+  `match-over` cleanly at the bazzi threshold with zero illegal-move errors across every hand —
+  including one case where my own QA script (not the shipped code) tried to play a move after the
+  match had already ended, which the engine correctly rejected. That the engine caught my script's
+  bug is itself a good sign for how it'll hold up against unexpected UI states.
+
+Full verification: 71/71 tests still passing, ESLint clean, production build clean.
+
 ## Next steps
 
-Phase 5 (final QA): a manual pass against the full §8.5 rule table and the assumptions in the
-spec's §12, playing through the four-player table by hand rather than relying only on the engine
-fuzz tests and AOT type-checking. Also worth deciding: whether the "no team-building AI" gap noted
-above is acceptable as-is, or worth a follow-up once the rest of the app is settled.
+The two-player and four-player games are both complete and verified end to end. Deploy per
+`Seep-Vercel-to-Azure-Migration-Steps.docx`. The one open item from Phase 4 remains open by
+choice, not oversight: the computer AI doesn't voluntarily grow/cement a house over capturing it,
+for the structural reason documented in the Phase 4 section above. Worth a look if you want a
+noticeably smarter computer partner later, but it's a real design task, not a quick patch.
