@@ -1,6 +1,6 @@
 import { type Card, captureValue, isHouseValue, legalHouseBids } from './card'
 import { createDeck, dealFourPlayerHands, shuffleDeck } from './deck'
-import { ALL_SEATS, ALL_TEAMS, type SeatId, type TeamId, areTeammates, nextSeat, teamOf } from './seats'
+import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, teamOf } from './seats'
 import {
   type FloorItem, type House,
   allCardsOf, findHouseByValue, findItem, hasAnyLegalCapture,
@@ -102,10 +102,14 @@ export function dealFourPlayerHand(
   return pushLog(state, `New hand dealt. Dealer: ${dealer}. ${bidder} must bid.`)
 }
 
-/** Starts a brand-new match. With no explicit dealer, one is chosen at random (spec §8.3). */
-export function startFourPlayerMatch(dealer?: SeatId): FourPlayerGameState {
-  const firstDealer = dealer ?? ALL_SEATS[Math.floor(Math.random() * ALL_SEATS.length)]!
-  return dealFourPlayerHand(firstDealer)
+/**
+ * Starts a brand-new match. With no explicit dealer, defaults to p4 —
+ * deterministically, not randomly — so p1 (the human) is always the first
+ * bidder, matching the two-player engine's own startMatch(firstBidder =
+ * 'player') precedent exactly (spec §12).
+ */
+export function startFourPlayerMatch(dealer: SeatId = SeatId.P4): FourPlayerGameState {
+  return dealFourPlayerHand(dealer)
 }
 
 /**

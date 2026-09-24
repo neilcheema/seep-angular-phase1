@@ -1,5 +1,5 @@
 <div class="flex items-center justify-between gap-4 px-4 py-2 text-sm" style="color: rgba(255,255,255,0.85);">
-  <div class="flex items-center gap-4">
+  <div class="flex items-center gap-4" aria-live="polite">
     <span><span style="color: var(--gold-lt);">Team A (You &amp; Partner):</span> {{ state().matchScores.teamA }}</span>
     <span><span style="color: var(--gold-lt);">Team B:</span> {{ state().matchScores.teamB }}</span>
     @if (state().bidValue !== null) {

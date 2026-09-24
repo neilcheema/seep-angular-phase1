@@ -18,7 +18,7 @@
     <div class="gold-line"></div>
 
     @if (displayedNarration(); as n) {
-      <div class="narration-banner">
+      <div class="narration-banner" role="status" aria-live="polite">
         <span class="seat-tag">{{ seatTag(n.seat) }}</span>
         <span class="narration-text">{{ n.text }}</span>
       </div>
