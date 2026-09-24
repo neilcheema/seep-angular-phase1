@@ -50,8 +50,32 @@ Follow `Seep-Vercel-to-Azure-Migration-Steps.docx` once this repo is pushed to G
 the Azure Static Web App from the free tier pointed at this repo, set the output path above,
 then add `seep.quest` as its custom domain.
 
+## Phase 2 status (this delivery)
+
+Added to `seep-engine`, per spec §8.1-8.4 and §8.8 — types, dealing, turn rotation, and scoring
+only, no gameplay actions yet:
+
+- `seats.ts` — `SeatId` (p1-p4), `TeamId` (teamA/teamB), the fixed turn-order rotation, and
+  partner/opponent/team lookups. p1 (the human user) and p3 (their computer partner) are teamA;
+  p2 and p4 are teamB.
+- `fourPlayerEngine.ts` — `dealFourPlayerHand`/`startFourPlayerMatch` (misdeal-aware dealing: 4
+  to the floor, 12 to each seat), `legalFourPlayerBids`/`placeFourPlayerBid`, and
+  `dealNextFourPlayerHand` (deal passes to the next seat in turn order). `finishFourPlayerHand`
+  resolves end-of-hand scoring (leftover floor cards to the last-capturing team, the 9-point
+  qualifying minimum, sweep bonuses, and bazzi-winner detection) — it's decoupled from the actual
+  turn-by-turn play actions that will call it, since those depend on the team house-ownership
+  rules Phase 3 adds.
+- `card.ts` gained a shared `legalHouseBids` helper (used by both engines) and `floor.ts`'s
+  `House`/`FloorItem` types became generic over the owner-id type (default `PlayerId`, unchanged
+  for two-player) so the same capture/house primitives can be reused as `House<SeatId>` in
+  Phase 3, without forking the file.
+- 26 new unit tests (`seats.test.ts`, `fourPlayerEngine.test.ts`), all passing alongside the
+  original 22 — 48/48 total. Nothing in the two-player engine or UI changed.
+
 ## Next steps
 
-Phases 2-5 of the spec (team-aware engine, the four-seat UI, move narration, and the four-player
-fuzz test) are not started. The `/four-player` route currently shows an honest "coming soon"
-placeholder rather than a real game.
+Phase 3 (spec §8.5): the team-specific house/ownership rules (partners add to each other's
+cemented houses freely, a player can't break their own house, breaking transfers ownership,
+multi-owner cementing) plus the actual four-player capture/build/cement/throw turn actions that
+those rules govern. Phases 4-5 (the four-seat UI, move narration, and the four-player fuzz test)
+follow after that. The `/four-player` route still shows an honest "coming soon" placeholder.

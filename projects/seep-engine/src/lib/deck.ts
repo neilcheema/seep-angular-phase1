@@ -1,4 +1,5 @@
 import { type Card, Face, Suit } from './card'
+import { ALL_SEATS, type SeatId } from './seats'
 
 const ALL_SUITS: Suit[] = [Suit.Spades, Suit.Hearts, Suit.Clubs, Suit.Diamonds]
 const ALL_FACES: Face[] = [
@@ -54,3 +55,39 @@ export function dealInitialHands(deck: Card[]): InitialDeal {
   const otherHand = deck.slice(28, 52)
   return { floor, bidderHand, otherHand }
 }
+
+export interface FourPlayerInitialDeal {
+  /** The 4 cards revealed on the floor to open play. */
+  floor: Card[]
+  /**
+   * Every seat's full 12-card hand for the hand, keyed by seat. The
+   * bidder's hand is dealt in full up front like everyone else's — the
+   * "first four cards" used for the bid-eligibility check (spec §8.3) is
+   * simply the first four cards of the bidder's dealt hand, not a
+   * separately-dealt batch.
+   */
+  hands: Record<SeatId, Card[]>
+}
+
+/**
+ * Deals a fresh four-player hand: 4 cards to the floor, and the
+ * remaining 48 split into four 12-card hands, one per seat (spec §8.3).
+ * As with the two-player dealer, everything is dealt in one pass rather
+ * than the physical table's batches-of-four ritual — the resulting
+ * hands are identical either way, and only the bidder's hand order
+ * matters (its first four cards decide bid eligibility).
+ */
+export function dealFourPlayerHands(deck: Card[], bidder: SeatId): FourPlayerInitialDeal {
+  if (deck.length !== 52) {
+    throw new Error(`dealFourPlayerHands requires a full 52-card deck, got ${deck.length}`)
+  }
+  const floor = deck.slice(0, 4)
+  const rest = deck.slice(4)
+  const dealOrder = [bidder, ...ALL_SEATS.filter((s) => s !== bidder)]
+  const hands = {} as Record<SeatId, Card[]>
+  dealOrder.forEach((seat, i) => {
+    hands[seat] = rest.slice(i * 12, i * 12 + 12)
+  })
+  return { floor, hands }
+}
+

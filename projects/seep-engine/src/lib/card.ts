@@ -104,3 +104,14 @@ export function faceLabel(face: Face): string {
 export function cardLabel(card: Card): string {
   return `${faceLabel(card.face)} of ${card.suit}`
 }
+
+/**
+ * The set of house values (9-13) a player could legally call as their
+ * opening bid, given the cards they hold. Shared by both the two-player
+ * and four-player engines — a legal bid is always "a house value matching
+ * a card you're holding," regardless of player count.
+ */
+export function legalHouseBids(cards: Card[]): number[] {
+  const values = new Set(cards.map(captureValue).filter(isHouseValue))
+  return [...values].sort((a, b) => a - b)
+}
