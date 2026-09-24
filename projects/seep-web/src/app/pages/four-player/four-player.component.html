@@ -1,0 +1,137 @@
+@if (!state()) {
+  <div class="game-root">
+    <div class="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
+      <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">4 Player Seep</h1>
+      <p style="color: rgba(255,255,255,0.7); max-width: 480px;">
+        You and your computer partner (across the table) play as a fixed
+        team against two computer opponents. Every computer move is
+        explained before play continues — check the move log any time to
+        look back at what happened.
+      </p>
+      <button class="btn-gold" (click)="startNewGame()">Deal</button>
+    </div>
+  </div>
+}
+@if (state(); as s) {
+  <div class="game-root">
+    <app-four-player-status-panel [state]="s" />
+    <div class="gold-line"></div>
+
+    @if (displayedNarration(); as n) {
+      <div class="narration-banner">
+        <span class="seat-tag">{{ seatTag(n.seat) }}</span>
+        <span class="narration-text">{{ n.text }}</span>
+      </div>
+    }
+
+    <div class="partner-row">
+      <span class="seat-label">Player 3 · Your partner</span>
+      <app-opponent-hand [count]="s.hands.p3.length" />
+    </div>
+
+    <div class="four-seat-row">
+      <div class="side-hand">
+        <span class="seat-label">Player 2</span>
+        <app-opponent-hand [count]="s.hands.p2.length" />
+      </div>
+
+      <div class="floor-row">
+        @if (s.floor.length === 0) {
+          <div class="board-slot">Floor empty</div>
+        }
+        @for (item of s.floor; track item.id) {
+          <app-four-player-floor-item
+            [item]="item"
+            [selected]="isFloorSelected(item.id)"
+            [selectable]="isPlayerTurn() && !!selectedCard()"
+            (itemClick)="onFloorClick(item)"
+          />
+        }
+      </div>
+
+      <div class="side-hand">
+        <span class="seat-label">Player 4</span>
+        <app-opponent-hand [count]="s.hands.p4.length" />
+      </div>
+    </div>
+
+    @if (message(); as m) {
+      <div class="text-center text-sm" style="color: #ff8a8a; padding: 0 12px 6px;">{{ m }}</div>
+    }
+
+    @if (s.phase === 'bidding' && s.turn === 'p1') {
+      <div class="action-bar">
+        <span style="color: rgba(255,255,255,0.75);">Choose your bid:</span>
+        @for (v of legalBidsFor(s); track v) {
+          <button class="btn-gold" (click)="onBid(v)">{{ v }}</button>
+        }
+      </div>
+    }
+
+    @if (isPlayerTurn()) {
+      <div class="action-bar">
+        <button class="btn-gold" [disabled]="!canCapture()" (click)="onCapture()">Capture</button>
+        <button class="btn-gold" [disabled]="!canBuild()" (click)="onBuild()">
+          Build house{{ canBuild() ? ' (' + buildTargetValue() + ')' : '' }}
+        </button>
+        <button class="btn-gold" [disabled]="!canModify()" (click)="onModify()">Add / break house</button>
+        <button class="btn-outline" [disabled]="!canThrow()" (click)="onThrow()">Throw</button>
+      </div>
+    }
+
+    @if (s.phase === 'hand-over') {
+      <div class="flex flex-col items-center gap-3 py-4">
+        <p style="color: var(--gold-lt); font-weight: 700;">
+          Hand complete — Team A {{ s.lastHandTotals!.teamA.total }} · Team B {{ s.lastHandTotals!.teamB.total }}
+        </p>
+        <button class="btn-gold" (click)="onDealNext()">Deal next hand</button>
+      </div>
+    }
+
+    @if (s.phase === 'match-over') {
+      <div class="flex flex-col items-center gap-3 py-6">
+        <p style="color: var(--gold-lt); font-size: 22px; font-weight: 800;">
+          {{ s.winner === 'teamA' ? 'Your team won the bazzi!' : 'Team B won the bazzi.' }}
+        </p>
+        <button class="btn-gold" (click)="onPlayAgain()">Play again</button>
+      </div>
+    }
+
+    <div class="gold-line"></div>
+    <app-player-hand
+      [cards]="s.hands.p1"
+      [selectedCard]="selectedCard()"
+      [selectableCards]="isPlayerTurn() ? s.hands.p1 : []"
+      (cardSelected)="onCardSelect($event)"
+    />
+
+    @if (narrations().length > 0) {
+      <details class="move-log-drawer">
+        <summary>Move log ({{ narrations().length }})</summary>
+        <div class="move-log-list">
+          @for (n of narrations(); track $index; let i = $index) {
+            <button
+              type="button"
+              class="move-log-entry"
+              [class.active]="displayedNarration() === n"
+              (click)="viewNarration(i)"
+            >{{ n.text }}</button>
+          }
+        </div>
+      </details>
+    }
+
+    <details class="px-4 pb-2" style="color: rgba(255,255,255,0.65); font-size: 12px;">
+      <summary style="cursor: pointer; color: var(--gold-lt);">How to play (team rules)</summary>
+      <ul style="list-style: disc; padding-left: 18px; margin-top: 6px; line-height: 1.6;">
+        <li>You (Player 1) and Player 3 are partners (Team A) against Players 2 and 4 (Team B).</li>
+        <li>Captured cards are pooled by team, not by seat — your partner's captures count toward your score.</li>
+        <li>You can only found a new house for yourself, never on your partner's behalf.</li>
+        <li>You can't break a house you already own — a teammate or opponent has to break it instead.</li>
+        <li>Adding a matching card to your partner's house is free — no reserve card needed. Your own or an opponent's house still needs one.</li>
+        <li>Breaking a house makes you its new owner, unless the new value matches a house your partner already holds — then the two merge into one cemented team house.</li>
+        <li>Every computer move is explained above before play continues — the move log keeps every explanation for the hand.</li>
+      </ul>
+    </details>
+  </div>
+}

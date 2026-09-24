@@ -17,3 +17,4 @@ export * from './lib/gameEngine';
 export * from './lib/computer';
 export * from './lib/seats';
 export * from './lib/fourPlayerEngine';
+export * from './lib/computer4p';
