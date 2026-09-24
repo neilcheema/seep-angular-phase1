@@ -72,10 +72,36 @@ only, no gameplay actions yet:
 - 26 new unit tests (`seats.test.ts`, `fourPlayerEngine.test.ts`), all passing alongside the
   original 22 — 48/48 total. Nothing in the two-player engine or UI changed.
 
+## Phase 3 status (this delivery)
+
+Added the actual four-player turn actions and the team-ownership rules from spec §8.5-8.6 that
+govern them, on top of Phase 2's foundation:
+
+- `playFourPlayerCapture` / `playFourPlayerBuildHouse` / `playFourPlayerModifyHouse` /
+  `playFourPlayerThrow` in `fourPlayerEngine.ts` — the four-seat equivalents of the two-player
+  engine's turn actions, reusing the same `floor.ts` primitives (now generic over `SeatId`).
+- Every §8.5 rule implemented and covered by its own dedicated test in
+  `fourPlayerActions.test.ts`: captures pooled by team, a player can only found a house for
+  themselves, no self-breaking, partners add to each other's houses for free (no reserve card
+  needed) while your own or an opponent's still requires one, breaking transfers ownership to the
+  breaker, and breaking into a value your partner already holds merges the two into one cemented,
+  multi-owner house.
+- `finishMove` (private) wires these actions into `finishFourPlayerHand` from Phase 2 once all
+  four hands empty — turn advances via seat rotation rather than a two-way flip.
+- **A full four-player fuzz test** (`fourPlayerFuzz.test.ts`) plays complete randomized team
+  matches to a bazzi. Note: the delivery plan lists the fuzz test at step 5, after the UI: I moved
+  it here instead, since it's a pure engine-level test with no UI dependency, and right after the
+  turn-action engine is built is the highest-value moment to catch systemic bugs — which is
+  exactly what happened for the two-player engine originally. Worth knowing since it's a
+  deliberate reordering, not an oversight.
+- 66/66 tests passing (22 two-player + 44 new four-player), ESLint clean, production build clean.
+  Nothing in the two-player engine or UI changed.
+
 ## Next steps
 
-Phase 3 (spec §8.5): the team-specific house/ownership rules (partners add to each other's
-cemented houses freely, a player can't break their own house, breaking transfers ownership,
-multi-owner cementing) plus the actual four-player capture/build/cement/throw turn actions that
-those rules govern. Phases 4-5 (the four-seat UI, move narration, and the four-player fuzz test)
-follow after that. The `/four-player` route still shows an honest "coming soon" placeholder.
+Phase 4 (spec UI requirements, §8.9-8.10): the four-seat Angular UI wired to this engine behind
+`/four-player`, including the move-narration panel (with AI reasoning, pause/replay via a move
+log) and the team-aware computer AI for all three computer seats. Phase 5: final QA pass against
+the full §8.5 rule table and the assumptions in the spec's §12. The `/four-player` route still
+shows the "coming soon" placeholder — the engine underneath it is now fully playable and tested,
+but nothing is wired to a UI yet.
