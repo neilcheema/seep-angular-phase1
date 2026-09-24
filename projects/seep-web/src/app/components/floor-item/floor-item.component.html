@@ -1,0 +1,27 @@
+@if (house; as h) {
+  <div
+    class="house-stack"
+    [class.selected]="selected()"
+    (click)="onActivate()"
+    (keydown)="onKeydown($event)"
+    [attr.role]="selectable() ? 'button' : null"
+    [attr.tabindex]="selectable() ? 0 : null"
+    [attr.aria-label]="ariaLabel"
+  >
+    <div class="house-badge" [class.cemented]="h.cemented">{{ h.captureValue }}</div>
+    @for (c of h.cards; track $index) {
+      <div class="stacked-card">
+        <app-card [card]="c" />
+      </div>
+    }
+    <div class="house-owner-tag">{{ ownerLabel }}</div>
+  </div>
+}
+@if (looseCard; as c) {
+  <app-card
+    [card]="c"
+    [selected]="selected()"
+    [selectable]="selectable()"
+    (cardClick)="onActivate()"
+  />
+}

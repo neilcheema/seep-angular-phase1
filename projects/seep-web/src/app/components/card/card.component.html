@@ -1,0 +1,40 @@
+<div
+  [class]="classes"
+  (click)="onActivate()"
+  (keydown)="onKeydown($event)"
+  [attr.role]="selectable() ? 'button' : null"
+  [attr.aria-label]="label"
+  [attr.aria-pressed]="selectable() ? selected() : null"
+  [attr.tabindex]="selectable() ? 0 : null"
+>
+  <div class="cc">
+    <span>{{ faceLbl }}</span>
+    <span class="s">{{ sym }}</span>
+  </div>
+
+  <div class="card-mid">
+    @if (isAce) {
+      <span style="font-size: clamp(24px, 5vw, 34px); line-height: 1;">{{ sym }}</span>
+    } @else if (isFaceCard) {
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; font-style: italic;">
+        <span style="font-size: clamp(18px, 4vw, 26px); font-weight: 900; letter-spacing: -1px;">{{ faceLbl }}</span>
+        <span style="font-size: clamp(12px, 3vw, 18px);">{{ sym }}</span>
+      </div>
+    } @else if (pipRows) {
+      <div style="display: flex; flex-direction: column; align-items: center; gap: clamp(1px, 0.5vw, 3px);">
+        @for (row of pipRows; track $index) {
+          <div style="display: flex; gap: clamp(3px, 1vw, 7px);">
+            @for (pip of row; track $index) {
+              <span style="font-size: clamp(7px, 1.8vw, 11px); line-height: 1;">{{ sym }}</span>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <div class="cc cc-bot">
+    <span>{{ faceLbl }}</span>
+    <span class="s">{{ sym }}</span>
+  </div>
+</div>

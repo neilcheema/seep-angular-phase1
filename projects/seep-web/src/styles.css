@@ -1,0 +1,551 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════════════════════ */
+:root {
+  --felt:       #0a3d20;
+  --felt-mid:   #0d5a2e;
+  --felt-light: #156130;
+  --gold:       #d4af37;
+  --gold-lt:    #e8cc5a;
+  --gold-dk:    #9a7b1a;
+  --gold-glow:  rgba(212, 175, 55, 0.45);
+  --card-bg:    #fef9f0;
+  --card-red:   #b91c1c;
+  --card-black: #18181b;
+  --shadow-card: 0 4px 14px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.35);
+  --shadow-card-hover: 0 14px 36px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.3);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+
+/* ═══════════════════════════════════════════════════════════════
+   GAME ROOT — card-table felt
+═══════════════════════════════════════════════════════════════ */
+.game-root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--felt);
+  background-image:
+    radial-gradient(ellipse 130% 55% at 50% -5%,
+      var(--felt-mid) 0%, var(--felt) 65%),
+    /* subtle felt weave */
+    repeating-linear-gradient(
+      0deg, rgba(255,255,255,0.013) 0px, rgba(255,255,255,0.013) 1px,
+      transparent 1px, transparent 3px
+    ),
+    repeating-linear-gradient(
+      90deg, rgba(255,255,255,0.013) 0px, rgba(255,255,255,0.013) 1px,
+      transparent 1px, transparent 3px
+    );
+  color: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GOLD ACCENT LINES
+═══════════════════════════════════════════════════════════════ */
+.gold-line {
+  height: 1px;
+  flex-shrink: 0;
+  background: linear-gradient(90deg,
+    transparent 0%, var(--gold) 30%, var(--gold) 70%, transparent 100%);
+  opacity: 0.45;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PLAYING CARD BASE
+═══════════════════════════════════════════════════════════════ */
+.card {
+  /* mobile-first size */
+  --cw: 66px;
+  --ch: 92px;
+  width: var(--cw);
+  height: var(--ch);
+
+  border-radius: 8px;
+  background: var(--card-bg);
+  border: 1.5px solid rgba(0,0,0,0.10);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 4px 5px;
+  position: relative;
+  font-family: Georgia, 'Times New Roman', serif;
+  user-select: none;
+  flex-shrink: 0;
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.18s ease,
+    opacity 0.15s ease;
+}
+
+/* inner decorative border — classic card look */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 5px;
+  border: 0.75px solid currentColor;
+  opacity: 0.09;
+  pointer-events: none;
+}
+
+.card-red   { color: var(--card-red); }
+.card-black { color: var(--card-black); }
+
+/* ── Corner labels ─────────────────────────────────────────── */
+.cc { /* card-corner */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  font-size: 12px;
+  font-weight: 800;
+  z-index: 1;
+  letter-spacing: -0.5px;
+}
+.cc .s { font-size: 9px; line-height: 1.3; } /* small suit */
+.cc-bot { transform: rotate(180deg); align-self: flex-end; }
+
+/* ── Center symbol area ────────────────────────────────────── */
+.card-mid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* ── Interactive states ────────────────────────────────────── */
+.card-valid {
+  cursor: pointer;
+  border-color: var(--gold);
+  box-shadow:
+    0 0 0 2px var(--gold),
+    0 0 16px var(--gold-glow),
+    var(--shadow-card);
+}
+.card-valid:hover,
+.card-valid:focus-visible {
+  transform: translateY(-18px) scale(1.07);
+  box-shadow:
+    0 0 0 2.5px var(--gold-lt),
+    0 0 24px var(--gold-glow),
+    var(--shadow-card-hover);
+  outline: none;
+  z-index: 10;
+}
+
+.card-dimmed {
+  opacity: 0.28;
+  filter: saturate(0.15);
+  pointer-events: none;
+}
+
+/* ── Card back (computer hand) ─────────────────────────────── */
+.card-back {
+  --cw: 54px; --ch: 76px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      #1e3a8a 0px, #1e3a8a 4px,
+      #162e78 4px, #162e78 8px
+    );
+  border: 1.5px solid #3b5bdb;
+  box-shadow: var(--shadow-card);
+  border-radius: 7px;
+}
+.card-back::after { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════
+   BOARD SLOT (empty placeholder)
+═══════════════════════════════════════════════════════════════ */
+.board-slot {
+  width: var(--cw, 66px);
+  height: var(--ch, 92px);
+  border-radius: 8px;
+  border: 2px dashed rgba(255,255,255,0.22);
+  background: rgba(0,0,0,0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.28);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE CARD SIZING
+═══════════════════════════════════════════════════════════════ */
+@media (min-width: 480px) {
+  .card      { --cw: 74px; --ch: 103px; }
+  .card .cc  { font-size: 14px; }
+  .card .cc .s { font-size: 10px; }
+  .card-back { --cw: 60px; --ch: 84px; }
+  .board-slot { width: 74px; height: 103px; }
+}
+
+@media (min-width: 768px) {
+  .card      { --cw: 84px; --ch: 116px; }
+  .card .cc  { font-size: 15px; }
+  .card .cc .s { font-size: 11px; }
+  .card-back { --cw: 68px; --ch: 95px; }
+  .board-slot { width: 84px; height: 116px; }
+}
+
+@media (min-width: 1024px) {
+  .card      { --cw: 90px; --ch: 126px; padding: 5px 7px; }
+  .card .cc  { font-size: 16px; }
+  .card-back { --cw: 72px; --ch: 100px; }
+  .board-slot { width: 90px; height: 126px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HAND LAYOUTS
+═══════════════════════════════════════════════════════════════ */
+
+/* Player hand — horizontal scroll on mobile, wrap on desktop */
+.hand-row {
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  padding: 8px 14px 14px;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* subtle scroll hint shadow on right edge */
+  mask-image: linear-gradient(to right, black 85%, transparent 100%);
+}
+.hand-row::-webkit-scrollbar { display: none; }
+
+@media (min-width: 640px) {
+  .hand-row {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    justify-content: center;
+    gap: 7px;
+    mask-image: none;
+  }
+}
+
+/* Computer hand — compact overlapping backs */
+.comp-fan {
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* overlap cards to save space */
+  padding: 4px 14px 4px;
+}
+.comp-fan::-webkit-scrollbar { display: none; }
+.comp-fan .card-back { margin-right: -22px; }
+.comp-fan .card-back:last-child { margin-right: 0; }
+
+@media (min-width: 640px) {
+  .comp-fan {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    justify-content: center;
+    gap: 4px;
+  }
+  .comp-fan .card-back { margin-right: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BOARD CARD ANIMATIONS
+═══════════════════════════════════════════════════════════════ */
+
+/* Card materialises on board */
+@keyframes board-in {
+  from { opacity: 0; transform: scale(0.7) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)   translateY(0); }
+}
+
+/* Discard — spin-shrink out */
+@keyframes discard-out {
+  0%   { opacity: 1; transform: scale(1)    rotate(0deg); }
+  25%  { opacity: 1; transform: scale(1.08) rotate(4deg); }
+  100% { opacity: 0; transform: scale(0)    rotate(20deg); }
+}
+
+/* Pickup — slide down and fade */
+@keyframes pickup-out {
+  from { opacity: 1; transform: translateY(0)   scale(1); }
+  to   { opacity: 0; transform: translateY(38px) scale(0.82); }
+}
+
+/* Board card: just entering */
+.anim-enter {
+  animation: board-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Board card: entered then discards */
+.anim-discard {
+  animation:
+    board-in     0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    discard-out  0.52s ease-in 0.38s both;
+}
+
+/* Board card: entered then gets picked up */
+.anim-pickup {
+  animation:
+    board-in    0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    pickup-out  0.48s ease-in 0.38s both;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONFETTI (win screen)
+═══════════════════════════════════════════════════════════════ */
+@keyframes confetti-fly {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(0.3);
+  }
+}
+
+@keyframes trophy-pulse {
+  0%, 100% { transform: scale(1)    rotate(-4deg); }
+  50%       { transform: scale(1.18) rotate(4deg); }
+}
+
+@keyframes shame-wobble {
+  0%, 100% { transform: rotate(-4deg) scale(1); }
+  50%       { transform: rotate(4deg)  scale(1.05); }
+}
+
+@keyframes gameover-glow {
+  0%, 100% { text-shadow: 0 0 20px rgba(212,175,55,0.6); }
+  50%       { text-shadow: 0 0 40px rgba(212,175,55,1), 0 0 80px rgba(212,175,55,0.4); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HOW-TO-PLAY MODAL
+═══════════════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modal-fade-in 0.18s ease both;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal-box {
+  background: linear-gradient(160deg, #112b18 0%, #0a2012 100%);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 20px;
+  max-width: 480px;
+  width: 100%;
+  max-height: 88svh;
+  overflow-y: auto;
+  padding: 28px 24px 32px;
+  box-shadow:
+    0 32px 80px rgba(0,0,0,0.7),
+    0 0 0 1px rgba(212,175,55,0.08) inset;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212,175,55,0.3) transparent;
+  animation: modal-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.88) translateY(24px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MISC UTILITIES
+═══════════════════════════════════════════════════════════════ */
+.text-gold   { color: var(--gold); }
+.text-gold-lt { color: var(--gold-lt); }
+.border-gold { border-color: rgba(212,175,55,0.4); }
+
+/* Pulse glow on "your turn" indicator */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(212,175,55,0.3); }
+  50%       { box-shadow: 0 0 20px rgba(212,175,55,0.7); }
+}
+.pulse-gold { animation: pulse-glow 1.8s ease-in-out infinite; }
+
+/* ═══════════════════════════════════════════════════════════════
+   SEEP-SPECIFIC ADDITIONS — houses, selection state, board layout
+═══════════════════════════════════════════════════════════════ */
+.card-selected {
+  transform: translateY(-14px) scale(1.05);
+  box-shadow:
+    0 0 0 3px var(--gold-lt),
+    0 0 20px var(--gold-glow),
+    var(--shadow-card-hover);
+  z-index: 5;
+}
+
+.house-stack {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+  padding: 6px 10px 10px 6px;
+  border-radius: 12px;
+  border: 1.5px dashed rgba(212, 175, 55, 0.35);
+  background: rgba(0, 0, 0, 0.12);
+}
+.house-stack.selected {
+  border-color: var(--gold-lt);
+  box-shadow: 0 0 0 2px var(--gold-lt), 0 0 18px var(--gold-glow);
+}
+.house-stack .stacked-card {
+  margin-left: -46px;
+}
+.house-stack .stacked-card:first-child { margin-left: 0; }
+.house-badge {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--gold);
+  color: #1a1a1a;
+  font-weight: 800;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  border: 1.5px solid rgba(0,0,0,0.25);
+}
+.house-badge.cemented { background: var(--gold-lt); }
+.house-owner-tag {
+  position: absolute;
+  bottom: -8px;
+  right: -6px;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: rgba(0,0,0,0.55);
+  color: rgba(255,255,255,0.75);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.floor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px;
+  align-items: flex-start;
+  min-height: 120px;
+}
+
+.action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-gold {
+  background: linear-gradient(180deg, var(--gold-lt), var(--gold-dk));
+  color: #1a1500;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.btn-gold:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0,0,0,0.4); }
+.btn-gold:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-outline {
+  background: transparent;
+  color: rgba(255,255,255,0.85);
+  border: 1.5px solid rgba(212,175,55,0.5);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-outline:hover:not(:disabled) { border-color: var(--gold-lt); color: var(--gold-lt); }
+.btn-outline:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ═══════════════════════════════════════════════════════════════
+   LANDING PAGE — mode-selection cards
+═══════════════════════════════════════════════════════════════ */
+.mode-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  padding: 24px;
+  max-width: 720px;
+}
+.mode-card {
+  flex: 1 1 260px;
+  min-width: 220px;
+  text-decoration: none;
+  border-radius: 14px;
+  border: 1.5px solid rgba(212, 175, 55, 0.35);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.mode-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--gold-lt);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--gold-glow);
+}
+.mode-card.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.mode-card h2 {
+  margin: 0;
+  color: var(--gold-lt);
+  font-size: 20px;
+}
+.mode-card p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mode-card .tag {
+  align-self: flex-start;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold-dk);
+  background: rgba(212, 175, 55, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+}

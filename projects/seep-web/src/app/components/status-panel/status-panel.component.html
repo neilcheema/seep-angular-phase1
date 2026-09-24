@@ -1,0 +1,21 @@
+<div class="flex items-center justify-between gap-4 px-4 py-2 text-sm" style="color: rgba(255,255,255,0.85);">
+  <div class="flex items-center gap-4">
+    <span><span style="color: var(--gold-lt);">You:</span> {{ state().matchScores.player }}</span>
+    <span><span style="color: var(--gold-lt);">Opponent:</span> {{ state().matchScores.opponent }}</span>
+    @if (state().bidValue !== null) {
+      <span style="color: rgba(255,255,255,0.6);">
+        Bid: {{ state().bidValue }} ({{ state().bidder === 'player' ? 'you' : 'opponent' }})
+      </span>
+    }
+  </div>
+  <div class="flex items-center gap-3">
+    <span class="text-gold-lt" style="font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;">
+      {{ phaseLabel }}
+    </span>
+    @if (lastLog) {
+      <span style="color: rgba(255,255,255,0.55); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+        {{ lastLog }}
+      </span>
+    }
+  </div>
+</div>

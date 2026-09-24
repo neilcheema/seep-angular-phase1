@@ -1,0 +1,23 @@
+<div class="game-root">
+  <div class="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+    <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">Seep</h1>
+    <p style="color: rgba(255,255,255,0.7); max-width: 480px; margin-bottom: 8px;">
+      Choose a table. Seep is an Indian "fishing" card game: capture, build,
+      cement, and sweep your way to a 100-point lead.
+    </p>
+
+    <div class="mode-grid">
+      <a class="mode-card" [routerLink]="['/two-player']" [queryParams]="{ new: 1 }">
+        <span class="tag">Live</span>
+        <h2>2 Player Seep</h2>
+        <p>You vs. the computer. Classic head-to-head rules.</p>
+      </a>
+
+      <a class="mode-card" [routerLink]="['/four-player']">
+        <span class="tag">Coming soon</span>
+        <h2>4 Player Seep</h2>
+        <p>You and a computer partner vs. two computer opponents, playing as fixed teams.</p>
+      </a>
+    </div>
+  </div>
+</div>

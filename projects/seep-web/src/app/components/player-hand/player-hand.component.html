@@ -1,0 +1,10 @@
+<div class="hand-row">
+  @for (c of cards(); track $index) {
+    <app-card
+      [card]="c"
+      [selected]="isSelected(c)"
+      [selectable]="isSelectable(c)"
+      (cardClick)="cardSelected.emit(c)"
+    />
+  }
+</div>
