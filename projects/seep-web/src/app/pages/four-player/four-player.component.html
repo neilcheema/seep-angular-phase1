@@ -171,3 +171,34 @@
     </div>
   </div>
 }
+
+@if (canShareRuleNote()) {
+  <div class="rule-note-anchor">
+    @if (!ruleNotePanelOpen()) {
+      <button type="button" class="rule-note-toggle" (click)="toggleRuleNotePanel()">
+        Notice something that doesn't match the rules you know?
+      </button>
+    }
+    @if (ruleNotePanelOpen()) {
+      <div class="bug-report-prompt" role="dialog" aria-label="Something felt off">
+        <div class="bug-report-header">
+          <span>
+            It's possible a rule got missed while I was building this \u2014 if something
+            didn't play out the way you expected, let me know what happened.
+          </span>
+          <button type="button" class="bug-report-close" (click)="toggleRuleNotePanel()" aria-label="Close">\u00d7</button>
+        </div>
+        <textarea
+          class="bug-report-textarea"
+          placeholder="What happened, and what did you expect instead? (optional)"
+          [value]="ruleNoteText()"
+          (input)="onRuleNoteInput($any($event.target).value)"
+        ></textarea>
+        <div class="bug-report-actions">
+          <button type="button" class="btn-outline" (click)="toggleRuleNotePanel()">Cancel</button>
+          <button type="button" class="btn-gold" (click)="sendRuleNote()">Send note</button>
+        </div>
+      </div>
+    }
+  </div>
+}

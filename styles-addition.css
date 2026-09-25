@@ -1,0 +1,89 @@
+
+/* ═══════════════════════════════════════════════════════════════
+   RULE NOTE — opt-in "something felt off?" panel (both game pages)
+═══════════════════════════════════════════════════════════════ */
+.rule-note-anchor {
+  position: relative;
+}
+.rule-note-toggle {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 90;
+  max-width: 220px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 7px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.rule-note-toggle:hover {
+  color: rgba(255, 255, 255, 0.9);
+  border-color: var(--gold-lt);
+}
+
+.bug-report-prompt {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 90;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  background: linear-gradient(180deg, #1a2418, #10160f);
+  border: 1.5px solid rgba(212, 175, 55, 0.5);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.bug-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 8px;
+}
+.bug-report-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.bug-report-close:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+.bug-report-textarea {
+  width: 100%;
+  min-height: 70px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 8px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.bug-report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+.bug-report-actions .btn-gold,
+.bug-report-actions .btn-outline {
+  padding: 5px 12px;
+  font-size: 12px;
+  min-width: auto;
+}
