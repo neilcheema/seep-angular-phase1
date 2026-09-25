@@ -1,65 +1,47 @@
-# Patch 5: cementing now accepts any combination that's a multiple of the house value
-
-## What was wrong
-Cementing was implemented far too narrowly: only a single hand card whose
-own value exactly matched the house's value could cement it. Any card
-played together with loose floor cards was always treated as a "break"
-attempt (raising the house to a new value) — even when that combination
-summed to *exactly* the house's own value, or an exact multiple of it.
-
-Reported scenario: a house already at 13 (Seep's maximum legal value), a
-hand card of 2, and a loose Jack (11) on the floor. 2 + 11 = 13 — the
-player should be able to cement using that combination, since it's exactly
-1x the house's value. The old code saw `extraLooseItemIds.length !== 0` and
-routed it into the "break" path instead, which tried to raise the house to
-26 — not a legal value (must be 9-13) — so it was rejected outright, with
-no cementing option offered at all.
-
-## The actual rule (confirmed with the user)
-Cementing isn't restricted to a bare single matching card. Any combination
-— the played card plus zero or more loose floor cards — whose sum is a
-**positive multiple** of the house's existing value cements it: 1x, 2x, 3x,
-etc. The house's declared value never changes when cementing (unlike
-breaking, which raises it to a new value); the cards just get added into
-the pile. This applies to any house — your own, your partner's, or an
-opponent's — with the same reserve-card rule as before: free if it's your
-partner's house, otherwise you need another card of that house's value
-left in hand afterward.
+# Patch 6: per-move pause/reveal and move log added to two-player Seep
 
 ## What changed
-- `fourPlayerEngine.ts` (`playFourPlayerModifyHouse`) and `gameEngine.ts`
-  (`playModifyHouse`, the two-player equivalent): the cement/break decision
-  now checks `addedValue % house.captureValue === 0` instead of requiring
-  a bare single card with no loose items. Everything else (reserve-card
-  rule, free-for-partner, self-break restriction, merge-on-break) is
-  unchanged.
-- `four-player.component.ts`: the reveal overlay's "Cementing" vs
-  "Breaking" label now uses the same generalized check, so it always
-  matches what actually happens. **This file supersedes the version from
-  the sweep-bonus-feedback patch** — it carries that fix forward plus this
-  one; you don't need both, just this one.
-- **No UI structural changes were needed beyond that label fix.** The
-  ability to select a house plus additional loose floor cards alongside
-  your played card already existed in the UI (it was built for breaking,
-  which always supported combinations) — the engine fix alone unlocks the
-  option through the existing interface.
+Ported the same step-through pause pattern built for the four-player game
+over to two-player: every move — yours or the computer's — now pauses on
+an overlay showing the card played, whatever it interacted with on the
+floor, and a "Next" button, plus a persistent move-log drawer underneath.
+Same reasons as before: a way to verify each move visually, not just via
+the engine's test suite.
 
-## New tests
-- `fourPlayerActions.test.ts`: 5 new tests, including one that reproduces
-  the exact reported scenario (13-house, a 2, a loose Jack) and fails on
-  the old code.
-- `game.test.ts`: 3 new tests for the same rule in the two-player engine.
+- `two-player.component.ts` / `.html` — full rewrite, following the same
+  structure as `four-player.component.ts`: a `pendingReveal` signal driving
+  a blocking overlay, a `log` signal for the move-log drawer, the computer-
+  automation `effect()` reading `pendingReveal` alongside game state so
+  dismissing a reveal correctly re-triggers it. Simplified for two players:
+  no seat/team concepts, just "You" and "Opponent", and sweep-bonus
+  detection compares `sweepPoints.player`/`sweepPoints.opponent` directly
+  rather than going through a team lookup.
+- `computer.ts` (two-player AI) — added a `reason` string to every decision
+  `chooseComputerBid`/`chooseComputerOpeningMove`/`chooseComputerMove`
+  returns, mirroring `computer4p.ts`. The two-player AI never needed this
+  before (two-player had no narration requirement), but the reveal overlay
+  needed something to show for the computer's moves, so this brings it up
+  to the same standard.
+- `computer.test.ts` — one new test confirming every decision now carries
+  a non-empty reason, matching the equivalent four-player test.
+
+## Also carried forward automatically
+Since `onModify()` in the new two-player component uses the same
+generalized cementing check as the four-player one (`addedValue %
+house.captureValue === 0`), the multi-card cementing fix from the previous
+patch works correctly here too — no separate fix needed, it's just how the
+new file was written from the start.
 
 ## How to apply
-Copy these three files into your repo at the paths shown, then:
+Copy these four files into your repo at the paths shown, then:
 
     npm test
     npm run lint
     npm run build
 
 ## Verified here
-91/91 tests passing (8 new), full `tsc` type-check clean on the engine
-side. As with the other UI-touching patches, I couldn't run `ng build`
-against `four-player.component.ts` directly (no full Angular workspace in
-this sandbox) — the edit is small and I reviewed it carefully, but treat
-`npm run build` as the real confirmation.
+92/92 tests passing (1 new), full `tsc` type-check clean on the engine
+side. Same caveat as every UI-touching patch: I don't have the full
+Angular workspace in this sandbox, so `two-player.component.ts/.html`
+couldn't be run through `ng build` directly — reviewed carefully by hand,
+but `npm run build` on your end is the real confirmation.

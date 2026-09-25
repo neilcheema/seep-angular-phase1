@@ -3,9 +3,8 @@
     <div class="flex flex-1 flex-col items-center justify-center gap-6 px-6 text-center">
       <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">Seep</h1>
       <p style="color: rgba(255,255,255,0.7); max-width: 480px;">
-        A two-player Indian fishing game. Capture cards from the floor whose
-        value matches your card, build them into houses, cement or break
-        houses to grow them, and clear the floor for a sweep bonus.
+        A two-player Indian fishing game. Every move — including your own —
+        pauses so you can see exactly what happened before play continues.
       </p>
       <button class="btn-gold" (click)="startNewGame()">Deal</button>
     </div>
@@ -38,7 +37,7 @@
       <div class="text-center text-sm" style="color: #ff8a8a; padding: 0 12px 6px;">{{ m }}</div>
     }
 
-    @if (s.phase === 'bidding' && s.turn === 'player') {
+    @if (s.phase === 'bidding' && s.turn === 'player' && !pendingReveal()) {
       <div class="action-bar">
         <span style="color: rgba(255,255,255,0.75);">Choose your bid:</span>
         @for (v of legalBidsFor(s); track v) {
@@ -58,7 +57,7 @@
       </div>
     }
 
-    @if (s.phase === 'hand-over') {
+    @if (s.phase === 'hand-over' && !pendingReveal()) {
       <div class="flex flex-col items-center gap-3 py-4">
         <p style="color: var(--gold-lt); font-weight: 700;">
           Hand complete — you {{ s.lastHandTotals!.player.total }} · opponent {{ s.lastHandTotals!.opponent.total }}
@@ -67,7 +66,7 @@
       </div>
     }
 
-    @if (s.phase === 'match-over') {
+    @if (s.phase === 'match-over' && !pendingReveal()) {
       <div class="flex flex-col items-center gap-3 py-6">
         <p style="color: var(--gold-lt); font-size: 22px; font-weight: 800;">
           {{ s.winner === 'player' ? 'You won the bazzi!' : 'Opponent won the bazzi.' }}
@@ -84,18 +83,74 @@
       (cardSelected)="onCardSelect($event)"
     />
 
+    @if (log().length > 0) {
+      <details class="move-log-drawer">
+        <summary>Move log ({{ log().length }})</summary>
+        <div class="move-log-list">
+          @for (entry of log(); track $index) {
+            <div class="move-log-entry" style="cursor: default;">{{ entry.text }}</div>
+          }
+        </div>
+      </details>
+    }
+
     <details class="px-4 pb-2" style="color: rgba(255,255,255,0.65); font-size: 12px;">
       <summary style="cursor: pointer; color: var(--gold-lt);">How to play</summary>
       <ul style="list-style: disc; padding-left: 18px; margin-top: 6px; line-height: 1.6;">
         <li>Capture values: A=1, 2-10 face value, J=11, Q=12, K=13.</li>
         <li>Play a card and select floor cards/houses whose total equals its value to capture them.</li>
         <li>Build a house (value 9-13) from your card plus loose floor cards — you need another card of that value left in hand.</li>
-        <li>Select an existing house to cement it (add a matching card) or break it up to a higher value.</li>
+        <li>Cement a house by adding a card (optionally with loose floor cards) whose total is a multiple of the house's value — you need another card of that value left in hand afterward.</li>
+        <li>Select an existing house to break it up to a higher value instead, using a card (optionally with loose floor cards) that doesn't total a multiple of its current value.</li>
         <li>You must capture if a capture is available — you can only throw a card down loose otherwise.</li>
         <li>Clearing the whole floor is a sweep: worth 50 points (25 on the opening move, 0 on the last card).</li>
         <li>Spades score their value, other aces score 1, the Ten of Diamonds scores 6. Under 9 points for a hand scores 0.</li>
         <li>First player to lead by 100 points wins the match.</li>
+        <li>Every move — yours and the computer's — pauses so you can check it before play continues.</li>
       </ul>
     </details>
+  </div>
+}
+
+@if (pendingReveal(); as r) {
+  <div class="reveal-overlay" role="dialog" aria-modal="true" aria-live="assertive">
+    <div class="reveal-card">
+      <div class="reveal-seat">{{ whoTag(r.who) }}</div>
+      <div class="reveal-label">{{ r.label }}</div>
+
+      @if (r.sweepBonus > 0) {
+        <div style="font-weight: 800; font-size: 19px; color: var(--gold-lt); margin: 2px 0 8px; letter-spacing: 0.02em;">
+          Seep! +{{ r.sweepBonus }}
+        </div>
+      }
+
+      @if (r.playedCard; as pc) {
+        <div class="reveal-section">
+          <div class="reveal-section-title">Played</div>
+          <div class="reveal-card-row">
+            <app-card [card]="pc" />
+          </div>
+        </div>
+      }
+
+      @if (r.targetCards.length > 0) {
+        <div class="reveal-section">
+          <div class="reveal-section-title">
+            {{ r.kind === 'capture' ? 'Capturing' : (r.kind === 'build' ? 'Combined with' : 'House cards') }}
+          </div>
+          <div class="reveal-card-row">
+            @for (c of r.targetCards; track $index) {
+              <app-card [card]="c" />
+            }
+          </div>
+        </div>
+      }
+
+      @if (r.reason) {
+        <p class="reveal-reason">{{ r.reason }}</p>
+      }
+
+      <button class="btn-gold" (click)="dismissReveal()">Next</button>
+    </div>
   </div>
 }
