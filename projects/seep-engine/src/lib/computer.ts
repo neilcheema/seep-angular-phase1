@@ -1,4 +1,4 @@
-import { type Card, captureValue, isHouseValue } from './card'
+import { type Card, MAX_HOUSE_VALUE, MIN_HOUSE_VALUE, captureValue, isHouseValue, pointValue } from './card'
 import {
   type FloorItem, findHouseByValue, hasAnyLegalCapture, isLoose, itemValue,
 } from './floor'
@@ -44,9 +44,63 @@ function findCaptureCombination(floor: FloorItem[], card: Card): string[] | null
   return best
 }
 
+function subsetSummingTo(items: { id: string; v: number }[], target: number): string[] | null {
+  const n = items.length
+  for (let mask = 1; mask < 1 << n; mask++) {
+    let sum = 0
+    const ids: string[] = []
+    for (let i = 0; i < n; i++) {
+      if (mask & (1 << i)) {
+        sum += items[i]!.v
+        ids.push(items[i]!.id)
+      }
+    }
+    if (sum === target) return ids
+  }
+  return null
+}
+
 /** Counts how many of `hand`'s cards would find a legal capture against `floor`. */
 function captureOpportunities(floor: FloorItem[], hand: Card[]): number {
   return hand.filter(c => hasAnyLegalCapture(floor, c)).length
+}
+
+/**
+ * Finds a house the computer could build this turn: a hand card plus zero
+ * or more loose floor cards summing to a house value (9-13) that doesn't
+ * already exist on the floor, with a *separate* reserve card of that same
+ * value left in hand afterward (required to ever capture the house later).
+ * Prefers whichever option clears the most loose cards off the floor, then
+ * the highest target value.
+ */
+function findBuildOption(
+  floor: FloorItem[], hand: Card[],
+): { card: Card; looseItemIds: string[]; targetValue: number } | null {
+  const loose = floor.filter(isLoose)
+  let best: { card: Card; looseItemIds: string[]; targetValue: number; looseCount: number } | null = null
+
+  for (const card of hand) {
+    const remainingHand = hand.filter((c) => c !== card)
+    for (let target = MIN_HOUSE_VALUE; target <= MAX_HOUSE_VALUE; target++) {
+      if (findHouseByValue(floor, target)) continue
+      if (!hasCaptureValue(remainingHand, target)) continue
+      const need = target - captureValue(card)
+      if (need < 0) continue
+
+      if (need === 0) {
+        if (!best || 0 > best.looseCount || (0 === best.looseCount && target > best.targetValue)) {
+          best = { card, looseItemIds: [], targetValue: target, looseCount: 0 }
+        }
+        continue
+      }
+
+      const combo = subsetSummingTo(loose.map((l) => ({ id: l.id, v: captureValue(l.card) })), need)
+      if (combo && (!best || combo.length > best.looseCount || (combo.length === best.looseCount && target > best.targetValue))) {
+        best = { card, looseItemIds: combo, targetValue: target, looseCount: combo.length }
+      }
+    }
+  }
+  return best
 }
 
 /**
@@ -76,37 +130,39 @@ export function chooseComputerOpeningMove(state: GameState): ComputerPlayAction 
   return { type: 'throw', card: bidCard }
 }
 
-function subsetSummingTo(items: { id: string; v: number }[], target: number): string[] | null {
-  const n = items.length
-  for (let mask = 1; mask < 1 << n; mask++) {
-    let sum = 0
-    const ids: string[] = []
-    for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) {
-        sum += items[i]!.v
-        ids.push(items[i]!.id)
-      }
-    }
-    if (sum === target) return ids
-  }
-  return null
-}
-
 /**
- * Chooses the computer's move on a normal turn. Captures whenever possible
- * (preferring the biggest haul), otherwise throws down whichever card opens
- * up the fewest capture opportunities for the opponent.
+ * Chooses the computer's move on a normal turn:
+ * 1. Capture when possible. A capture that would clear the entire floor
+ *    (a sweep, worth a real bonus) is always preferred over a merely
+ *    bigger-looking partial capture — without this, the AI could pass up
+ *    an available sweep in favor of grabbing a single higher-value house.
+ *    Among non-sweep options, prefers the biggest haul.
+ * 2. Otherwise, build a new house if one can be formed (this is what
+ *    actually gets houses onto the floor during real play — without it,
+ *    the computer only ever captures or throws, and the build/cement/
+ *    break mechanics that define Seep rarely show up).
+ * 3. Otherwise, throw down whichever card opens up the fewest capture
+ *    opportunities for the opponent; ties are broken by each card's
+ *    scoring point value (not its capture value), since those diverge for
+ *    every non-spade card — a King of Hearts is worth 0 points and a Two
+ *    of Spades is worth 2, so preferring "lower capture value" as the old
+ *    tie-break did could actually throw away the more valuable card.
  */
 export function chooseComputerMove(state: GameState): ComputerPlayAction {
   const myHand = state.hands.opponent
 
-  let bestCapture: { card: Card; targetItemIds: string[]; size: number } | null = null
+  let bestCapture: { card: Card; targetItemIds: string[]; size: number; sweeps: boolean } | null = null
   for (const card of myHand) {
     const combo = findCaptureCombination(state.floor, card)
     if (combo) {
       const size = combo.reduce((t, id) => t + itemValue(findItemSafe(state.floor, id)), 0)
-      if (!bestCapture || size > bestCapture.size) {
-        bestCapture = { card, targetItemIds: combo, size }
+      const sweeps = combo.length === state.floor.length
+      const better =
+        !bestCapture ||
+        (sweeps && !bestCapture.sweeps) ||
+        (sweeps === bestCapture.sweeps && size > bestCapture.size)
+      if (better) {
+        bestCapture = { card, targetItemIds: combo, size, sweeps }
       }
     }
   }
@@ -114,7 +170,12 @@ export function chooseComputerMove(state: GameState): ComputerPlayAction {
     return { type: 'capture', card: bestCapture.card, targetItemIds: bestCapture.targetItemIds }
   }
 
-  // No capture available — throw the safest card.
+  const build = findBuildOption(state.floor, myHand)
+  if (build) {
+    return { type: 'build', card: build.card, looseItemIds: build.looseItemIds, targetValue: build.targetValue }
+  }
+
+  // No capture or house build available — throw the safest card.
   let safest = myHand[0]!
   let safestScore = Infinity
   for (const card of myHand) {
@@ -124,7 +185,7 @@ export function chooseComputerMove(state: GameState): ComputerPlayAction {
     ]
     const opponentHand = state.hands.player
     const score = captureOpportunities(hypotheticalFloor, opponentHand)
-    if (score < safestScore || (score === safestScore && captureValue(card) < captureValue(safest))) {
+    if (score < safestScore || (score === safestScore && pointValue(card) < pointValue(safest))) {
       safest = card
       safestScore = score
     }
