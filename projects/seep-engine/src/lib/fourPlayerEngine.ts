@@ -24,7 +24,6 @@ export interface FourPlayerGameState {
   readonly turn: SeatId
   readonly phase: FourPlayerPhase
   readonly bidValue: number | null
-  /** The bidder's first four dealt cards — the only cards a bid may be called from (spec §8.3). */
   readonly bidderInitialCards: Card[]
   readonly lastCapturer: TeamId | null
   readonly cardsPlayedThisHand: number
@@ -48,16 +47,6 @@ function pushLog(state: FourPlayerGameState, message: string): FourPlayerGameSta
   return { ...state, log: [...state.log, message] }
 }
 
-// ---------------------------------------------------------------------------
-// Dealing (spec §8.3)
-// ---------------------------------------------------------------------------
-
-/**
- * Deals a fresh four-player hand. The bidder is always the seat after the
- * dealer in turn order. As in the two-player engine, if the bidder's
- * first four cards hold no house-value (9-13) card, it's a misdeal and
- * the whole hand is reshuffled and redealt.
- */
 export function dealFourPlayerHand(
   dealer: SeatId,
   matchScores: Record<TeamId, number> = emptyRecord(ALL_TEAMS, () => 0),
@@ -102,29 +91,14 @@ export function dealFourPlayerHand(
   return pushLog(state, `New hand dealt. Dealer: ${dealer}. ${bidder} must bid.`)
 }
 
-/**
- * Starts a brand-new match. With no explicit dealer, defaults to p4 —
- * deterministically, not randomly — so p1 (the human) is always the first
- * bidder, matching the two-player engine's own startMatch(firstBidder =
- * 'player') precedent exactly (spec §12).
- */
 export function startFourPlayerMatch(dealer: SeatId = SeatId.P4): FourPlayerGameState {
   return dealFourPlayerHand(dealer)
 }
 
-/**
- * Deals the next hand once the current one is over. Deal passes to the
- * next seat in turn order (spec §8.3) — the common case for this digital
- * engine, since hands always run to completion rather than ending early.
- */
 export function dealNextFourPlayerHand(state: FourPlayerGameState): FourPlayerGameState {
   if (state.phase !== 'hand-over') throw new Error('The current hand has not finished.')
   return dealFourPlayerHand(nextSeat(state.dealer), state.matchScores)
 }
-
-// ---------------------------------------------------------------------------
-// Bidding (spec §8.4)
-// ---------------------------------------------------------------------------
 
 export function legalFourPlayerBids(state: FourPlayerGameState): number[] {
   if (state.phase !== 'bidding') return []
@@ -140,21 +114,6 @@ export function placeFourPlayerBid(state: FourPlayerGameState, seat: SeatId, val
   return pushLog({ ...state, bidValue: value, phase: 'opening-move' }, `${seat} bid ${value}.`)
 }
 
-// ---------------------------------------------------------------------------
-// Scoring & hand resolution (spec §8.8)
-// ---------------------------------------------------------------------------
-
-/**
- * Resolves the end of a hand: leftover floor cards go to the last
- * capturing team, each team's hand totals are computed, match scores
- * accumulate, and a bazzi winner (a 100-point lead) is checked for.
- *
- * This is deliberately decoupled from the turn-by-turn play actions that
- * drive `finalFloor`/`lastCapturer` — those are added in Phase 3 once
- * the team house-ownership rules (spec §8.5) exist, and will call this
- * function once both hands are empty, the same way the two-player
- * engine's finishMove does internally.
- */
 export function finishFourPlayerHand(
   state: FourPlayerGameState,
   finalFloor: FloorItem<SeatId>[],
@@ -195,10 +154,6 @@ export function finishFourPlayerHand(
   )
 }
 
-// ---------------------------------------------------------------------------
-// Turn actions (spec §8.5, §8.6) — capture, build, cement/break, throw
-// ---------------------------------------------------------------------------
-
 function assertTurn(state: FourPlayerGameState, seat: SeatId): void {
   if (state.phase !== 'opening-move' && state.phase !== 'playing') {
     throw new Error('No move can be made right now.')
@@ -225,11 +180,6 @@ function sweepBonusFor(state: FourPlayerGameState): number {
   return SWEEP_BONUS
 }
 
-/**
- * Shared end-of-move bookkeeping: advances the turn to the next seat in
- * rotation, and closes out the hand via finishFourPlayerHand (Phase 2)
- * once every seat has emptied its hand.
- */
 function finishMove(
   state: FourPlayerGameState,
   seat: SeatId,
@@ -259,7 +209,6 @@ function finishMove(
   return finishFourPlayerHand(base, base.floor, base.lastCapturer)
 }
 
-/** Every floor item currently reachable by playing this card, for UI hints. */
 export function legalCaptureTargetsFourPlayer(state: FourPlayerGameState, card: Card): FloorItem<SeatId>[] {
   const target = captureValue(card)
   const house = findHouseByValue(state.floor, target)
@@ -291,7 +240,6 @@ export function playFourPlayerCapture(
   const newHand = takeCard(state, seat, card)
   const capturedCards = allCardsOf(state.floor, targetItemIds)
   const newFloor = removeItems(state.floor, targetItemIds)
-  // spec §8.5: captured cards are pooled by team, not held per-seat.
   const team = teamOf(seat)
   const newCaptures = {
     ...state.captures,
@@ -343,7 +291,6 @@ export function playFourPlayerBuildHouse(
   }
 
   const houseId = `f${state.nextItemId}`
-  // spec §8.5: a player can only found a house for themselves, never on a teammate's behalf.
   const house: House<SeatId> = {
     kind: 'house',
     id: houseId,
@@ -379,32 +326,34 @@ export function playFourPlayerModifyHouse(
     return item
   })
   const addedValue = captureValue(card) + extraItems.reduce((t, i) => t + captureValue(i.card), 0)
-  const sameValueTopUp = extraItems.length === 0 && captureValue(card) === house.captureValue
+  // Cementing isn't limited to a single card that exactly matches the house's
+  // value — any combination (this card plus optional loose floor cards) whose
+  // sum is a positive multiple of the house's value cements it, adding a full
+  // extra "set" of that value into the pile without changing its capture
+  // value. A bare single-card exact match is just the simplest case (1x).
+  const isMultipleCement = addedValue % house.captureValue === 0
 
   const newHand = takeCard(state, seat, card)
 
-  if (sameValueTopUp) {
-    // spec §8.5: adding a same-value card to a partner's cemented (or
-    // uncemented) house is free — no reserve card required. Adding to
-    // your own house, or an opponent's, still needs one.
+  if (isMultipleCement) {
     const isPartnersHouse = house.owners.some((owner) => areTeammates(owner, seat))
     if (!isPartnersHouse && !hasCaptureValue(newHand, house.captureValue)) {
       throw new Error(`You need another card worth ${house.captureValue} left in hand to cement this house.`)
     }
     const cemented: House<SeatId> = {
       ...house,
-      cards: [...house.cards, card],
+      cards: [...house.cards, ...extraItems.map((i) => i.card), card],
       cemented: true,
       owners: [...new Set([...house.owners, seat])],
     }
-    const newFloor = state.floor.map((i) => (i.id === houseId ? cemented : i))
+    const newFloor = [...removeItems(state.floor, extraLooseItemIds).filter((i) => i.id !== houseId), cemented]
     const next = finishMove(state, seat, newHand, newFloor, state.captures, state.sweepPoints, null)
     const freeNote = isPartnersHouse ? " (added freely to your partner's house)" : ''
-    return pushLog(next, `${seat} cemented the house of ${house.captureValue}${freeNote}.`)
+    const multiple = addedValue / house.captureValue
+    const multipleNote = multiple > 1 ? ` (${multiple}\u00d7 its value)` : ''
+    return pushLog(next, `${seat} cemented the house of ${house.captureValue}${multipleNote}${freeNote}.`)
   }
 
-  // Otherwise this is a "break": the house's value increases.
-  // spec §8.5: a player can never break a house they already own.
   if (house.owners.includes(seat)) {
     throw new Error('You cannot break a house you already own — someone else must break it.')
   }
@@ -427,9 +376,6 @@ export function playFourPlayerModifyHouse(
   )
   const grownCards = [...house.cards, ...extraItems.map((i) => i.card), card]
 
-  // spec §8.5: breaking transfers ownership to the breaker — unless the new
-  // value now matches a house a teammate (or anyone) already owns, in which
-  // case the two merge into one cemented, multi-owner house.
   const resultHouse: House<SeatId> = mergeTarget
     ? {
         kind: 'house',

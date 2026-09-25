@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { Face, Suit, type Card } from '../card'
-import { SeatId } from '../seats'
+import { Face, Suit, type Card } from '../card.ts'
+import { SeatId } from '../seats.ts'
 import {
   type FourPlayerGameState,
   playFourPlayerBuildHouse,
   playFourPlayerCapture,
   playFourPlayerModifyHouse,
   playFourPlayerThrow,
-} from '../fourPlayerEngine'
-import { type FloorItem, type House } from '../floor'
+} from '../fourPlayerEngine.ts'
+import { type FloorItem, type House } from '../floor.ts'
 
 function card(face: Face, suit: Suit): Card {
   return { face, suit }
@@ -62,7 +62,6 @@ describe('captured cards are pooled by team (spec §8.5)', () => {
       turn: SeatId.P1,
     })
     const next = playFourPlayerCapture(state, SeatId.P1, card(Face.Seven, Suit.Clubs), ['f1'])
-    // p1 is on teamA — the capture lands in captures.teamA, not a per-seat bucket.
     expect(next.captures.teamA).toHaveLength(2)
     expect(next.captures.teamB).toHaveLength(0)
   })
@@ -96,9 +95,9 @@ describe('breaking an owned house is restricted (spec §8.5)', () => {
 
   it('lets a teammate break a house they do not own themselves', () => {
     const state = makeState({
-      floor: [house({ owners: [SeatId.P1] })], // owned by p1
+      floor: [house({ owners: [SeatId.P1] })],
       hands: { p3: [card(Face.Three, Suit.Clubs), card(Face.Queen, Suit.Spades)], p1: [], p2: [], p4: [] },
-      turn: SeatId.P3, // p3 is p1's partner
+      turn: SeatId.P3,
     })
     const next = playFourPlayerModifyHouse(state, SeatId.P3, card(Face.Three, Suit.Clubs), 'h1')
     const broken = next.floor.find((i): i is House<SeatId> => i.kind === 'house')!
@@ -122,7 +121,7 @@ describe('partners may freely add to each other\'s cemented houses (spec §8.5)'
     const state = makeState({
       floor: [house({ owners: [SeatId.P1], captureValue: 9 })],
       hands: {
-        p3: [card(Face.Nine, Suit.Clubs)], // only ONE 9 — no reserve
+        p3: [card(Face.Nine, Suit.Clubs)],
         p1: [card(Face.Two, Suit.Clubs)], p2: [card(Face.Three, Suit.Clubs)], p4: [card(Face.Four, Suit.Clubs)],
       },
       turn: SeatId.P3,
@@ -136,7 +135,7 @@ describe('partners may freely add to each other\'s cemented houses (spec §8.5)'
   it('still requires a reserve card to cement your own house', () => {
     const state = makeState({
       floor: [house({ owners: [SeatId.P1], captureValue: 9 })],
-      hands: { p1: [card(Face.Nine, Suit.Clubs)], p2: [], p3: [], p4: [] }, // only one 9, no reserve
+      hands: { p1: [card(Face.Nine, Suit.Clubs)], p2: [], p3: [], p4: [] },
       turn: SeatId.P1,
     })
     expect(() => playFourPlayerModifyHouse(state, SeatId.P1, card(Face.Nine, Suit.Clubs), 'h1')).toThrow()
@@ -145,7 +144,7 @@ describe('partners may freely add to each other\'s cemented houses (spec §8.5)'
   it('still requires a reserve card to cement an opponent\'s house', () => {
     const state = makeState({
       floor: [house({ owners: [SeatId.P1], captureValue: 9 })],
-      hands: { p2: [card(Face.Nine, Suit.Clubs)], p1: [], p3: [], p4: [] }, // p2 is opponent of p1
+      hands: { p2: [card(Face.Nine, Suit.Clubs)], p1: [], p3: [], p4: [] },
       turn: SeatId.P2,
     })
     expect(() => playFourPlayerModifyHouse(state, SeatId.P2, card(Face.Nine, Suit.Clubs), 'h1')).toThrow()
@@ -178,8 +177,8 @@ describe('breaking transfers ownership; breaking to match a partner\'s house mer
   it('merges into a cemented, multi-owner house when the new value matches a partner\'s house', () => {
     const state = makeState({
       floor: [
-        house({ id: 'h1', owners: [SeatId.P2], captureValue: 9 }), // being broken by p1
-        house({ id: 'h2', owners: [SeatId.P3], captureValue: 12, cards: [card(Face.Queen, Suit.Hearts)] }), // p1's partner's house
+        house({ id: 'h1', owners: [SeatId.P2], captureValue: 9 }),
+        house({ id: 'h2', owners: [SeatId.P3], captureValue: 12, cards: [card(Face.Queen, Suit.Hearts)] }),
       ],
       hands: { p1: [card(Face.Three, Suit.Clubs), card(Face.Queen, Suit.Spades)], p2: [], p3: [], p4: [] },
       turn: SeatId.P1,
@@ -204,6 +203,93 @@ describe('multiple owners on a cemented house (spec §8.5)', () => {
     const cemented = next.floor.find((i): i is House<SeatId> => i.kind === 'house')!
     expect(cemented.owners).toEqual(expect.arrayContaining([SeatId.P1, SeatId.P2]))
     expect(cemented.owners).toHaveLength(2)
+  })
+})
+
+describe('cementing accepts any combination summing to a multiple of the house value', () => {
+  it('cements via a card + loose-card combination summing to exactly the house value (1x) — the reported bug', () => {
+    // The exact scenario reported: a 13-house already at the maximum legal
+    // value, a hand card of 2 (can't cement alone, can't break higher —
+    // nowhere higher to go), but combined with a loose Jack (11) on the
+    // floor, 2 + 11 = 13 = 1x the house's value. Old code treated any combo
+    // with loose cards as a "break" attempt, which would have illegally
+    // tried to raise the value to 26.
+    const state = makeState({
+      floor: [
+        house({ id: 'h1', owners: [SeatId.P1], captureValue: 13, cards: [card(Face.King, Suit.Hearts)] }),
+        { kind: 'loose', id: 'f1', card: card(Face.Jack, Suit.Hearts) },
+      ],
+      hands: { p3: [card(Face.Two, Suit.Hearts), card(Face.King, Suit.Clubs)], p1: [], p2: [], p4: [] },
+      turn: SeatId.P3,
+    })
+    const next = playFourPlayerModifyHouse(state, SeatId.P3, card(Face.Two, Suit.Hearts), 'h1', ['f1'])
+    const houses = next.floor.filter((i): i is House<SeatId> => i.kind === 'house')
+    expect(houses).toHaveLength(1)
+    expect(houses[0]!.captureValue).toBe(13)
+    expect(houses[0]!.cemented).toBe(true)
+    expect(houses[0]!.cards).toHaveLength(3) // original King + Jack + the 2
+    expect(next.floor.some((i) => i.id === 'f1')).toBe(false) // loose Jack consumed
+  })
+
+  it('cements via a combination summing to a full multiple (2x) of the house value', () => {
+    const state = makeState({
+      floor: [
+        house({ id: 'h1', owners: [SeatId.P2], captureValue: 9, cards: [card(Face.Nine, Suit.Hearts)] }),
+        { kind: 'loose', id: 'f1', card: card(Face.Six, Suit.Diamonds) },
+        { kind: 'loose', id: 'f2', card: card(Face.Three, Suit.Diamonds) },
+      ],
+      // 9 (played) + 6 + 3 = 18 = 2 x 9
+      hands: { p1: [card(Face.Nine, Suit.Clubs), card(Face.Nine, Suit.Spades)], p2: [], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    const next = playFourPlayerModifyHouse(state, SeatId.P1, card(Face.Nine, Suit.Clubs), 'h1', ['f1', 'f2'])
+    const houses = next.floor.filter((i): i is House<SeatId> => i.kind === 'house')
+    expect(houses).toHaveLength(1)
+    expect(houses[0]!.captureValue).toBe(9) // value unchanged, unlike a break
+    expect(houses[0]!.cemented).toBe(true)
+    expect(houses[0]!.cards).toHaveLength(4)
+  })
+
+  it('still requires a reserve card for a multi-card cement on your own house', () => {
+    const state = makeState({
+      floor: [
+        house({ id: 'h1', owners: [SeatId.P1], captureValue: 13, cards: [card(Face.King, Suit.Hearts)] }),
+        { kind: 'loose', id: 'f1', card: card(Face.Jack, Suit.Hearts) },
+      ],
+      hands: { p1: [card(Face.Two, Suit.Hearts)], p2: [], p3: [], p4: [] }, // no reserve 13 left
+      turn: SeatId.P1,
+    })
+    expect(() => playFourPlayerModifyHouse(state, SeatId.P1, card(Face.Two, Suit.Hearts), 'h1', ['f1'])).toThrow()
+  })
+
+  it('still cements freely on a partner\'s house without a reserve, even for a multi-card combination', () => {
+    const state = makeState({
+      floor: [
+        house({ id: 'h1', owners: [SeatId.P1], captureValue: 13, cards: [card(Face.King, Suit.Hearts)] }),
+        { kind: 'loose', id: 'f1', card: card(Face.Jack, Suit.Hearts) },
+      ],
+      hands: {
+        p3: [card(Face.Two, Suit.Hearts)], // no reserve, but p1 is p3's partner
+        p1: [card(Face.Four, Suit.Clubs)], p2: [card(Face.Five, Suit.Clubs)], p4: [card(Face.Six, Suit.Clubs)],
+      },
+      turn: SeatId.P3,
+    })
+    const next = playFourPlayerModifyHouse(state, SeatId.P3, card(Face.Two, Suit.Hearts), 'h1', ['f1'])
+    const cemented = next.floor.find((i): i is House<SeatId> => i.kind === 'house')!
+    expect(cemented.cemented).toBe(true)
+  })
+
+  it('a combination that is NOT a multiple of the house value still falls through to breaking it', () => {
+    const state = makeState({
+      floor: [house({ id: 'h1', owners: [SeatId.P2], captureValue: 9, cards: [card(Face.Nine, Suit.Hearts)] })],
+      hands: { p1: [card(Face.Three, Suit.Clubs), card(Face.Queen, Suit.Spades)], p2: [], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    // 3 is not a multiple of 9, so this should break the house up to 12, not cement it.
+    const next = playFourPlayerModifyHouse(state, SeatId.P1, card(Face.Three, Suit.Clubs), 'h1')
+    const house2 = next.floor.find((i): i is House<SeatId> => i.kind === 'house')!
+    expect(house2.captureValue).toBe(12)
+    expect(house2.cemented).toBe(false)
   })
 })
 

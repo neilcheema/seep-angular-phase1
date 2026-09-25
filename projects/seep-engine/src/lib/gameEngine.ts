@@ -57,19 +57,6 @@ function pushLog(state: GameState, message: string): GameState {
   return { ...state, log: [...state.log, message] }
 }
 
-// ---------------------------------------------------------------------------
-// Dealing
-// ---------------------------------------------------------------------------
-
-/**
- * Deals a fresh hand for the given bidder. Per the rules, the bidder must be
- * able to call a house value (9-13) from the first four cards they're dealt;
- * if none of those four qualify it's a misdeal and the whole hand is
- * reshuffled and redealt. Everything else about the bidder's and the other
- * player's hands is dealt at the same time — a real table deals it out in
- * batches of four for fairness, which makes no difference to a shuffled
- * digital deck.
- */
 export function dealHand(
   bidder: PlayerId,
   matchScores: Record<PlayerId, number> = { player: 0, opponent: 0 },
@@ -119,10 +106,6 @@ export function startMatch(firstBidder: PlayerId = 'player'): GameState {
   return dealHand(firstBidder)
 }
 
-// ---------------------------------------------------------------------------
-// Bidding
-// ---------------------------------------------------------------------------
-
 export function legalBids(state: GameState): number[] {
   if (state.phase !== 'bidding') return []
   const values = new Set(state.bidderInitialCards.map(captureValue).filter(isHouseValue))
@@ -140,10 +123,6 @@ export function placeBid(state: GameState, playerId: PlayerId, value: number): G
     `${label(playerId)} bid ${value}.`,
   )
 }
-
-// ---------------------------------------------------------------------------
-// Shared move validation / bookkeeping
-// ---------------------------------------------------------------------------
 
 function label(id: PlayerId): string {
   return id === 'player' ? 'You' : 'Opponent'
@@ -165,7 +144,6 @@ function takeCard(state: GameState, playerId: PlayerId, card: Card): Card[] {
   return removeCard(hand, card)
 }
 
-/** True the instant this play would be the very last card of the whole hand. */
 function isLastPlayOfHand(state: GameState): boolean {
   return state.cardsPlayedThisHand + 1 === state.totalPlayableThisHand
 }
@@ -194,10 +172,6 @@ function computeHandTotals(
   return totals
 }
 
-/**
- * Shared end-of-move bookkeeping: advances the turn, closes out the hand
- * when both players have emptied their hands, and checks for a match win.
- */
 function finishMove(
   state: GameState,
   playerId: PlayerId,
@@ -226,7 +200,6 @@ function finishMove(
 
   if (!handOver) return base
 
-  // Any cards left on the floor go to whoever captured last.
   let finalCaptures = base.captures
   if (base.floor.length > 0 && base.lastCapturer) {
     const leftover = base.floor.flatMap(item => (isHouse(item) ? item.cards : [item.card]))
@@ -261,11 +234,6 @@ function finishMove(
   )
 }
 
-// ---------------------------------------------------------------------------
-// Capturing
-// ---------------------------------------------------------------------------
-
-/** Every floor item currently reachable by playing this card, for UI hints. */
 export function legalCaptureTargets(state: GameState, card: Card): FloorItem[] {
   const target = captureValue(card)
   const house = findHouseByValue(state.floor, target)
@@ -316,10 +284,6 @@ export function playCapture(
   return pushLog(next, `${label(playerId)} played ${card.face} of ${card.suit} and captured.${sweepMsg}`)
 }
 
-// ---------------------------------------------------------------------------
-// Building a new house
-// ---------------------------------------------------------------------------
-
 export function playBuildHouse(
   state: GameState,
   playerId: PlayerId,
@@ -365,10 +329,6 @@ export function playBuildHouse(
   return pushLog(next, `${label(playerId)} built a house of ${targetValue}.`)
 }
 
-// ---------------------------------------------------------------------------
-// Adding to / cementing / breaking an existing house
-// ---------------------------------------------------------------------------
-
 export function playModifyHouse(
   state: GameState,
   playerId: PlayerId,
@@ -389,26 +349,32 @@ export function playModifyHouse(
     return item
   })
   const addedValue = captureValue(card) + extraItems.reduce((t, i) => t + captureValue(i.card), 0)
-  const sameValueTopUp = extraItems.length === 0 && captureValue(card) === house.captureValue
+  // Cementing isn't limited to a single card that exactly matches the house's
+  // value — any combination (this card plus optional loose floor cards) whose
+  // sum is a positive multiple of the house's value cements it, adding a full
+  // extra "set" of that value into the pile without changing its capture
+  // value. A bare single-card exact match is just the simplest case (1x).
+  const isMultipleCement = addedValue % house.captureValue === 0
 
   const newHand = takeCard(state, playerId, card)
 
-  if (sameValueTopUp) {
+  if (isMultipleCement) {
     if (!hasCaptureValue(newHand, house.captureValue)) {
       throw new Error(`You need another card worth ${house.captureValue} left in hand to cement this house.`)
     }
     const cemented: House = {
       ...house,
-      cards: [...house.cards, card],
+      cards: [...house.cards, ...extraItems.map(i => i.card), card],
       cemented: true,
       owners: [...new Set([...house.owners, playerId])],
     }
-    const newFloor = state.floor.map(i => (i.id === houseId ? cemented : i))
+    const newFloor = [...removeItems(state.floor, extraLooseItemIds).filter(i => i.id !== houseId), cemented]
     const next = finishMove(state, playerId, newHand, newFloor, state.captures, state.sweepPoints, null)
-    return pushLog(next, `${label(playerId)} cemented the house of ${house.captureValue}.`)
+    const multiple = addedValue / house.captureValue
+    const multipleNote = multiple > 1 ? ` (${multiple}\u00d7 its value)` : ''
+    return pushLog(next, `${label(playerId)} cemented the house of ${house.captureValue}${multipleNote}.`)
   }
 
-  // Otherwise this is a "break": the house's value increases.
   if (house.cemented) throw new Error('A cemented house cannot be broken.')
   const newValue = house.captureValue + addedValue
   if (!isHouseValue(newValue)) {
@@ -451,10 +417,6 @@ export function playModifyHouse(
   )
 }
 
-// ---------------------------------------------------------------------------
-// Throwing a loose card
-// ---------------------------------------------------------------------------
-
 export function playThrow(state: GameState, playerId: PlayerId, card: Card): GameState {
   assertTurn(state, playerId)
   if (state.phase === 'opening-move') {
@@ -472,10 +434,6 @@ export function playThrow(state: GameState, playerId: PlayerId, card: Card): Gam
   const next = finishMove(seeded, playerId, newHand, newFloor, seeded.captures, seeded.sweepPoints, null)
   return pushLog(next, `${label(playerId)} threw down ${card.face} of ${card.suit}.`)
 }
-
-// ---------------------------------------------------------------------------
-// Starting the next hand after one ends
-// ---------------------------------------------------------------------------
 
 export function dealNextHand(state: GameState): GameState {
   if (state.phase !== 'hand-over') throw new Error('The current hand has not finished.')
