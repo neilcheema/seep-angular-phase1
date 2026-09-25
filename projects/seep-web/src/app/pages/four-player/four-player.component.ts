@@ -105,6 +105,11 @@ export class FourPlayerComponent {
   readonly message = signal<string | null>(null)
   readonly pendingReveal = signal<MoveReveal | null>(null)
   readonly log = signal<LogEntry[]>([])
+  readonly humanHasMoved = signal(false)
+  readonly opponentHasMoved = signal(false)
+  readonly canShareRuleNote = computed(() => this.humanHasMoved() && this.opponentHasMoved())
+  readonly ruleNotePanelOpen = signal(false)
+  readonly ruleNoteText = signal('')
 
   readonly isPlayerTurn = computed(() => {
     const s = this.state()
@@ -259,6 +264,53 @@ export class FourPlayerComponent {
 
   dismissReveal(): void {
     this.pendingReveal.set(null)
+  }
+
+  toggleRuleNotePanel(): void {
+    this.ruleNotePanelOpen.update((open) => !open)
+  }
+
+  onRuleNoteInput(value: string): void {
+    this.ruleNoteText.set(value)
+  }
+
+  /**
+   * Builds a mailto: link with what the user noticed plus as much of the
+   * recent move log as fits in a safe URL length, most-recent move first,
+   * and opens it — this hands off to the user's own email client rather
+   * than sending anything directly, since a static site with no backend
+   * has no way to dispatch an email itself.
+   */
+  sendRuleNote(): void {
+    const s = this.state()
+    const description = this.ruleNoteText().trim() || '(no details given)'
+    const header =
+      `What I noticed:\n${description}\n\n` +
+      `Game: 4 Player Seep\n` +
+      (s ? `Phase: ${s.phase}, Turn: ${this.seatTag(s.turn)}\n` : 'No active game.\n') +
+      `\nMove log (most recent first):\n`
+
+    const MAX_BODY_LENGTH = 1500
+    const entriesNewestFirst = [...this.log()].reverse().map((e) => `${e.text}\n  ${e.floorSummary}`)
+    let logText = ''
+    let included = 0
+    for (const entry of entriesNewestFirst) {
+      const candidate = logText + (logText ? '\n\n' : '') + entry
+      if ((header + candidate).length > MAX_BODY_LENGTH) break
+      logText = candidate
+      included++
+    }
+    const omittedNote =
+      included < entriesNewestFirst.length
+        ? `\n\n...(${entriesNewestFirst.length - included} earlier move(s) omitted for length)`
+        : ''
+
+    const subject = 'Seep — a rule that might need a look (4 Player)'
+    const body = header + logText + omittedNote
+    window.location.href = `mailto:narender.cheema@cheemaclan.org?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+
+    this.ruleNotePanelOpen.set(false)
+    this.ruleNoteText.set('')
   }
 
   onBid(value: number): void {
@@ -425,11 +477,18 @@ export class FourPlayerComponent {
   }
 
   private reveal(snapshot: MoveReveal, floor: FloorItem<SeatId>[]): void {
+    this.trackMove(snapshot.seat)
     this.pendingReveal.set(snapshot)
     this.log.update((list) => [
       ...list,
       { seat: snapshot.seat, text: this.revealToLogText(snapshot), floorSummary: this.describeFloor(floor) },
     ])
+  }
+
+  /** Unlocks the "notice something off?" note once both the human and at least one computer seat have each played a move (a bid counts). Never re-locks once unlocked. */
+  private trackMove(seat: SeatId): void {
+    if (seat === SeatId.P1) this.humanHasMoved.set(true)
+    else this.opponentHasMoved.set(true)
   }
 
   /** Renders the current floor as compact text for the move log: loose cards, then piles with value + owning team. */
