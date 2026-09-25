@@ -1,56 +1,55 @@
-# Patch: "notice something off?" note, sent via email — both games
+# Add Microsoft Clarity analytics
 
-## What this is
-A quiet, opt-in way for you (or anyone playing) to flag something that
-seems off about how a hand played out — framed honestly as "a rule might
-have been missed while building this," not as filing a bug report against
-the user. It unlocks once both sides have played at least one move (so
-there's actually a log worth sharing), not on any timer.
+## What this does
+Initializes Clarity once, at the app root, so it tracks visits across the
+landing page and both games for the whole session — not per-route. Skips
+initialization entirely on `localhost`/`127.0.0.1` (i.e. `ng serve`), so
+your own dev-testing sessions don't show up in your real usage data.
 
-## How it works
-- **Unlocks after the first real exchange**: once the human has played one
-  move (a bid counts) *and* at least one computer seat has played one move
-  too, a small pill-shaped button appears in the bottom-right corner:
-  "Notice something that doesn't match the rules you know?" It never
-  re-locks for the rest of the session, including across new hands/games.
-- **Clicking it** opens a small panel with a short explanation, an optional
-  textarea, and Cancel / Send note buttons.
-- **"Send note"** builds a `mailto:narender.cheema@cheemaclan.org` link —
-  subject "Seep — a rule that might need a look" — with what the user
-  typed plus as much of the recent move log (each entry's text *and* its
-  floor summary from the last patch) as fits in a safe URL length,
-  most-recent move first, and opens it. This hands off to the user's own
-  email app; nothing is sent automatically from the page itself, since a
-  static site with no backend has no way to dispatch email directly. Per
-  your earlier choice, this was the no-new-infrastructure option.
+## Setup steps (in order)
 
-## Why the email isn't fully automatic
-Genuinely automatic sending would need either a backend (an Azure
-Function, real infrastructure) or a third-party form-to-email service
-(a new account, an API key baked into the app). You picked the mailto:
-approach specifically to avoid both — the tradeoff is the user clicks
-"send" once more in their own mail client.
+1. **Create your Clarity project** at https://clarity.microsoft.com if you
+   haven't already — sign in with a Microsoft account, add a new project
+   for seep.quest.
 
-## Files in this patch
-- `four-player.component.ts` / `.html` — full-file replacements, carrying
-  forward every previous fix (sweep-bonus feedback, cementing-label fix,
-  floor-summary log lines) plus this new feature.
-- `two-player.component.ts` / `.html` — same, full replacements.
-- `styles-addition.css` — **append this to your existing
-  `projects/seep-web/src/styles.css`** (don't overwrite the whole file —
-  this is new rules to add at the end). Covers `.rule-note-toggle` (the
-  small pill button) and `.bug-report-prompt` and its children (the panel
-  itself, reusing the same visual language as the move-reveal overlay).
+2. **Get your project ID**: in the Clarity dashboard, go to your project
+   → Settings → Overview. Copy the project ID shown there.
 
-## How to apply
-1. Copy the four `.ts`/`.html` files into your repo at the paths shown.
-2. Open `projects/seep-web/src/styles.css`, and paste the contents of
-   `styles-addition.css` onto the end of it.
-3. `npm run build && npm run lint`, commit, push.
+3. **Install the package** — from your repo root:
+
+       npm install @microsoft/clarity
+
+4. **Apply this patch**: copy `app.component.ts` into your repo at
+   `projects/seep-web/src/app/app.component.ts` (full-file replacement —
+   it's a tiny file, this just adds the Clarity import and init call to
+   the existing minimal component).
+
+5. **Paste in your project ID**: open the file and replace
+   `'YOUR_CLARITY_PROJECT_ID'` with the actual ID from step 2.
+
+6. **Build, verify, deploy**:
+
+       npm run build
+       npm run lint
+       git add .
+       git commit -m "Add Microsoft Clarity analytics"
+       git push
+
+7. **Confirm it's working**: once deployed, visit seep.quest yourself,
+   click around a bit, then check the Clarity dashboard — recordings
+   typically show up within a few minutes.
+
+## Note on cookie consent
+By default, a new Clarity project doesn't require explicit cookie
+consent. If you want stricter compliance later (a cookie-consent banner
+gating tracking), Clarity has a `Clarity.consentV2(...)` API for that —
+not wired in here since it adds real UI complexity (a banner, user choice
+persistence) that isn't needed for a project at this stage. Worth
+revisiting if this ever gets meaningfully more traffic or a paid tier.
 
 ## Verified here
-No engine changes in this patch — pure UI. As with every UI patch: no full
-Angular workspace in this sandbox, so `ng build` couldn't be run directly.
-Reviewed by hand for consistency (grepped for leftover old references —
-none found; confirmed matching counts of new references in both files).
-`npm run build` on your end is the real confirmation.
+This is a two-line functional change to an already-simple file. I don't
+have the full Angular workspace in this sandbox to run `npm install` or
+`ng build` against it directly — reviewed by hand, but `npm run build`
+on your end (after installing the package and adding your project ID)
+is the real confirmation.
