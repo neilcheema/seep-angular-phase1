@@ -5,6 +5,8 @@ import {
   type Card as CardModel,
   cardEquals,
   cardLabel,
+  faceLabel,
+  Suit,
   captureValue,
   isHouseValue,
   SeatId,
@@ -58,6 +60,14 @@ interface MoveReveal {
 interface LogEntry {
   readonly seat: SeatId
   readonly text: string
+  readonly floorSummary: string
+}
+
+const SUIT_SYMBOL: Record<Suit, string> = {
+  [Suit.Spades]: '\u2660',
+  [Suit.Hearts]: '\u2665',
+  [Suit.Clubs]: '\u2663',
+  [Suit.Diamonds]: '\u2666',
 }
 
 const SEAT_TAG: Record<SeatId, string> = {
@@ -188,7 +198,7 @@ export class FourPlayerComponent {
             this.reveal({
               seat, kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0,
               reason: 'chose the lowest value they could support from their hand',
-            })
+            }, next.floor)
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -203,7 +213,7 @@ export class FourPlayerComponent {
             const action = chooseFourPlayerOpeningMove(cur)
             const before = cur
             const next = this.applyAction(cur, seat, action)
-            this.reveal(this.snapshotAction(before, next, seat, action))
+            this.reveal(this.snapshotAction(before, next, seat, action), next.floor)
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -218,7 +228,7 @@ export class FourPlayerComponent {
             const action = chooseFourPlayerMove(cur)
             const before = cur
             const next = this.applyAction(cur, seat, action)
-            this.reveal(this.snapshotAction(before, next, seat, action))
+            this.reveal(this.snapshotAction(before, next, seat, action), next.floor)
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -257,7 +267,7 @@ export class FourPlayerComponent {
     try {
       const next = placeFourPlayerBid(s, SeatId.P1, value)
       this.state.set(next)
-      this.reveal({ seat: SeatId.P1, kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0 })
+      this.reveal({ seat: SeatId.P1, kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0 }, next.floor)
       this.message.set(null)
     } catch (err) {
       this.message.set(err instanceof Error ? err.message : 'Invalid move.')
@@ -414,9 +424,32 @@ export class FourPlayerComponent {
     return { seat, kind: 'throw', label: 'Throwing', playedCard: action.card, targetCards: [], reason: action.reason, sweepBonus: 0 }
   }
 
-  private reveal(snapshot: MoveReveal): void {
+  private reveal(snapshot: MoveReveal, floor: FloorItem<SeatId>[]): void {
     this.pendingReveal.set(snapshot)
-    this.log.update((list) => [...list, { seat: snapshot.seat, text: this.revealToLogText(snapshot) }])
+    this.log.update((list) => [
+      ...list,
+      { seat: snapshot.seat, text: this.revealToLogText(snapshot), floorSummary: this.describeFloor(floor) },
+    ])
+  }
+
+  /** Renders the current floor as compact text for the move log: loose cards, then piles with value + owning team. */
+  private describeFloor(floor: FloorItem<SeatId>[]): string {
+    if (floor.length === 0) return 'Floor: empty'
+    const parts = floor.map((item) =>
+      isHouse(item) ? `Pile-${item.captureValue} (${this.pileOwnerLabel(item.owners)})` : this.shortCard(item.card),
+    )
+    return `Floor: ${parts.join(', ')}`
+  }
+
+  private pileOwnerLabel(owners: SeatId[]): string {
+    const teams = new Set(owners.map(teamOf))
+    if (teams.size > 1) return 'Shared'
+    const [onlyTeam] = teams
+    return onlyTeam === 'teamA' ? 'Human team' : 'AI team'
+  }
+
+  private shortCard(c: CardModel): string {
+    return `${faceLabel(c.face)}${SUIT_SYMBOL[c.suit]}`
   }
 
   private revealToLogText(r: MoveReveal): string {
@@ -444,7 +477,7 @@ export class FourPlayerComponent {
     try {
       const next = fn()
       this.state.set(next)
-      this.reveal(buildSnapshot(next))
+      this.reveal(buildSnapshot(next), next.floor)
       this.clearSelection()
       this.message.set(null)
     } catch (err) {

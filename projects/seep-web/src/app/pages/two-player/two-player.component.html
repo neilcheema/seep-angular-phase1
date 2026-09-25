@@ -88,7 +88,10 @@
         <summary>Move log ({{ log().length }})</summary>
         <div class="move-log-list">
           @for (entry of log(); track $index) {
-            <div class="move-log-entry" style="cursor: default;">{{ entry.text }}</div>
+            <div class="move-log-entry" style="cursor: default;">
+              <div>{{ entry.text }}</div>
+              <div style="font-size: 11px; color: rgba(255,255,255,0.42); margin-top: 2px;">{{ entry.floorSummary }}</div>
+            </div>
           }
         </div>
       </details>

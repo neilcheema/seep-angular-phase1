@@ -1,47 +1,45 @@
-# Patch 6: per-move pause/reveal and move log added to two-player Seep
+# Patch 7: move log now shows floor state, pile values, and pile ownership
 
 ## What changed
-Ported the same step-through pause pattern built for the four-player game
-over to two-player: every move — yours or the computer's — now pauses on
-an overlay showing the card played, whatever it interacted with on the
-floor, and a "Next" button, plus a persistent move-log drawer underneath.
-Same reasons as before: a way to verify each move visually, not just via
-the engine's test suite.
+Every move-log entry (both games) now has a second, smaller line underneath
+showing the floor as it stood right after that move:
 
-- `two-player.component.ts` / `.html` — full rewrite, following the same
-  structure as `four-player.component.ts`: a `pendingReveal` signal driving
-  a blocking overlay, a `log` signal for the move-log drawer, the computer-
-  automation `effect()` reading `pendingReveal` alongside game state so
-  dismissing a reveal correctly re-triggers it. Simplified for two players:
-  no seat/team concepts, just "You" and "Opponent", and sweep-bonus
-  detection compares `sweepPoints.player`/`sweepPoints.opponent` directly
-  rather than going through a team lookup.
-- `computer.ts` (two-player AI) — added a `reason` string to every decision
-  `chooseComputerBid`/`chooseComputerOpeningMove`/`chooseComputerMove`
-  returns, mirroring `computer4p.ts`. The two-player AI never needed this
-  before (two-player had no narration requirement), but the reveal overlay
-  needed something to show for the computer's moves, so this brings it up
-  to the same standard.
-- `computer.test.ts` — one new test confirming every decision now carries
-  a non-empty reason, matching the equivalent four-player test.
+- Loose cards shown compactly with suit symbols (e.g. K\u2666, 4\u2663)
+- Each pile shown as its value plus who owns it: "Pile-13 (...)"
+- Empty floor shown as "Floor: empty"
 
-## Also carried forward automatically
-Since `onModify()` in the new two-player component uses the same
-generalized cementing check as the four-player one (`addedValue %
-house.captureValue === 0`), the multi-card cementing fix from the previous
-patch works correctly here too — no separate fix needed, it's just how the
-new file was written from the start.
+**Four-player**: pile ownership is framed as "Human team" (you + your
+partner, i.e. Team A) or "AI team" (both opponents, Team B), or "Shared"
+for a cemented pile with owners split across both teams.
+
+**Two-player**: pile ownership is framed as "Yours" / "Opponent's" /
+"Shared" (a house can end up with both of you as owners too, via
+cementing an opponent's pile).
+
+## Implementation
+- `reveal()` in both components now takes the resulting floor state
+  alongside the move snapshot, and builds the summary text via a new
+  `describeFloor()` helper (plus `pileOwnerLabel()` and `shortCard()`).
+- `LogEntry` gained a `floorSummary: string` field; the template renders
+  it as a smaller, muted line under each log entry's main text.
+- All five places each component calls `reveal()` (human bid, computer
+  bid, computer opening move, computer normal move, and every human
+  action via `runPlayerAction`) were updated to pass the post-move floor.
 
 ## How to apply
-Copy these four files into your repo at the paths shown, then:
+Copy these four files into your repo at the paths shown (both are full-file
+replacements, carrying forward every previous fix to each component —
+sweep-bonus feedback, the cementing-label fix, and for two-player, the
+entire move-reveal port from last time), then:
 
-    npm test
-    npm run lint
     npm run build
+    npm run lint
+
+No engine files changed in this patch — purely UI/display.
 
 ## Verified here
-92/92 tests passing (1 new), full `tsc` type-check clean on the engine
-side. Same caveat as every UI-touching patch: I don't have the full
-Angular workspace in this sandbox, so `two-player.component.ts/.html`
-couldn't be run through `ng build` directly — reviewed carefully by hand,
-but `npm run build` on your end is the real confirmation.
+As with every UI-only patch: no full Angular workspace in this sandbox, so
+`ng build` couldn't be run directly against these files. Reviewed by hand
+for consistency (all `reveal()` call sites updated, all new helper
+references resolve), but `npm run build` on your end is the real
+confirmation this time.

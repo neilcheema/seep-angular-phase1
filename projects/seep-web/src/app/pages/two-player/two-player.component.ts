@@ -5,6 +5,8 @@ import {
   type Card as CardModel,
   cardEquals,
   cardLabel,
+  faceLabel,
+  Suit,
   captureValue,
   isHouseValue,
   type PlayerId,
@@ -57,6 +59,14 @@ interface MoveReveal {
 interface LogEntry {
   readonly who: PlayerId
   readonly text: string
+  readonly floorSummary: string
+}
+
+const SUIT_SYMBOL: Record<Suit, string> = {
+  [Suit.Spades]: '\u2660',
+  [Suit.Hearts]: '\u2665',
+  [Suit.Clubs]: '\u2663',
+  [Suit.Diamonds]: '\u2666',
 }
 
 /**
@@ -177,7 +187,7 @@ export class TwoPlayerComponent {
             this.reveal({
               who: 'opponent', kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0,
               reason: 'chose the lowest value it could support from its hand',
-            })
+            }, next.floor)
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -192,7 +202,7 @@ export class TwoPlayerComponent {
             const action = chooseComputerOpeningMove(cur)
             const before = cur
             const next = this.applyAction(cur, action)
-            this.reveal(this.snapshotAction(before, next, action))
+            this.reveal(this.snapshotAction(before, next, action), next.floor)
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -207,7 +217,7 @@ export class TwoPlayerComponent {
             const action = chooseComputerMove(cur)
             const before = cur
             const next = this.applyAction(cur, action)
-            this.reveal(this.snapshotAction(before, next, action))
+            this.reveal(this.snapshotAction(before, next, action), next.floor)
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -246,7 +256,7 @@ export class TwoPlayerComponent {
     try {
       const next = placeBid(s, 'player', value)
       this.state.set(next)
-      this.reveal({ who: 'player', kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0 })
+      this.reveal({ who: 'player', kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0 }, next.floor)
       this.message.set(null)
     } catch (err) {
       this.message.set(err instanceof Error ? err.message : 'Invalid move.')
@@ -374,9 +384,32 @@ export class TwoPlayerComponent {
     }
   }
 
-  private reveal(snapshot: MoveReveal): void {
+  private reveal(snapshot: MoveReveal, floor: FloorItem[]): void {
     this.pendingReveal.set(snapshot)
-    this.log.update((list) => [...list, { who: snapshot.who, text: this.revealToLogText(snapshot) }])
+    this.log.update((list) => [
+      ...list,
+      { who: snapshot.who, text: this.revealToLogText(snapshot), floorSummary: this.describeFloor(floor) },
+    ])
+  }
+
+  /** Renders the current floor as compact text for the move log: loose cards, then piles with value + owner. */
+  private describeFloor(floor: FloorItem[]): string {
+    if (floor.length === 0) return 'Floor: empty'
+    const parts = floor.map((item) =>
+      isHouse(item) ? `Pile-${item.captureValue} (${this.pileOwnerLabel(item.owners)})` : this.shortCard(item.card),
+    )
+    return `Floor: ${parts.join(', ')}`
+  }
+
+  private pileOwnerLabel(owners: PlayerId[]): string {
+    const hasPlayer = owners.includes('player')
+    const hasOpponent = owners.includes('opponent')
+    if (hasPlayer && hasOpponent) return 'Shared'
+    return hasPlayer ? 'Yours' : "Opponent's"
+  }
+
+  private shortCard(c: CardModel): string {
+    return `${faceLabel(c.face)}${SUIT_SYMBOL[c.suit]}`
   }
 
   private revealToLogText(r: MoveReveal): string {
@@ -404,7 +437,7 @@ export class TwoPlayerComponent {
     try {
       const next = fn()
       this.state.set(next)
-      this.reveal(buildSnapshot(next))
+      this.reveal(buildSnapshot(next), next.floor)
       this.clearSelection()
       this.message.set(null)
     } catch (err) {
