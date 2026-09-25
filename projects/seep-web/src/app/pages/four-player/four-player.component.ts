@@ -8,6 +8,7 @@ import {
   captureValue,
   isHouseValue,
   SeatId,
+  teamOf,
   type FourPlayerGameState,
   dealNextFourPlayerHand,
   legalFourPlayerBids,
@@ -50,6 +51,8 @@ interface MoveReveal {
   readonly playedCard: CardModel | null
   readonly targetCards: CardModel[]
   readonly reason?: string
+  /** Sweep bonus this move earned, if any — 0 when it didn't sweep. */
+  readonly sweepBonus: number
 }
 
 interface LogEntry {
@@ -65,9 +68,13 @@ const SEAT_TAG: Record<SeatId, string> = {
  * The four-player team game page. Every move — the human's own included —
  * pauses on a MoveReveal overlay (the card played, whatever it interacted
  * with on the floor, and why for computer moves) until "Next" is clicked.
- * This exists specifically so the whole game can be stepped through and
- * visually verified move by move, which is the actual QA ask this was
- * built for — not just a UX nicety.
+ *
+ * Sweep bonuses are explicitly surfaced on every capture, human or
+ * computer — previously only the AI's own reasoning text ever mentioned a
+ * sweep, so the human player's own captures gave zero indication whether
+ * a sweep bonus was earned even when one was. Fixed by comparing
+ * sweepPoints for the acting seat's team before and after the move, for
+ * both the human capture handler and the computer capture snapshot.
  */
 @Component({
   selector: 'app-four-player',
@@ -165,9 +172,6 @@ export class FourPlayerComponent {
       if (params.has('new')) this.startNewGame()
     })
 
-    // Computer automation. Reads pendingReveal() as well as state() so that
-    // dismissing a reveal (which doesn't itself change `state`) re-triggers
-    // this effect and lets the next computer move get scheduled.
     effect((onCleanup) => {
       const s = this.state()
       const paused = this.pendingReveal()
@@ -182,7 +186,7 @@ export class FourPlayerComponent {
             const value = chooseFourPlayerBid(cur)
             const next = placeFourPlayerBid(cur, seat, value)
             this.reveal({
-              seat, kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [],
+              seat, kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0,
               reason: 'chose the lowest value they could support from their hand',
             })
             return next
@@ -197,9 +201,9 @@ export class FourPlayerComponent {
           this.state.update((cur) => {
             if (!cur) return cur
             const action = chooseFourPlayerOpeningMove(cur)
-            const snapshot = this.snapshotAction(cur, seat, action)
+            const before = cur
             const next = this.applyAction(cur, seat, action)
-            this.reveal(snapshot)
+            this.reveal(this.snapshotAction(before, next, seat, action))
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -212,9 +216,9 @@ export class FourPlayerComponent {
           this.state.update((cur) => {
             if (!cur) return cur
             const action = chooseFourPlayerMove(cur)
-            const snapshot = this.snapshotAction(cur, seat, action)
+            const before = cur
             const next = this.applyAction(cur, seat, action)
-            this.reveal(snapshot)
+            this.reveal(this.snapshotAction(before, next, seat, action))
             return next
           })
         }, COMPUTER_THINK_MS)
@@ -243,7 +247,6 @@ export class FourPlayerComponent {
     return SEAT_TAG[seat]
   }
 
-  /** Dismisses the current move reveal — the only way play advances past a paused move. */
   dismissReveal(): void {
     this.pendingReveal.set(null)
   }
@@ -254,7 +257,7 @@ export class FourPlayerComponent {
     try {
       const next = placeFourPlayerBid(s, SeatId.P1, value)
       this.state.set(next)
-      this.reveal({ seat: SeatId.P1, kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [] })
+      this.reveal({ seat: SeatId.P1, kind: 'bid', label: `Bid ${value}`, playedCard: null, targetCards: [], sweepBonus: 0 })
       this.message.set(null)
     } catch (err) {
       this.message.set(err instanceof Error ? err.message : 'Invalid move.')
@@ -279,10 +282,18 @@ export class FourPlayerComponent {
     const c = this.selectedCard()
     if (!s || !c) return
     const targetItemIds = this.selectedFloorIds()
-    this.runPlayerAction(
-      () => playFourPlayerCapture(s, SeatId.P1, c, targetItemIds),
-      { seat: SeatId.P1, kind: 'capture', label: 'Capturing', playedCard: c, targetCards: allCardsOf(s.floor, targetItemIds) },
-    )
+    const targetCards = allCardsOf(s.floor, targetItemIds)
+    this.runPlayerAction(() => playFourPlayerCapture(s, SeatId.P1, c, targetItemIds), (next) => {
+      const sweepBonus = next.sweepPoints[teamOf(SeatId.P1)] - s.sweepPoints[teamOf(SeatId.P1)]
+      return {
+        seat: SeatId.P1,
+        kind: 'capture',
+        label: 'Capturing',
+        playedCard: c,
+        targetCards,
+        sweepBonus,
+      }
+    })
   }
 
   onBuild(): void {
@@ -291,10 +302,10 @@ export class FourPlayerComponent {
     if (!s || !c) return
     const looseIds = this.selectedLoose().map((i) => i.id)
     const target = this.buildTargetValue()
-    this.runPlayerAction(
-      () => playFourPlayerBuildHouse(s, SeatId.P1, c, looseIds, target),
-      { seat: SeatId.P1, kind: 'build', label: `Building house of ${target}`, playedCard: c, targetCards: allCardsOf(s.floor, looseIds) },
-    )
+    this.runPlayerAction(() => playFourPlayerBuildHouse(s, SeatId.P1, c, looseIds, target), () => ({
+      seat: SeatId.P1, kind: 'build', label: `Building house of ${target}`, playedCard: c,
+      targetCards: allCardsOf(s.floor, looseIds), sweepBonus: 0,
+    }))
   }
 
   onModify(): void {
@@ -306,26 +317,23 @@ export class FourPlayerComponent {
     const looseIds = this.selectedLoose().map((i) => i.id)
     const isCement = looseIds.length === 0 && isHouse(house) && captureValue(c) === house.captureValue
     const houseCards = isHouse(house) ? house.cards : []
-    this.runPlayerAction(
-      () => playFourPlayerModifyHouse(s, SeatId.P1, c, house.id, looseIds),
-      {
-        seat: SeatId.P1,
-        kind: isCement ? 'cement' : 'break',
-        label: isCement ? 'Cementing house' : 'Breaking house',
-        playedCard: c,
-        targetCards: [...houseCards, ...allCardsOf(s.floor, looseIds)],
-      },
-    )
+    this.runPlayerAction(() => playFourPlayerModifyHouse(s, SeatId.P1, c, house.id, looseIds), () => ({
+      seat: SeatId.P1,
+      kind: isCement ? 'cement' : 'break',
+      label: isCement ? 'Cementing house' : 'Breaking house',
+      playedCard: c,
+      targetCards: [...houseCards, ...allCardsOf(s.floor, looseIds)],
+      sweepBonus: 0,
+    }))
   }
 
   onThrow(): void {
     const s = this.state()
     const c = this.selectedCard()
     if (!s || !c) return
-    this.runPlayerAction(
-      () => playFourPlayerThrow(s, SeatId.P1, c),
-      { seat: SeatId.P1, kind: 'throw', label: 'Throwing', playedCard: c, targetCards: [] },
-    )
+    this.runPlayerAction(() => playFourPlayerThrow(s, SeatId.P1, c), () => (
+      { seat: SeatId.P1, kind: 'throw', label: 'Throwing', playedCard: c, targetCards: [], sweepBonus: 0 }
+    ))
   }
 
   onDealNext(): void {
@@ -354,32 +362,50 @@ export class FourPlayerComponent {
     return playFourPlayerThrow(state, seat, action.card)
   }
 
-  /** Builds a MoveReveal snapshot from a computer action, using the *pre-move* state (so captured/combined cards are still findable on the floor). */
-  private snapshotAction(state: FourPlayerGameState, seat: SeatId, action: ComputerPlayAction4P): MoveReveal {
+  /**
+   * Builds a MoveReveal snapshot from a computer action. `before` is the
+   * pre-move state (captured/combined cards are already gone from the
+   * floor by the time the move resolves, so target cards have to be read
+   * from there); `after` is the resulting state, used only to compute the
+   * sweep bonus actually awarded (the AI's own `reason` text already says
+   * "for a sweep bonus" when it *intended* one, but computing it from real
+   * state here — rather than trusting the reason string — is what makes
+   * this reliable even if the AI's own sweep detection ever drifts from
+   * the engine's).
+   */
+  private snapshotAction(
+    before: FourPlayerGameState, after: FourPlayerGameState, seat: SeatId, action: ComputerPlayAction4P,
+  ): MoveReveal {
+    const sweepBonus = after.sweepPoints[teamOf(seat)] - before.sweepPoints[teamOf(seat)]
+
     if (action.type === 'capture') {
       return {
-        seat, kind: 'capture', label: 'Capturing', playedCard: action.card,
-        targetCards: allCardsOf(state.floor, action.targetItemIds), reason: action.reason,
+        seat, kind: 'capture',
+        label: 'Capturing',
+        playedCard: action.card,
+        targetCards: allCardsOf(before.floor, action.targetItemIds),
+        reason: action.reason,
+        sweepBonus,
       }
     }
     if (action.type === 'build') {
       return {
         seat, kind: 'build', label: `Building house of ${action.targetValue}`, playedCard: action.card,
-        targetCards: allCardsOf(state.floor, action.looseItemIds), reason: action.reason,
+        targetCards: allCardsOf(before.floor, action.looseItemIds), reason: action.reason, sweepBonus: 0,
       }
     }
     if (action.type === 'modify') {
-      const house = findItem(state.floor, action.houseId)
+      const house = findItem(before.floor, action.houseId)
       const houseCards = house && isHouse(house) ? house.cards : []
       const isCement =
         action.extraLooseItemIds.length === 0 && house && isHouse(house) && captureValue(action.card) === house.captureValue
       return {
         seat, kind: isCement ? 'cement' : 'break', label: isCement ? 'Cementing house' : 'Breaking house',
-        playedCard: action.card, targetCards: [...houseCards, ...allCardsOf(state.floor, action.extraLooseItemIds)],
-        reason: action.reason,
+        playedCard: action.card, targetCards: [...houseCards, ...allCardsOf(before.floor, action.extraLooseItemIds)],
+        reason: action.reason, sweepBonus: 0,
       }
     }
-    return { seat, kind: 'throw', label: 'Throwing', playedCard: action.card, targetCards: [], reason: action.reason }
+    return { seat, kind: 'throw', label: 'Throwing', playedCard: action.card, targetCards: [], reason: action.reason, sweepBonus: 0 }
   }
 
   private reveal(snapshot: MoveReveal): void {
@@ -392,7 +418,10 @@ export class FourPlayerComponent {
     const cardTxt = r.playedCard ? cardLabel(r.playedCard) : ''
     let base: string
     switch (r.kind) {
-      case 'capture': base = `${framing} played ${cardTxt} and captured ${r.targetCards.length} card(s).`; break
+      case 'capture':
+        base = `${framing} played ${cardTxt} and captured ${r.targetCards.length} card(s).`
+        if (r.sweepBonus > 0) base += ` Seep! +${r.sweepBonus} sweep bonus.`
+        break
       case 'build': base = `${framing} built a house using ${cardTxt} plus ${r.targetCards.length} floor card(s).`; break
       case 'cement': base = `${framing} cemented a house using ${cardTxt}.`; break
       case 'break': base = `${framing} broke a house using ${cardTxt}.`; break
@@ -402,11 +431,14 @@ export class FourPlayerComponent {
     return r.reason ? `${base} (${r.reason})` : base
   }
 
-  private runPlayerAction(fn: () => FourPlayerGameState, snapshot: MoveReveal): void {
+  private runPlayerAction(
+    fn: () => FourPlayerGameState,
+    buildSnapshot: (next: FourPlayerGameState) => MoveReveal,
+  ): void {
     try {
       const next = fn()
       this.state.set(next)
-      this.reveal(snapshot)
+      this.reveal(buildSnapshot(next))
       this.clearSelection()
       this.message.set(null)
     } catch (err) {

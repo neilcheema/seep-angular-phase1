@@ -114,6 +114,8 @@
       <ul style="list-style: disc; padding-left: 18px; margin-top: 6px; line-height: 1.6;">
         <li>You (Player 1) and Player 3 are partners (Team A) against Players 2 and 4 (Team B).</li>
         <li>Captured cards are pooled by team, not by seat — your partner's captures count toward your score.</li>
+        <li>A house can only ever be captured on its own — never combined with other loose floor cards in the same move, even if the totals would add up.</li>
+        <li>A sweep bonus only applies when your move clears the *entire* floor, not just a house or a subset of loose cards.</li>
         <li>You can only found a new house for yourself, never on your partner's behalf.</li>
         <li>You can't break a house you already own — a teammate or opponent has to break it instead.</li>
         <li>Adding a matching card to your partner's house is free — no reserve card needed. Your own or an opponent's house still needs one.</li>
@@ -129,6 +131,12 @@
     <div class="reveal-card">
       <div class="reveal-seat">{{ seatTag(r.seat) }}</div>
       <div class="reveal-label">{{ r.label }}</div>
+
+      @if (r.sweepBonus > 0) {
+        <div style="font-weight: 800; font-size: 19px; color: var(--gold-lt); margin: 2px 0 8px; letter-spacing: 0.02em;">
+          Seep! +{{ r.sweepBonus }}
+        </div>
+      }
 
       @if (r.playedCard; as pc) {
         <div class="reveal-section">
