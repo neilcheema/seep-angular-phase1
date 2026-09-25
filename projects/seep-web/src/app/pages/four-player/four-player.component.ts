@@ -315,8 +315,14 @@ export class FourPlayerComponent {
     if (!s || !c || houses.length !== 1) return
     const house = houses[0]!
     const looseIds = this.selectedLoose().map((i) => i.id)
-    const isCement = looseIds.length === 0 && isHouse(house) && captureValue(c) === house.captureValue
     const houseCards = isHouse(house) ? house.cards : []
+    // Cementing isn't limited to a bare single-card exact match anymore — any
+    // combination (card + loose cards) whose sum is a positive multiple of
+    // the house's value cements it. Mirrors the same check the engine itself
+    // uses in playFourPlayerModifyHouse, so the label shown here (and the
+    // reveal overlay it drives) always matches what actually happens.
+    const addedValue = captureValue(c) + this.looseSum()
+    const isCement = isHouse(house) && addedValue % house.captureValue === 0
     this.runPlayerAction(() => playFourPlayerModifyHouse(s, SeatId.P1, c, house.id, looseIds), () => ({
       seat: SeatId.P1,
       kind: isCement ? 'cement' : 'break',

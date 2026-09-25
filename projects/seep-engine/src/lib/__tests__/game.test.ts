@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { Face, Suit, captureValue, pointValue } from '../card'
+import { Face, Suit, captureValue, pointValue } from '../card.ts'
 import {
   type GameState,
   dealHand, placeBid, playBuildHouse, playCapture, playModifyHouse, playThrow,
-} from '../gameEngine'
-import { isHouse } from '../floor'
+} from '../gameEngine.ts'
+import { isHouse } from '../floor.ts'
 
 function card(face: Face, suit: Suit) {
   return { face, suit }
 }
 
-/** Builds a minimal, fully-controlled state for testing individual moves. */
 function makeState(overrides: Partial<GameState> = {}): GameState {
   const base: GameState = {
     floor: [],
@@ -211,6 +210,48 @@ describe('playModifyHouse', () => {
     expect(house.cards).toHaveLength(2)
   })
 
+  it('cements via a card + loose-card combination summing to exactly the house value (1x)', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'house', id: 'h1', cards: [card(Face.King, Suit.Hearts)], captureValue: 13, cemented: false, owners: ['opponent'] },
+        { kind: 'loose', id: 'f1', card: card(Face.Jack, Suit.Hearts) },
+      ],
+      hands: { player: [card(Face.Two, Suit.Hearts), card(Face.King, Suit.Clubs)], opponent: [card(Face.Four, Suit.Clubs)] },
+    })
+    const next = playModifyHouse(state, 'player', card(Face.Two, Suit.Hearts), 'h1', ['f1'])
+    const house = next.floor.find(isHouse)!
+    expect(house.captureValue).toBe(13)
+    expect(house.cemented).toBe(true)
+    expect(house.cards).toHaveLength(3)
+  })
+
+  it('cements via a combination summing to a full multiple (2x) of the house value', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'house', id: 'h1', cards: [card(Face.Nine, Suit.Hearts)], captureValue: 9, cemented: false, owners: ['opponent'] },
+        { kind: 'loose', id: 'f1', card: card(Face.Six, Suit.Diamonds) },
+        { kind: 'loose', id: 'f2', card: card(Face.Three, Suit.Diamonds) },
+      ],
+      hands: { player: [card(Face.Nine, Suit.Clubs), card(Face.Nine, Suit.Spades)], opponent: [card(Face.Four, Suit.Clubs)] },
+    })
+    const next = playModifyHouse(state, 'player', card(Face.Nine, Suit.Clubs), 'h1', ['f1', 'f2'])
+    const house = next.floor.find(isHouse)!
+    expect(house.captureValue).toBe(9)
+    expect(house.cemented).toBe(true)
+    expect(house.cards).toHaveLength(4)
+  })
+
+  it('a combination that is NOT a multiple of the house value still falls through to breaking it', () => {
+    const state = makeState({
+      floor: [{ kind: 'house', id: 'h1', cards: [card(Face.Nine, Suit.Hearts)], captureValue: 9, cemented: false, owners: ['opponent'] }],
+      hands: { player: [card(Face.Three, Suit.Clubs), card(Face.Queen, Suit.Spades)], opponent: [card(Face.Four, Suit.Clubs)] },
+    })
+    const next = playModifyHouse(state, 'player', card(Face.Three, Suit.Clubs), 'h1')
+    const house = next.floor.find(isHouse)!
+    expect(house.captureValue).toBe(12)
+    expect(house.cemented).toBe(false)
+  })
+
   it('breaks an uncemented house up to a new value the player can still capture', () => {
     const state = makeState({
       floor: [{ kind: 'house', id: 'h1', cards: [card(Face.Nine, Suit.Hearts)], captureValue: 9, cemented: false, owners: ['opponent'] }],
@@ -262,7 +303,6 @@ describe('hand-over scoring', () => {
       cardsPlayedThisHand: 47,
       totalPlayableThisHand: 48,
     })
-    // Player throws their last card; opponent's hand is already empty, so the hand ends.
     const next = playThrow(state, 'player', card(Face.Two, Suit.Clubs))
     expect(next.phase).toBe('hand-over')
     expect(next.lastHandTotals!.player.qualifyingCardPoints).toBe(0)
