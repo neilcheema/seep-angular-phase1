@@ -6,9 +6,9 @@ import { hasCaptureValue } from './hand'
 import { type GameState, legalBids } from './gameEngine'
 
 export type ComputerPlayAction =
-  | { type: 'capture'; card: Card; targetItemIds: string[] }
-  | { type: 'build'; card: Card; looseItemIds: string[]; targetValue: number }
-  | { type: 'throw'; card: Card }
+  | { type: 'capture'; card: Card; targetItemIds: string[]; reason: string }
+  | { type: 'build'; card: Card; looseItemIds: string[]; targetValue: number; reason: string }
+  | { type: 'throw'; card: Card; reason: string }
 
 /** Picks the lowest legal bid — a simple, low-risk default. */
 export function chooseComputerBid(state: GameState): number {
@@ -114,7 +114,12 @@ export function chooseComputerOpeningMove(state: GameState): ComputerPlayAction 
   const bidCard = hand.find(c => captureValue(c) === bidValue)!
 
   const targets = findCaptureCombination(state.floor, bidCard)
-  if (targets) return { type: 'capture', card: bidCard, targetItemIds: targets }
+  if (targets) {
+    return {
+      type: 'capture', card: bidCard, targetItemIds: targets,
+      reason: 'captured with the bid card to open the hand',
+    }
+  }
 
   const remainingAfterBid = hand.filter(c => c !== bidCard)
   const loose = state.floor.filter(isLoose)
@@ -124,10 +129,18 @@ export function chooseComputerOpeningMove(state: GameState): ComputerPlayAction 
     const need = bidValue - captureValue(c)
     if (need === 0) continue
     const combo = subsetSummingTo(loose.map(l => ({ id: l.id, v: captureValue(l.card) })), need)
-    if (combo) return { type: 'build', card: c, looseItemIds: combo, targetValue: bidValue }
+    if (combo) {
+      return {
+        type: 'build', card: c, looseItemIds: combo, targetValue: bidValue,
+        reason: `built a house of ${bidValue} to open, keeping the bid card in reserve to capture it later`,
+      }
+    }
   }
 
-  return { type: 'throw', card: bidCard }
+  return {
+    type: 'throw', card: bidCard,
+    reason: 'had no capture or house available for the bid, so threw the bid card down',
+  }
 }
 
 /**
@@ -167,12 +180,20 @@ export function chooseComputerMove(state: GameState): ComputerPlayAction {
     }
   }
   if (bestCapture) {
-    return { type: 'capture', card: bestCapture.card, targetItemIds: bestCapture.targetItemIds }
+    return {
+      type: 'capture', card: bestCapture.card, targetItemIds: bestCapture.targetItemIds,
+      reason: bestCapture.sweeps
+        ? 'captured every card on the floor for a sweep bonus'
+        : 'captured the largest available combination on the floor',
+    }
   }
 
   const build = findBuildOption(state.floor, myHand)
   if (build) {
-    return { type: 'build', card: build.card, looseItemIds: build.looseItemIds, targetValue: build.targetValue }
+    return {
+      type: 'build', card: build.card, looseItemIds: build.looseItemIds, targetValue: build.targetValue,
+      reason: `built a house of ${build.targetValue}, keeping a reserve card to capture it later`,
+    }
   }
 
   // No capture or house build available — throw the safest card.
@@ -190,7 +211,13 @@ export function chooseComputerMove(state: GameState): ComputerPlayAction {
       safestScore = score
     }
   }
-  return { type: 'throw', card: safest }
+  return {
+    type: 'throw', card: safest,
+    reason:
+      safestScore === 0
+        ? 'threw down a card that gives you no capture at all'
+        : 'threw down the card that opens the fewest capture opportunities for you',
+  }
 }
 
 function findItemSafe(floor: FloorItem[], id: string): FloorItem {

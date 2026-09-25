@@ -93,6 +93,15 @@ describe('chooseComputerMove', () => {
     expect(action.type).toBe('throw')
   })
 
+  it('always carries a non-empty reason for narration, whatever the decision', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.King, Suit.Diamonds) }],
+      hands: { opponent: [card(Face.Two, Suit.Spades)], player: [] },
+    })
+    const action = chooseComputerMove(state)
+    expect(action.reason.length).toBeGreaterThan(0)
+  })
+
   it('breaks a tie between equally-safe cards by scoring point value, not capture value', () => {
     // Both cards open zero capture opportunities for the opponent (floor has
     // nothing they could combine with either), so the tie-break decides.
