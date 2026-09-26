@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { captureValue, isHouseValue } from '../card'
+import { captureValue, isHouseValue } from '../card.ts'
 import {
-  type GameState, dealNextHand, legalBids, placeBid,
-  playBuildHouse, playCapture, playModifyHouse, playThrow,
-} from '../gameEngine'
-import { findHouseByValue, hasAnyLegalCapture, isHouse, isLoose } from '../floor'
-import { hasCaptureValue, removeCard } from '../hand'
-import { startMatch } from '../gameEngine'
-import type { PlayerId } from '../player'
+  type GameState, dealNextHand, legalBids,
+  placeBid, playBuildHouse, playCapture, playModifyHouse, playThrow,
+} from '../gameEngine.ts'
+import { findHouseByValue, findMaximalExactGroups, hasAnyLegalCapture, isHouse, isLoose } from '../floor.ts'
+import { hasCaptureValue, removeCard } from '../hand.ts'
+import { startMatch } from '../gameEngine.ts'
+import type { PlayerId } from '../player.ts'
 
 function rand<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!
@@ -32,7 +32,6 @@ function subsetsSummingTo<T extends { id: string }>(
   return results
 }
 
-/** Plays one legal move for `playerId` chosen uniformly at random among all legal moves found. */
 function playRandomMove(state: GameState, playerId: PlayerId): GameState {
   if (state.phase === 'bidding') {
     return placeBid(state, playerId, rand(legalBids(state)))
@@ -46,15 +45,14 @@ function playRandomMove(state: GameState, playerId: PlayerId): GameState {
   const options: Option[] = []
 
   for (const card of candidates) {
-    // Capture options: single house, or subsets of loose cards.
     const house = findHouseByValue(state.floor, captureValue(card))
     if (house) options.push(() => playCapture(state, playerId, card, [house.id]))
     const loose = state.floor.filter(isLoose)
-    for (const combo of subsetsSummingTo(loose, captureValue(card), i => captureValue(i.card))) {
-      options.push(() => playCapture(state, playerId, card, combo.map(i => i.id)))
+    const maxGroups = findMaximalExactGroups(state.floor, captureValue(card))
+    if (maxGroups.length > 0) {
+      options.push(() => playCapture(state, playerId, card, maxGroups.flat()))
     }
 
-    // Build options: subsets of loose cards + card summing to a free house value.
     for (let target = 9; target <= 13; target++) {
       if (isOpening && target !== state.bidValue) continue
       if (findHouseByValue(state.floor, target)) continue
@@ -74,7 +72,6 @@ function playRandomMove(state: GameState, playerId: PlayerId): GameState {
     }
 
     if (!isOpening) {
-      // Modify-house options: cement or break each house on the floor.
       for (const item of state.floor.filter(isHouse)) {
         if (captureValue(card) === item.captureValue) {
           if (hasCaptureValue(removeCard(hand, card), item.captureValue)) {
@@ -89,7 +86,6 @@ function playRandomMove(state: GameState, playerId: PlayerId): GameState {
       }
     }
 
-    // Throw option.
     if (isOpening || !hasAnyLegalCapture(state.floor, card)) {
       options.push(() => playThrow(state, playerId, card))
     }

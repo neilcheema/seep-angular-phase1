@@ -1,6 +1,6 @@
 import { type Card, MAX_HOUSE_VALUE, MIN_HOUSE_VALUE, captureValue, isHouseValue, pointValue } from './card'
 import {
-  type FloorItem, findHouseByValue, hasAnyLegalCapture, isLoose, itemValue,
+  type FloorItem, findHouseByValue, findMaximalExactGroups, hasAnyLegalCapture, isLoose, itemValue,
 } from './floor'
 import { hasCaptureValue } from './hand'
 import { type GameState, legalBids } from './gameEngine'
@@ -22,26 +22,19 @@ export function chooseComputerBid(state: GameState): number {
  * Prefers an existing house of matching value; otherwise looks for the
  * smallest set of loose cards that sum to the target.
  */
+/**
+ * Finds what a card captures: a matching house alone, or every disjoint
+ * loose-card group summing to the card's value, combined into one
+ * capture — not just one such group (spec §15.5's cementing
+ * generalization mirrored onto capturing).
+ */
 function findCaptureCombination(floor: FloorItem[], card: Card): string[] | null {
   const target = captureValue(card)
   const house = findHouseByValue(floor, target)
   if (house) return [house.id]
 
-  const loose = floor.filter(isLoose)
-  const n = loose.length
-  let best: string[] | null = null
-  for (let mask = 1; mask < 1 << n; mask++) {
-    let sum = 0
-    const ids: string[] = []
-    for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) {
-        sum += captureValue(loose[i]!.card)
-        ids.push(loose[i]!.id)
-      }
-    }
-    if (sum === target && (!best || ids.length < best.length)) best = ids
-  }
-  return best
+  const groups = findMaximalExactGroups(floor, target)
+  return groups.length > 0 ? groups.flat() : null
 }
 
 function subsetSummingTo(items: { id: string; v: number }[], target: number): string[] | null {

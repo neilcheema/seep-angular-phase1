@@ -3,8 +3,8 @@ import { createDeck, dealFourPlayerHands, shuffleDeck } from './deck'
 import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, teamOf } from './seats'
 import {
   type FloorItem, type House,
-  allCardsOf, findHouseByValue, findItem, hasAnyLegalCapture,
-  isHouse, isLoose, itemValue, removeItems, sumValues,
+  allCardsOf, canDecomposeIntoExactGroups, findHouseByValue, findItem, findMaximalExactGroups,
+  hasAnyLegalCapture, isHouse, isLoose, itemValue, removeItems, sumValues,
 } from './floor'
 import { hasCard, hasCaptureValue, removeCard } from './hand'
 import {
@@ -228,13 +228,37 @@ export function playFourPlayerCapture(
   }
   if (targetItemIds.length === 0) throw new Error('Select at least one card or house to capture.')
 
-  const sum = sumValues(state.floor, targetItemIds)
-  if (sum !== captureValue(card)) {
-    throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${captureValue(card)}.`)
-  }
   const containsHouse = targetItemIds.some((id) => isHouse(findItem(state.floor, id)!))
   if (containsHouse && targetItemIds.length > 1) {
     throw new Error('A house can only be captured on its own, as a single unit.')
+  }
+
+  const sum = sumValues(state.floor, targetItemIds)
+  const target = captureValue(card)
+
+  if (!containsHouse) {
+    // A capture must take every matching group of loose cards at once, not
+    // just one — the same way a cemented house holding multiple sets of
+    // its value is captured as a single unit regardless of how many sets
+    // it contains (spec §15.5's cementing generalization, mirrored here).
+    const maxGroups = findMaximalExactGroups(state.floor, target)
+    const maxK = maxGroups.length
+    if (maxK > 0) {
+      const requiredSum = maxK * target
+      if (sum !== requiredSum) {
+        throw new Error(
+          `A combined capture of ${requiredSum} is available on the floor — you must capture ` +
+            `every matching group of ${target} together, not just one.`,
+        )
+      }
+      if (!canDecomposeIntoExactGroups(state.floor, targetItemIds, target, maxK)) {
+        throw new Error(`Selected cards don't cleanly split into ${maxK} group(s) of ${target} each.`)
+      }
+    } else if (sum !== target) {
+      throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
+    }
+  } else if (sum !== target) {
+    throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
   }
 
   const newHand = takeCard(state, seat, card)
