@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { captureValue, isHouseValue, type Card } from '../card'
-import { hasCaptureValue, removeCard } from '../hand'
-import { findHouseByValue, isHouse, isLoose, type House } from '../floor'
-import { ALL_SEATS, SeatId, areTeammates, type SeatId as SeatIdType } from '../seats'
+import { captureValue, isHouseValue, type Card } from '../card.ts'
+import { hasCaptureValue, removeCard } from '../hand.ts'
+import { findHouseByValue, findMaximalExactGroups, isHouse, isLoose, type House } from '../floor.ts'
+import { ALL_SEATS, SeatId, areTeammates, type SeatId as SeatIdType } from '../seats.ts'
 import {
   type FourPlayerGameState,
   dealNextFourPlayerHand,
@@ -13,7 +13,7 @@ import {
   playFourPlayerModifyHouse,
   playFourPlayerThrow,
   startFourPlayerMatch,
-} from '../fourPlayerEngine'
+} from '../fourPlayerEngine.ts'
 
 function rand<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!
@@ -38,7 +38,6 @@ function subsetsSummingTo<T extends { id: string }>(
   return results
 }
 
-/** Plays one legal move for the seat whose turn it is, chosen uniformly at random among all found. */
 function playRandomMove(state: FourPlayerGameState): FourPlayerGameState {
   if (state.phase === 'bidding') {
     return placeFourPlayerBid(state, state.turn, rand(legalFourPlayerBids(state)))
@@ -53,15 +52,14 @@ function playRandomMove(state: FourPlayerGameState): FourPlayerGameState {
   const options: Option[] = []
 
   for (const card of candidates) {
-    // Capture: a matching house, or any subset of loose cards summing to the card's value.
     const house = findHouseByValue(state.floor, captureValue(card))
     if (house) options.push(() => playFourPlayerCapture(state, seat, card, [house.id]))
     const loose = state.floor.filter(isLoose)
-    for (const combo of subsetsSummingTo(loose, captureValue(card), (i) => captureValue(i.card))) {
-      options.push(() => playFourPlayerCapture(state, seat, card, combo.map((i) => i.id)))
+    const maxGroups = findMaximalExactGroups(state.floor, captureValue(card))
+    if (maxGroups.length > 0) {
+      options.push(() => playFourPlayerCapture(state, seat, card, maxGroups.flat()))
     }
 
-    // Build: subsets of loose cards + card summing to a free house value.
     for (let target = 9; target <= 13; target++) {
       if (isOpening && target !== state.bidValue) continue
       if (findHouseByValue(state.floor, target)) continue
@@ -80,7 +78,6 @@ function playRandomMove(state: FourPlayerGameState): FourPlayerGameState {
       }
     }
 
-    // Cement / break existing houses — exercises the §8.5 team-ownership rules directly.
     if (!isOpening) {
       for (const item of state.floor.filter(isHouse)) {
         const h = item as House<SeatIdType>
@@ -98,7 +95,6 @@ function playRandomMove(state: FourPlayerGameState): FourPlayerGameState {
       }
     }
 
-    // Throw.
     if (isOpening || !hasAnyLegalCaptureForCard(state, card)) {
       options.push(() => playFourPlayerThrow(state, seat, card))
     }

@@ -293,6 +293,93 @@ describe('cementing accepts any combination summing to a multiple of the house v
   })
 })
 
+describe('a capture must take every matching group at once, not just one', () => {
+  it('reproduces the exact reported scenario: a 10 must capture 2+8 AND the loose 10 together', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Two, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.Eight, Suit.Clubs) },
+        { kind: 'loose', id: 'f3', card: card(Face.Ten, Suit.Hearts) },
+      ],
+      hands: { p1: [card(Face.Ten, Suit.Diamonds)], p2: [card(Face.Four, Suit.Clubs)], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    const next = playFourPlayerCapture(state, SeatId.P1, card(Face.Ten, Suit.Diamonds), ['f1', 'f2', 'f3'])
+    expect(next.floor).toHaveLength(0)
+    expect(next.captures.teamA).toHaveLength(4) // 2, 8, 10, plus the played 10
+  })
+
+  it('rejects capturing just the single loose Ten when the combined 2+8 group is also available', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Two, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.Eight, Suit.Clubs) },
+        { kind: 'loose', id: 'f3', card: card(Face.Ten, Suit.Hearts) },
+      ],
+      hands: { p1: [card(Face.Ten, Suit.Diamonds)], p2: [card(Face.Four, Suit.Clubs)], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    expect(() => playFourPlayerCapture(state, SeatId.P1, card(Face.Ten, Suit.Diamonds), ['f3'])).toThrow()
+  })
+
+  it('rejects capturing just the 2+8 pair when the loose Ten is also available separately', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Two, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.Eight, Suit.Clubs) },
+        { kind: 'loose', id: 'f3', card: card(Face.Ten, Suit.Hearts) },
+      ],
+      hands: { p1: [card(Face.Ten, Suit.Diamonds)], p2: [card(Face.Four, Suit.Clubs)], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    expect(() => playFourPlayerCapture(state, SeatId.P1, card(Face.Ten, Suit.Diamonds), ['f1', 'f2'])).toThrow()
+  })
+
+  it('still allows an ordinary single-group capture when no second group exists', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Seven, Suit.Diamonds) }],
+      hands: { p1: [card(Face.Seven, Suit.Clubs)], p2: [card(Face.Four, Suit.Clubs)], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    const next = playFourPlayerCapture(state, SeatId.P1, card(Face.Seven, Suit.Clubs), ['f1'])
+    expect(next.floor).toHaveLength(0)
+  })
+
+  it('rejects a selection whose total happens to be a multiple but does not cleanly decompose', () => {
+    // 3 + 4 + 13 = 20 = 2x10, but no subset of these three sums to exactly
+    // 10 — there is no clean way to split this into two tens, so it must
+    // be rejected even though the raw total matches.
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Three, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.Four, Suit.Diamonds) },
+        { kind: 'loose', id: 'f3', card: card(Face.King, Suit.Hearts) },
+      ],
+      hands: { p1: [card(Face.Ten, Suit.Diamonds)], p2: [card(Face.Five, Suit.Clubs)], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    expect(() => playFourPlayerCapture(state, SeatId.P1, card(Face.Ten, Suit.Diamonds), ['f1', 'f2', 'f3'])).toThrow()
+  })
+
+  it('a house is still captured alone, unaffected by an unrelated matching loose group elsewhere', () => {
+    const state = makeState({
+      floor: [
+        house({ id: 'h1', owners: [SeatId.P2], captureValue: 10, cards: [card(Face.Ten, Suit.Spades)] }),
+        { kind: 'loose', id: 'f1', card: card(Face.Two, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.Eight, Suit.Diamonds) },
+      ],
+      hands: { p1: [card(Face.Ten, Suit.Diamonds)], p2: [card(Face.Four, Suit.Clubs)], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    // Capturing the house alone is still legal on its own, even though a
+    // second "ten" (2+8) also exists loose on the floor — houses are never
+    // combined with anything else.
+    const next = playFourPlayerCapture(state, SeatId.P1, card(Face.Ten, Suit.Diamonds), ['h1'])
+    const remaining = next.floor.filter((i) => i.kind === 'loose')
+    expect(remaining).toHaveLength(2) // the loose 2 and 8 are untouched
+  })
+})
+
 describe('mandatory capture applies per-seat regardless of team (spec §8.6)', () => {
   it('refuses to throw a card that could capture something', () => {
     const state = makeState({
