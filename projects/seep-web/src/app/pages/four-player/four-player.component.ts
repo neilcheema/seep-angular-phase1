@@ -1,6 +1,7 @@
 import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute } from '@angular/router'
+import { APP_VERSION } from '../../version'
 import {
   type Card as CardModel,
   cardEquals,
@@ -98,6 +99,8 @@ const SEAT_TAG: Record<SeatId, string> = {
 export class FourPlayerComponent {
   private readonly route = inject(ActivatedRoute)
   private readonly destroyRef = inject(DestroyRef)
+
+  readonly appVersion = APP_VERSION
 
   readonly state = signal<FourPlayerGameState | null>(null)
   readonly selectedCard = signal<CardModel | null>(null)
@@ -302,6 +305,7 @@ export class FourPlayerComponent {
     const header =
       `What I noticed:\n${description}\n\n` +
       `Game: 4 Player Seep\n` +
+      `Version: ${APP_VERSION}\n` +
       (s ? `Phase: ${s.phase}, Turn: ${this.seatTag(s.turn)}\n` : 'No active game.\n') +
       `\nMove log (most recent first):\n`
 

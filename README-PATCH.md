@@ -1,89 +1,79 @@
-# Building a house: mandatory maximal grouping + smarter AI
+# App versioning: v1.1.0
 
-## What you asked for
-Two things: (1) enforce "combine every matching group" as a default rule
-for building/cementing, the same way it's already mandatory for
-capturing — not just something the human can optionally do by hand — and
-(2) make the AI actually use this.
+## What this adds
+- A single source of truth for the app's version (`version.ts`).
+- A small, unobtrusive version number at the bottom of both game pages
+  (below "How to play").
+- The version included in every "notice something off?" report email, so
+  any report you get can always be tied back to the exact build it came
+  from — this was the main practical reason to add versioning now, not
+  just cosmetic display.
 
-## What changed
+## Why 1.1.0
+Treating everything already live before this conversation's changes
+(mandatory maximal capture, mandatory maximal build, the mobile side-hand
+layout, Clarity analytics, the rule-note feature, etc.) as an implicit
+baseline "1.0.0", this round — the maximal-capture and maximal-build rule
+corrections plus the smarter AI — is a real behavior/rule change, not just
+a bug patch, so I bumped the minor version rather than the patch version.
+Adjust this if you'd prefer a different starting number or scheme; it's
+just a string in one file from here on.
 
-### 1. Mandatory enforcement (both engines, applies to every player)
-Once you've committed to a target house value V (by choosing what to
-build), you can no longer cherry-pick just some of the matching loose
-cards and leave others behind. If building toward 13 and a second,
-independent complete 13 is sitting loose on the floor, it must be pulled
-into the same house — you can't build a smaller house and leave it there.
+## Files included (safe to apply directly)
+- `version.ts` — new file, the single source of truth.
+- `four-player.component.ts` / `.html` — full-file replacements, carrying
+  forward every previous fix, plus the version import/display/email
+  inclusion.
+- `two-player.component.ts` / `.html` — same.
 
-**Choosing a different target value entirely remains completely free.**
-This only blocks under-including *for the value you've actually chosen* —
-it doesn't force you toward any particular value in the first place. A
-new test confirms this explicitly: building a 9 is untouched by two loose
-Kings sitting nearby, since they're irrelevant to a value-9 house.
+## Two things I did NOT touch, and why
+I don't have your current `landing.component.html` or
+`projects/seep-web/package.json` in front of me in this session, and
+guessing at their exact content risked silently clobbering something.
+Instead, here's exactly what to add by hand — both are small, quick edits:
 
-### 2. Smarter AI (both computer.ts and computer4p.ts)
-Both AIs' build logic (`findBuildOption`, plus the separate opening-move
-build search) now computes the full maximal combination — the same
-computation the engine itself uses — instead of only ever finding a single
-exact-match group. Dead code from the old single-group search
-(`subsetSummingTo`, and an unused `isLoose` import) was removed in the
-process.
+### 1. `projects/seep-web/package.json`
+Find the `"version"` field and set it to match:
 
-## Something important I found while testing this, worth knowing
-I initially expected the AI to start *visibly choosing* to build big
-combined houses instead of capturing. Testing that directly, I found it's
-actually structurally impossible under the existing priority order, and
-it's worth understanding why rather than just taking my word for it:
+    "version": "1.1.0",
 
-**Whenever a multi-set build is achievable, a competing capture is always
-available too — and capture is checked first, so it always wins.** The
-reserve card a build needs (another card of the target value) can always
-just capture those same complete matching groups directly instead of
-being held back for a build. Concretely: if two loose Kings sit on the
-floor and you're holding a third King as your build's reserve, that King
-could just capture both loose Kings outright (26 points, guaranteed, right
-now) rather than sitting in your hand while a house of 39 gets built and
-has to be captured *later* — capture is the safer, better play, and the AI
-correctly takes it.
+### 2. `projects/seep-web/src/app/pages/landing/landing.component.html`
+Add this near the bottom of the template, just before its final closing
+`</div>` (matching the same small, muted footer style used on the game
+pages):
 
-**Practical effect: the AI's build enhancement is a correctness/robustness
-fix, not a visible behavior change.** It guarantees the AI never
-accidentally submits a partial build selection that the new mandatory rule
-would reject — but you won't actually see the AI choosing a multi-set
-build over an available capture, because that scenario can't arise. The
-multi-set build path (like the one you performed by hand) is really a
-*human* strategic option — a deliberate choice to defer value into a house
-rather than bank it immediately — not something the AI's priority order is
-built to prefer for itself. I've flagged this now rather than let you
-discover it as a "why doesn't the AI ever do the cool thing I did"
-question later — if you'd like, changing the AI's priority to sometimes
-favor a bigger deferred build over an immediate smaller capture is a real,
-separate design decision I'm happy to think through with you, but it's a
-genuine strategy trade-off (immediate certain value vs. deferred larger
-value the opponent might grab first), not a bug fix.
+    <div style="text-align: center; padding: 4px 0 10px; font-size: 10px; color: rgba(255,255,255,0.3);">
+      v1.1.0
+    </div>
 
-## New tests
-Two new describe blocks in each of `game.test.ts` and
-`fourPlayerActions.test.ts`:
-- Mandatory enforcement: rejects an under-inclusive build when a bigger
-  combined option exists for the chosen target; confirms choosing a
-  different target value is unaffected by unrelated matching groups.
-- AI behavior: confirms the AI correctly captures rather than builds when
-  both are available (documenting the finding above), and confirms the
-  AI still correctly finds an ordinary single-set build when that's
-  genuinely the only option.
+If you'd rather this pull from the same `version.ts` constant instead of
+being a hardcoded string (so you only ever update one file per release),
+add this import to `landing.component.ts`:
+
+    import { APP_VERSION } from '../../version';
+
+and a field on the class:
+
+    readonly appVersion = APP_VERSION;
+
+then use `v{{ appVersion }}` in the template snippet above instead of the
+literal `v1.1.0`. This is exactly the pattern used in both game
+components — recommended if you want true single-source-of-truth
+versioning, but I left the landing page as a plain hardcoded string
+option too, since I can't see the file to wire up the class field myself.
 
 ## How to apply
-Copy these nine files into your repo at the paths shown, then:
+Copy the four `.ts`/`.html` files into your repo at the paths shown, add
+`version.ts`, make the two manual edits above, then:
 
-    npm test
-    npm run lint
     npm run build
+    npm run lint
 
-No UI files needed for this patch — the human-facing build flow already
-goes through this same engine validation (from the previous patch), so it
-picks up the new enforcement automatically.
+No engine changes in this patch, so no `npm test` needed — this is purely
+version plumbing and display.
 
 ## Verified here
-118/118 tests passing (8 new), full `tsc` type-check clean, and the two
-randomized fuzz tests re-run 5 times back to back with no flakiness.
+Grepped all four files to confirm consistent single-reference usage of
+`appVersion`/`APP_VERSION` with no naming collisions. As with every
+UI-touching patch: no full Angular workspace in this sandbox to run
+`ng build` against directly — reviewed by hand.

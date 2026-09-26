@@ -1,6 +1,6 @@
 {
   "name": "seep-engine",
-  "version": "0.0.1",
+  "version": "v1.1.0",
   "peerDependencies": {
     "@angular/common": "^19.2.0",
     "@angular/core": "^19.2.0"
