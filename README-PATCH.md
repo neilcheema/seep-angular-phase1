@@ -1,90 +1,89 @@
-# Rule correction: building a house accepts a multiple of the target value
+# Building a house: mandatory maximal grouping + smarter AI
 
-## The reported scenario
-Opening move, bid 13. Floor has a loose 9♣ plus two separate loose Kings
-(K♥, K♠ — each worth 13 on their own). Hand: 4♠ and K♦. The player wanted
-to combine 4+9 (=13, one set) together with both loose Kings (two more
-complete 13s) into a single house of 13, already cemented, in one move —
-total 4+9+13+13 = 39 = 3×13.
-
-## What was actually already legal vs. what was missing
-Worth being precise here, since my first answer to this was wrong: during
-an opening move, only the *target house value* must equal the bid — not
-the face value of the card played. So building 4+9=13 was already legal
-before this patch. What was missing was folding the two extra loose Kings
-into that same build — the engine only accepted a selection summing to
-*exactly* the target, not a multiple of it.
-
-## The corrected rule
-Founding a house now accepts any combination (the played card plus loose
-floor cards) summing to a **positive multiple** of the declared target
-value — 1×, 2×, 3×, etc. — not just an exact match. This is the same
-generalization already applied to cementing (spec §15.5) and capturing
-(§21), now extended to building a brand-new house too. When the sum is
-more than 1× the target, the new house is created **already cemented**,
-since it inherently holds multiple complete sets from the moment it's
-formed.
-
-Unaffected by this change: the opening-move constraint (target must still
-equal the bid, exactly — regardless of the multiple), the "no duplicate
-house value" rule, the reserve-card requirement, and the "you can only
-found a house for yourself" rule (§8.5) — ownership is unaffected by how
-many sets got folded in at creation.
+## What you asked for
+Two things: (1) enforce "combine every matching group" as a default rule
+for building/cementing, the same way it's already mandatory for
+capturing — not just something the human can optionally do by hand — and
+(2) make the AI actually use this.
 
 ## What changed
-- **`gameEngine.ts` / `fourPlayerEngine.ts`** (`playBuildHouse` /
-  `playFourPlayerBuildHouse`): validation changed from `sum !== targetValue`
-  to `sum % targetValue !== 0`; the new house's `cemented` flag is set to
-  `true` whenever the multiple is greater than 1.
-- **`four-player.component.ts` / `two-player.component.ts`**: this is
-  where most of the actual work was. The UI previously assumed
-  `target = sum` always (since that was the only legal case) — with
-  multiples now legal, `buildTargetValue` needed to *infer* the intended
-  target from a sum that might be a multiple of it, not equal to it:
-  - During an opening move, it now prefers the bid value first if the sum
-    is evenly divisible by it (matching the hard engine constraint).
-  - Otherwise, if the raw sum is itself a legal house value (9-13), that's
-    used directly — this is the common, everyday single-set case,
-    completely unchanged in behavior.
-  - Otherwise, it searches for the largest legal house value (13 down to
-    9) that evenly divides the sum, and uses that as the inferred target.
-  - `canBuild` now explicitly checks `sum % target === 0` (previously
-    implicit, since target was always defined as equal to sum).
-  - The reveal overlay's label now shows the multiple when relevant (e.g.
-    "Building house of 13 (3×, cemented)").
+
+### 1. Mandatory enforcement (both engines, applies to every player)
+Once you've committed to a target house value V (by choosing what to
+build), you can no longer cherry-pick just some of the matching loose
+cards and leave others behind. If building toward 13 and a second,
+independent complete 13 is sitting loose on the floor, it must be pulled
+into the same house — you can't build a smaller house and leave it there.
+
+**Choosing a different target value entirely remains completely free.**
+This only blocks under-including *for the value you've actually chosen* —
+it doesn't force you toward any particular value in the first place. A
+new test confirms this explicitly: building a 9 is untouched by two loose
+Kings sitting nearby, since they're irrelevant to a value-9 house.
+
+### 2. Smarter AI (both computer.ts and computer4p.ts)
+Both AIs' build logic (`findBuildOption`, plus the separate opening-move
+build search) now computes the full maximal combination — the same
+computation the engine itself uses — instead of only ever finding a single
+exact-match group. Dead code from the old single-group search
+(`subsetSummingTo`, and an unused `isLoose` import) was removed in the
+process.
+
+## Something important I found while testing this, worth knowing
+I initially expected the AI to start *visibly choosing* to build big
+combined houses instead of capturing. Testing that directly, I found it's
+actually structurally impossible under the existing priority order, and
+it's worth understanding why rather than just taking my word for it:
+
+**Whenever a multi-set build is achievable, a competing capture is always
+available too — and capture is checked first, so it always wins.** The
+reserve card a build needs (another card of the target value) can always
+just capture those same complete matching groups directly instead of
+being held back for a build. Concretely: if two loose Kings sit on the
+floor and you're holding a third King as your build's reserve, that King
+could just capture both loose Kings outright (26 points, guaranteed, right
+now) rather than sitting in your hand while a house of 39 gets built and
+has to be captured *later* — capture is the safer, better play, and the AI
+correctly takes it.
+
+**Practical effect: the AI's build enhancement is a correctness/robustness
+fix, not a visible behavior change.** It guarantees the AI never
+accidentally submits a partial build selection that the new mandatory rule
+would reject — but you won't actually see the AI choosing a multi-set
+build over an available capture, because that scenario can't arise. The
+multi-set build path (like the one you performed by hand) is really a
+*human* strategic option — a deliberate choice to defer value into a house
+rather than bank it immediately — not something the AI's priority order is
+built to prefer for itself. I've flagged this now rather than let you
+discover it as a "why doesn't the AI ever do the cool thing I did"
+question later — if you'd like, changing the AI's priority to sometimes
+favor a bigger deferred build over an immediate smaller capture is a real,
+separate design decision I'm happy to think through with you, but it's a
+genuine strategy trade-off (immediate certain value vs. deferred larger
+value the opponent might grab first), not a bug fix.
 
 ## New tests
-Three new tests in each of `game.test.ts` and `fourPlayerActions.test.ts`:
-a direct reproduction of the reported 4+9+K+K scenario (asserting the
-resulting house is cemented with all 4 cards absorbed), confirmation an
-ordinary single-set build still produces an uncemented house exactly as
-before, and confirmation a non-multiple sum is still correctly rejected.
-A fourth test confirms the opening-move-must-match-bid constraint still
-holds regardless of the multiple.
-
-## Known scope limitation
-The computer AI's own house-building heuristic was **not** updated to
-seek out multi-set builds — it still only ever tries the simple 1× case.
-This wasn't required to fix the reported issue (which was specifically
-about the human player being unable to make this move), and extending the
-AI to recognize and prefer multi-set opportunities is a real judgment-call
-enhancement, similar in spirit to the AI limitation already documented
-back in Phase 4. Worth a look if you want a noticeably sharper computer
-opponent later.
+Two new describe blocks in each of `game.test.ts` and
+`fourPlayerActions.test.ts`:
+- Mandatory enforcement: rejects an under-inclusive build when a bigger
+  combined option exists for the chosen target; confirms choosing a
+  different target value is unaffected by unrelated matching groups.
+- AI behavior: confirms the AI correctly captures rather than builds when
+  both are available (documenting the finding above), and confirms the
+  AI still correctly finds an ordinary single-set build when that's
+  genuinely the only option.
 
 ## How to apply
-Copy these six files into your repo at the paths shown. The two component
-files are full-file replacements that carry forward every previous fix
-(rule-note feature, floor-state log summary, etc.) — apply these instead
-of any earlier version of these two files, not alongside them.
+Copy these nine files into your repo at the paths shown, then:
 
     npm test
     npm run lint
     npm run build
 
+No UI files needed for this patch — the human-facing build flow already
+goes through this same engine validation (from the previous patch), so it
+picks up the new enforcement automatically.
+
 ## Verified here
-110/110 tests passing (7 new), full `tsc` type-check clean on the engine
-side. As with every UI-touching patch: no full Angular workspace in this
-sandbox, so the two component files couldn't be run through `ng build`
-directly — reviewed carefully by hand, but `npm run build` on your end is
-the real confirmation.
+118/118 tests passing (8 new), full `tsc` type-check clean, and the two
+randomized fuzz tests re-run 5 times back to back with no flakiness.

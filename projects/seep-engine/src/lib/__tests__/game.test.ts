@@ -5,6 +5,7 @@ import {
   dealHand, placeBid, playBuildHouse, playCapture, playModifyHouse, playThrow,
 } from '../gameEngine.ts'
 import { isHouse } from '../floor.ts'
+import { chooseComputerMove } from '../computer.ts'
 
 function card(face: Face, suit: Suit) {
   return { face, suit }
@@ -237,6 +238,76 @@ describe('building a house accepts a multiple of the target value, cementing it 
       hands: { player: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], opponent: [] },
     })
     expect(() => playBuildHouse(state, 'player', card(Face.Six, Suit.Clubs), ['f1'], 13)).toThrow()
+  })
+})
+
+describe('a build must pull in every matching group for its chosen target, not just some (enforced for all players)', () => {
+  it('rejects building 4+9=13 alone when two loose Kings could also join the same house', () => {
+    const state = makeState({
+      phase: 'opening-move',
+      bidValue: 13,
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.King, Suit.Hearts) },
+        { kind: 'loose', id: 'f3', card: card(Face.King, Suit.Spades) },
+      ],
+      hands: { player: [card(Face.Four, Suit.Spades), card(Face.King, Suit.Diamonds)], opponent: [] },
+    })
+    expect(() => playBuildHouse(state, 'player', card(Face.Four, Suit.Spades), ['f1'], 13)).toThrow()
+  })
+
+  it('choosing a different target value entirely is unaffected by matching groups at another value', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) },
+        { kind: 'loose', id: 'f2', card: card(Face.King, Suit.Hearts) },
+        { kind: 'loose', id: 'f3', card: card(Face.King, Suit.Spades) },
+      ],
+      hands: { player: [card(Face.Four, Suit.Clubs), card(Face.Nine, Suit.Spades)], opponent: [] },
+    })
+    const next = playBuildHouse(state, 'player', card(Face.Four, Suit.Clubs), ['f1'], 9)
+    const house = next.floor.find(isHouse)!
+    expect(house.captureValue).toBe(9)
+    expect(house.cemented).toBe(false)
+    expect(next.floor.filter(i => i.kind === 'loose')).toHaveLength(2)
+  })
+})
+
+describe('the computer AI\'s build logic correctly handles multi-set combinations when reached', () => {
+  // Same structural fact as the four-player AI: whenever a multi-set build
+  // is achievable, the reserve card it needs can always just capture those
+  // same complete groups directly, and capture wins by priority — so this
+  // confirms the build logic is correct when reached, not that the AI
+  // prefers building over capturing (it never actually does).
+  it('prefers capturing both loose Kings over building a bigger house when a King is available to capture with', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.King, Suit.Hearts) },
+        { kind: 'loose', id: 'f3', card: card(Face.King, Suit.Spades) },
+      ],
+      hands: { opponent: [card(Face.Four, Suit.Spades), card(Face.King, Suit.Diamonds), card(Face.Two, Suit.Hearts)], player: [] },
+      turn: 'opponent',
+    })
+    const action = chooseComputerMove(state)
+    expect(action.type).toBe('capture')
+    if (action.type === 'capture') {
+      expect(action.targetItemIds.sort()).toEqual(['f2', 'f3'].sort())
+    }
+  })
+
+  it('still finds the correct single-set build when that is genuinely the only option available', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { opponent: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], player: [] },
+      turn: 'opponent',
+    })
+    const action = chooseComputerMove(state)
+    expect(action.type).toBe('build')
+    if (action.type === 'build') {
+      expect(action.looseItemIds).toEqual(['f1'])
+      expect(action.targetValue).toBe(11)
+    }
   })
 })
 

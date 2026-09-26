@@ -1,7 +1,7 @@
 import { type Card, MAX_HOUSE_VALUE, MIN_HOUSE_VALUE, captureValue, pointValue } from './card'
 import {
   type FloorItem, type House,
-  findHouseByValue, findItem, findMaximalExactGroups, hasAnyLegalCapture, isHouse, isLoose, itemValue,
+  findHouseByValue, findItem, findMaximalExactGroups, hasAnyLegalCapture, isHouse, itemValue,
 } from './floor'
 import { hasCaptureValue } from './hand'
 import { type SeatId, areTeammates, opponentsOf } from './seats'
@@ -40,22 +40,6 @@ function findCaptureCombination(floor: FloorItem<SeatId>[], card: Card): string[
   return groups.length > 0 ? groups.flat() : null
 }
 
-function subsetSummingTo(items: { id: string; v: number }[], target: number): string[] | null {
-  const n = items.length
-  for (let mask = 1; mask < 1 << n; mask++) {
-    let sum = 0
-    const ids: string[] = []
-    for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) {
-        sum += items[i]!.v
-        ids.push(items[i]!.id)
-      }
-    }
-    if (sum === target) return ids
-  }
-  return null
-}
-
 function captureOpportunities(floor: FloorItem<SeatId>[], hand: Card[]): number {
   return hand.filter((c) => hasAnyLegalCapture(floor, c)).length
 }
@@ -70,30 +54,39 @@ function captureOpportunities(floor: FloorItem<SeatId>[], hand: Card[]): number 
  * themselves") — this function doesn't need to special-case that, since
  * playFourPlayerBuildHouse already enforces it.
  */
+/**
+ * Finds the best house the computer could found this turn — including
+ * multi-set opportunities: if a hand card, together with the loose floor
+ * cards, can form more than one complete set of some target value (e.g. a
+ * played 4, a loose 9, and two separate loose Kings all combine into one
+ * house of 13 holding three sets), this finds the full required
+ * combination the same way the engine itself computes it, and prefers
+ * whichever (card, target) pairing delivers the most total value.
+ */
 function findBuildOption(
   floor: FloorItem<SeatId>[], hand: Card[],
-): { card: Card; looseItemIds: string[]; targetValue: number } | null {
-  const loose = floor.filter(isLoose)
-  let best: { card: Card; looseItemIds: string[]; targetValue: number; looseCount: number } | null = null
+): { card: Card; looseItemIds: string[]; targetValue: number; multiple: number } | null {
+  let best:
+    | { card: Card; looseItemIds: string[]; targetValue: number; multiple: number; totalValue: number }
+    | null = null
 
   for (const card of hand) {
     const remainingHand = hand.filter((c) => c !== card)
     for (let target = MIN_HOUSE_VALUE; target <= MAX_HOUSE_VALUE; target++) {
       if (findHouseByValue(floor, target)) continue
       if (!hasCaptureValue(remainingHand, target)) continue
-      const need = target - captureValue(card)
-      if (need < 0) continue
 
-      if (need === 0) {
-        if (!best || 0 > best.looseCount || (0 === best.looseCount && target > best.targetValue)) {
-          best = { card, looseItemIds: [], targetValue: target, looseCount: 0 }
-        }
-        continue
-      }
+      const virtualId = '__card__'
+      const augmented: FloorItem<SeatId>[] = [...floor, { kind: 'loose', id: virtualId, card }]
+      const groups = findMaximalExactGroups(augmented, target)
+      const cardGroup = groups.find((g) => g.includes(virtualId))
+      if (!cardGroup) continue
 
-      const combo = subsetSummingTo(loose.map((l) => ({ id: l.id, v: captureValue(l.card) })), need)
-      if (combo && (!best || combo.length > best.looseCount || (combo.length === best.looseCount && target > best.targetValue))) {
-        best = { card, looseItemIds: combo, targetValue: target, looseCount: combo.length }
+      const looseItemIds = groups.flat().filter((id) => id !== virtualId)
+      const multiple = groups.length
+      const totalValue = multiple * target
+      if (!best || totalValue > best.totalValue) {
+        best = { card, looseItemIds, targetValue: target, multiple, totalValue }
       }
     }
   }
@@ -123,20 +116,32 @@ export function chooseFourPlayerOpeningMove(state: FourPlayerGameState): Compute
   }
 
   const remainingAfterBid = hand.filter((c) => c !== bidCard)
-  const loose = state.floor.filter(isLoose)
+  let bestOpenBuild: { card: Card; looseItemIds: string[]; multiple: number; totalValue: number } | null = null
   for (const c of remainingAfterBid) {
     if (!hasCaptureValue(remainingAfterBid.filter((x) => x !== c), bidValue)) continue
-    const need = bidValue - captureValue(c)
-    if (need <= 0) continue
-    const combo = subsetSummingTo(loose.map((l) => ({ id: l.id, v: captureValue(l.card) })), need)
-    if (combo) {
-      return {
-        type: 'build',
-        card: c,
-        looseItemIds: combo,
-        targetValue: bidValue,
-        reason: `built a house of ${bidValue} to open, keeping the bid card in reserve to capture it later`,
-      }
+    const virtualId = '__card__'
+    const augmented: FloorItem<SeatId>[] = [...state.floor, { kind: 'loose', id: virtualId, card: c }]
+    const groups = findMaximalExactGroups(augmented, bidValue)
+    const cardGroup = groups.find((g) => g.includes(virtualId))
+    if (!cardGroup) continue
+    const looseItemIds = groups.flat().filter((id) => id !== virtualId)
+    const multiple = groups.length
+    const totalValue = multiple * bidValue
+    if (!bestOpenBuild || totalValue > bestOpenBuild.totalValue) {
+      bestOpenBuild = { card: c, looseItemIds, multiple, totalValue }
+    }
+  }
+  if (bestOpenBuild) {
+    return {
+      type: 'build',
+      card: bestOpenBuild.card,
+      looseItemIds: bestOpenBuild.looseItemIds,
+      targetValue: bidValue,
+      reason:
+        bestOpenBuild.multiple > 1
+          ? `built a house of ${bidValue} to open (${bestOpenBuild.multiple}\u00d7 its value, already cemented), ` +
+            'keeping the bid card in reserve to capture it later'
+          : `built a house of ${bidValue} to open, keeping the bid card in reserve to capture it later`,
     }
   }
 
@@ -246,7 +251,11 @@ export function chooseFourPlayerMove(state: FourPlayerGameState): ComputerPlayAc
       card: build.card,
       looseItemIds: build.looseItemIds,
       targetValue: build.targetValue,
-      reason: `built a house of ${build.targetValue}, keeping a reserve card to capture it later`,
+      reason:
+        build.multiple > 1
+          ? `built a house of ${build.targetValue} (${build.multiple}\u00d7 its value, already cemented), ` +
+            'keeping a reserve card to capture it later'
+          : `built a house of ${build.targetValue}, keeping a reserve card to capture it later`,
     }
   }
 

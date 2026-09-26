@@ -4,32 +4,13 @@ import {
   type GameState, dealNextHand, legalBids,
   placeBid, playBuildHouse, playCapture, playModifyHouse, playThrow,
 } from '../gameEngine.ts'
-import { findHouseByValue, findMaximalExactGroups, hasAnyLegalCapture, isHouse, isLoose } from '../floor.ts'
+import { findHouseByValue, findMaximalExactGroups, hasAnyLegalCapture, isHouse } from '../floor.ts'
 import { hasCaptureValue, removeCard } from '../hand.ts'
 import { startMatch } from '../gameEngine.ts'
 import type { PlayerId } from '../player.ts'
 
 function rand<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!
-}
-
-function subsetsSummingTo<T extends { id: string }>(
-  items: T[], target: number, value: (t: T) => number,
-): T[][] {
-  const n = items.length
-  const results: T[][] = []
-  for (let mask = 1; mask < 1 << n; mask++) {
-    let sum = 0
-    const picked: T[] = []
-    for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) {
-        sum += value(items[i]!)
-        picked.push(items[i]!)
-      }
-    }
-    if (sum === target) results.push(picked)
-  }
-  return results
 }
 
 function playRandomMove(state: GameState, playerId: PlayerId): GameState {
@@ -47,7 +28,6 @@ function playRandomMove(state: GameState, playerId: PlayerId): GameState {
   for (const card of candidates) {
     const house = findHouseByValue(state.floor, captureValue(card))
     if (house) options.push(() => playCapture(state, playerId, card, [house.id]))
-    const loose = state.floor.filter(isLoose)
     const maxGroups = findMaximalExactGroups(state.floor, captureValue(card))
     if (maxGroups.length > 0) {
       options.push(() => playCapture(state, playerId, card, maxGroups.flat()))
@@ -56,19 +36,15 @@ function playRandomMove(state: GameState, playerId: PlayerId): GameState {
     for (let target = 9; target <= 13; target++) {
       if (isOpening && target !== state.bidValue) continue
       if (findHouseByValue(state.floor, target)) continue
-      const need = target - captureValue(card)
-      if (need < 0) continue
-      if (need === 0) {
-        if (hasCaptureValue(removeCard(hand, card), target)) {
-          options.push(() => playBuildHouse(state, playerId, card, [], target))
-        }
-        continue
-      }
-      for (const combo of subsetsSummingTo(loose, need, i => captureValue(i.card))) {
-        if (hasCaptureValue(removeCard(hand, card), target)) {
-          options.push(() => playBuildHouse(state, playerId, card, combo.map(i => i.id), target))
-        }
-      }
+      if (!hasCaptureValue(removeCard(hand, card), target)) continue
+
+      const virtualId = '__card__'
+      const augmented = [...state.floor, { kind: 'loose' as const, id: virtualId, card }]
+      const groups = findMaximalExactGroups(augmented, target)
+      const cardGroup = groups.find(g => g.includes(virtualId))
+      if (!cardGroup) continue
+      const looseItemIds = groups.flat().filter(id => id !== virtualId)
+      options.push(() => playBuildHouse(state, playerId, card, looseItemIds, target))
     }
 
     if (!isOpening) {
