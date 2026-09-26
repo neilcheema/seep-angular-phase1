@@ -316,6 +316,31 @@ export function playFourPlayerBuildHouse(
   }
   const multiple = sum / targetValue
 
+  // Enforced by default for every player, human or computer: once a target
+  // value is chosen, you can't cherry-pick just some of the matching loose
+  // cards and leave others behind — every card that could complete another
+  // exact-target set alongside the played card must be pulled in too. This
+  // is the same mandatory-maximal principle already enforced for captures
+  // (spec §21), applied here to building. Choosing a *different* target
+  // value entirely remains a free choice — this only blocks under-including
+  // for the value actually chosen.
+  const virtualId = '__played-card__'
+  const augmentedFloor: FloorItem<SeatId>[] = [...state.floor, { kind: 'loose', id: virtualId, card }]
+  const requiredGroups = findMaximalExactGroups(augmentedFloor, targetValue)
+  const cardGroup = requiredGroups.find((g) => g.includes(virtualId))
+  if (cardGroup) {
+    const requiredLooseIds = requiredGroups.flat().filter((id) => id !== virtualId)
+    const requiredSet = new Set(requiredLooseIds)
+    const selectedSet = new Set(looseItemIds)
+    const matches = requiredSet.size === selectedSet.size && [...requiredSet].every((id) => selectedSet.has(id))
+    if (!matches) {
+      throw new Error(
+        `A bigger combined house of ${targetValue} is available on the floor — you must pull in ` +
+          `every matching group, not just some of them.`,
+      )
+    }
+  }
+
   const newHand = takeCard(state, seat, card)
   if (!hasCaptureValue(newHand, targetValue)) {
     throw new Error(`You need another card worth ${targetValue} left in hand to build this house.`)

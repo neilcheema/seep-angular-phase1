@@ -54,7 +54,6 @@ function playRandomMove(state: FourPlayerGameState): FourPlayerGameState {
   for (const card of candidates) {
     const house = findHouseByValue(state.floor, captureValue(card))
     if (house) options.push(() => playFourPlayerCapture(state, seat, card, [house.id]))
-    const loose = state.floor.filter(isLoose)
     const maxGroups = findMaximalExactGroups(state.floor, captureValue(card))
     if (maxGroups.length > 0) {
       options.push(() => playFourPlayerCapture(state, seat, card, maxGroups.flat()))
@@ -63,19 +62,15 @@ function playRandomMove(state: FourPlayerGameState): FourPlayerGameState {
     for (let target = 9; target <= 13; target++) {
       if (isOpening && target !== state.bidValue) continue
       if (findHouseByValue(state.floor, target)) continue
-      const need = target - captureValue(card)
-      if (need < 0) continue
-      if (need === 0) {
-        if (hasCaptureValue(removeCard(hand, card), target)) {
-          options.push(() => playFourPlayerBuildHouse(state, seat, card, [], target))
-        }
-        continue
-      }
-      for (const combo of subsetsSummingTo(loose, need, (i) => captureValue(i.card))) {
-        if (hasCaptureValue(removeCard(hand, card), target)) {
-          options.push(() => playFourPlayerBuildHouse(state, seat, card, combo.map((i) => i.id), target))
-        }
-      }
+      if (!hasCaptureValue(removeCard(hand, card), target)) continue
+
+      const virtualId = '__card__'
+      const augmented = [...state.floor, { kind: 'loose' as const, id: virtualId, card }]
+      const groups = findMaximalExactGroups(augmented, target)
+      const cardGroup = groups.find((g) => g.includes(virtualId))
+      if (!cardGroup) continue
+      const looseItemIds = groups.flat().filter((id) => id !== virtualId)
+      options.push(() => playFourPlayerBuildHouse(state, seat, card, looseItemIds, target))
     }
 
     if (!isOpening) {
