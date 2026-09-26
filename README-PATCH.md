@@ -1,55 +1,53 @@
-# Add Microsoft Clarity analytics
+# Mobile layout: side-seated opponents' hands now run vertically
 
-## What this does
-Initializes Clarity once, at the app root, so it tracks visits across the
-landing page and both games for the whole session — not per-route. Skips
-initialization entirely on `localhost`/`127.0.0.1` (i.e. `ng serve`), so
-your own dev-testing sessions don't show up in your real usage data.
+## What changed
+Player 2 (left) and Player 4 (right) now hold their cards as a vertical
+stack, each card rotated to face the table center — like an actual
+side-seated player's hand — instead of a horizontal row. This makes their
+"side-hand" columns much narrower, freeing up horizontal width for the
+floor to actually be visible on narrow mobile screens. Player 3 (the
+partner, at the top) is unchanged — still a horizontal fan, since a
+top-seated player's hand naturally reads left-to-right same as yours.
 
-## Setup steps (in order)
+## Files
+- `opponent-hand.component.ts` / `.html` — added an `orientation` input
+  (`'top' | 'left' | 'right'`, defaults to `'top'` so the two-player
+  opponent and the four-player partner render exactly as before with no
+  changes needed there).
+- `four-player.component.html` — passes `orientation="left"` to Player 2's
+  hand and `orientation="right"` to Player 4's, full-file replacement
+  carrying forward every previous fix to this file.
+- `styles-addition.css` — **append to your existing
+  `projects/seep-web/src/styles.css`**, don't replace the whole file.
 
-1. **Create your Clarity project** at https://clarity.microsoft.com if you
-   haven't already — sign in with a Microsoft account, add a new project
-   for seep.quest.
+## Important honest caveat: the exact spacing is a guess
+I don't have your actual `.card`/`.card-back` CSS dimensions in front of
+me in this session, so the `-34px` overlap value between stacked cards in
+`styles-addition.css` is a reasonable starting estimate, not something
+I've verified against your real card size. It'll very likely need tuning
+once you actually see it on a phone:
 
-2. **Get your project ID**: in the Clarity dashboard, go to your project
-   → Settings → Overview. Copy the project ID shown there.
+- **Cards too far apart / stack too tall**: make the value more negative
+  (e.g. `-40px`, `-44px`) to overlap them more.
+- **Cards overlapping too much / hard to tell how many are held**: make it
+  less negative (e.g. `-26px`, `-20px`).
 
-3. **Install the package** — from your repo root:
+The rotation direction (90° for left, -90° for right) should be correct
+regardless of exact card size — only the overlap spacing is a guess.
 
-       npm install @microsoft/clarity
-
-4. **Apply this patch**: copy `app.component.ts` into your repo at
-   `projects/seep-web/src/app/app.component.ts` (full-file replacement —
-   it's a tiny file, this just adds the Clarity import and init call to
-   the existing minimal component).
-
-5. **Paste in your project ID**: open the file and replace
-   `'YOUR_CLARITY_PROJECT_ID'` with the actual ID from step 2.
-
-6. **Build, verify, deploy**:
-
-       npm run build
-       npm run lint
-       git add .
-       git commit -m "Add Microsoft Clarity analytics"
-       git push
-
-7. **Confirm it's working**: once deployed, visit seep.quest yourself,
-   click around a bit, then check the Clarity dashboard — recordings
-   typically show up within a few minutes.
-
-## Note on cookie consent
-By default, a new Clarity project doesn't require explicit cookie
-consent. If you want stricter compliance later (a cookie-consent banner
-gating tracking), Clarity has a `Clarity.consentV2(...)` API for that —
-not wired in here since it adds real UI complexity (a banner, user choice
-persistence) that isn't needed for a project at this stage. Worth
-revisiting if this ever gets meaningfully more traffic or a paid tier.
+## How to apply
+1. Copy `opponent-hand.component.ts`/`.html` and `four-player.component.html`
+   into your repo at their paths (full-file replacements).
+2. Append `styles-addition.css`'s contents to the end of
+   `projects/seep-web/src/styles.css`.
+3. `npm run build && npm run lint`
+4. Test on an actual phone (or your browser's device-simulation mode) and
+   adjust the `-34px` value if needed — a quick change, no rebuild logic
+   needed, just that one number.
+5. Commit, push.
 
 ## Verified here
-This is a two-line functional change to an already-simple file. I don't
-have the full Angular workspace in this sandbox to run `npm install` or
-`ng build` against it directly — reviewed by hand, but `npm run build`
-on your end (after installing the package and adding your project ID)
-is the real confirmation.
+No engine changes — pure UI/CSS. As always with UI patches: no full
+Angular workspace in this sandbox to run `ng build` against, and this one
+in particular has a real visual-tuning step I can't do blind — genuinely
+needs your eyes on a phone screen to get the spacing right.
