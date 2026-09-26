@@ -305,9 +305,16 @@ export function playFourPlayerBuildHouse(
     return item
   })
   const sum = looseItems.reduce((t, i) => t + captureValue(i.card), 0) + captureValue(card)
-  if (sum !== targetValue) {
-    throw new Error(`Selected cards total ${sum}, not your target of ${targetValue}.`)
+  // Founding a house isn't limited to summing to exactly its target value —
+  // any combination summing to a positive multiple of the target folds in
+  // that many complete sets at once, the same generalization already
+  // applied to cementing (spec §15.5): a played card, a loose 9, and two
+  // separate loose Kings (13 each) can all combine into one house of 13,
+  // already cemented, holding three sets of 13 (39 total) in a single move.
+  if (sum % targetValue !== 0) {
+    throw new Error(`Selected cards total ${sum}, not a multiple of your target of ${targetValue}.`)
   }
+  const multiple = sum / targetValue
 
   const newHand = takeCard(state, seat, card)
   if (!hasCaptureValue(newHand, targetValue)) {
@@ -320,14 +327,15 @@ export function playFourPlayerBuildHouse(
     id: houseId,
     cards: [...looseItems.map((i) => i.card), card],
     captureValue: targetValue,
-    cemented: false,
+    cemented: multiple > 1,
     owners: [seat],
   }
   const seeded = { ...state, nextItemId: state.nextItemId + 1 }
   const newFloor = [...removeItems(seeded.floor, looseItemIds), house]
 
   const next = finishMove(seeded, seat, newHand, newFloor, seeded.captures, seeded.sweepPoints, null)
-  return pushLog(next, `${seat} built a house of ${targetValue}.`)
+  const multipleNote = multiple > 1 ? ` (${multiple}\u00d7 its value, already cemented)` : ''
+  return pushLog(next, `${seat} built a house of ${targetValue}${multipleNote}.`)
 }
 
 export function playFourPlayerModifyHouse(

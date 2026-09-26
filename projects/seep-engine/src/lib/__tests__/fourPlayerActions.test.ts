@@ -83,6 +83,70 @@ describe('a player can only found a house for themselves (spec §8.5)', () => {
   })
 })
 
+describe('building a house accepts a multiple of the target value, cementing it immediately', () => {
+  it('reproduces the exact reported scenario: 4 + 9 + two loose Kings = 3x13, cemented on creation', () => {
+    // Opening move, bid 13. Hand card 4 + loose 9 = 13 (one set), plus two
+    // separate loose Kings (13 each, two more sets) = 39 total = 3x13.
+    const state = makeState({
+      phase: 'opening-move',
+      bidValue: 13,
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.King, Suit.Hearts) },
+        { kind: 'loose', id: 'f3', card: card(Face.King, Suit.Spades) },
+      ],
+      hands: {
+        p1: [card(Face.Four, Suit.Spades), card(Face.King, Suit.Diamonds)],
+        p2: [], p3: [], p4: [],
+      },
+      turn: SeatId.P1,
+    })
+    const next = playFourPlayerBuildHouse(
+      state, SeatId.P1, card(Face.Four, Suit.Spades), ['f1', 'f2', 'f3'], 13,
+    )
+    const house = next.floor.find((i): i is House<SeatId> => i.kind === 'house')!
+    expect(house.captureValue).toBe(13)
+    expect(house.cemented).toBe(true)
+    expect(house.cards).toHaveLength(4) // 4, 9, K, K
+    expect(house.owners).toEqual([SeatId.P1])
+    expect(next.floor).toHaveLength(1) // all three loose items absorbed into the one house
+  })
+
+  it('still builds an ordinary uncemented house when the sum is exactly the target (1x)', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { p1: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], p2: [], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    const next = playFourPlayerBuildHouse(state, SeatId.P1, card(Face.Six, Suit.Clubs), ['f1'], 11)
+    const house = next.floor.find((i): i is House<SeatId> => i.kind === 'house')!
+    expect(house.cemented).toBe(false)
+  })
+
+  it('still rejects a selection whose total is not a multiple of the intended target', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { p1: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], p2: [], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    // 5 + 6 = 11, not a multiple of a 13 target.
+    expect(() => playFourPlayerBuildHouse(state, SeatId.P1, card(Face.Six, Suit.Clubs), ['f1'], 13)).toThrow()
+  })
+
+  it('still enforces that the opening-move target must equal the bid, regardless of the multiple', () => {
+    const state = makeState({
+      phase: 'opening-move',
+      bidValue: 13,
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { p1: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], p2: [], p3: [], p4: [] },
+      turn: SeatId.P1,
+    })
+    // Building a clean 11 during an opening move bid for 13 is still illegal,
+    // even though 11 alone (1x) would otherwise be a perfectly good house.
+    expect(() => playFourPlayerBuildHouse(state, SeatId.P1, card(Face.Six, Suit.Clubs), ['f1'], 11)).toThrow()
+  })
+})
+
 describe('breaking an owned house is restricted (spec §8.5)', () => {
   it('refuses to let the owner break their own house', () => {
     const state = makeState({
