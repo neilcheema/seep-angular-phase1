@@ -198,6 +198,48 @@ describe('playBuildHouse', () => {
   })
 })
 
+describe('building a house accepts a multiple of the target value, cementing it immediately', () => {
+  it('reproduces the exact reported scenario: 4 + 9 + two loose Kings = 3x13, cemented on creation', () => {
+    const state = makeState({
+      phase: 'opening-move',
+      bidValue: 13,
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.King, Suit.Hearts) },
+        { kind: 'loose', id: 'f3', card: card(Face.King, Suit.Spades) },
+      ],
+      hands: {
+        player: [card(Face.Four, Suit.Spades), card(Face.King, Suit.Diamonds)],
+        opponent: [],
+      },
+    })
+    const next = playBuildHouse(state, 'player', card(Face.Four, Suit.Spades), ['f1', 'f2', 'f3'], 13)
+    const house = next.floor.find(isHouse)!
+    expect(house.captureValue).toBe(13)
+    expect(house.cemented).toBe(true)
+    expect(house.cards).toHaveLength(4)
+    expect(next.floor).toHaveLength(1)
+  })
+
+  it('still builds an ordinary uncemented house when the sum is exactly the target (1x)', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { player: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], opponent: [] },
+    })
+    const next = playBuildHouse(state, 'player', card(Face.Six, Suit.Clubs), ['f1'], 11)
+    const house = next.floor.find(isHouse)!
+    expect(house.cemented).toBe(false)
+  })
+
+  it('still rejects a selection whose total is not a multiple of the intended target', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { player: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], opponent: [] },
+    })
+    expect(() => playBuildHouse(state, 'player', card(Face.Six, Suit.Clubs), ['f1'], 13)).toThrow()
+  })
+})
+
 describe('a capture must take every matching group at once, not just one', () => {
   it('reproduces the exact reported scenario: a 10 must capture 2+8 AND the loose 10 together', () => {
     const state = makeState({

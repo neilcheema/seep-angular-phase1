@@ -162,16 +162,31 @@ export class FourPlayerComponent {
   })
 
   readonly buildTargetValue = computed(() => {
+    const s = this.state()
     const c = this.selectedCard()
-    return c ? this.looseSum() + captureValue(c) : 0
+    if (!c) return 0
+    const sum = this.looseSum() + captureValue(c)
+    // Founding a house isn't limited to summing to exactly its target value
+    // — a combination summing to a multiple of the target (e.g. a played
+    // card, a loose 9, and two separate loose Kings: 4+9+13+13=39=3x13)
+    // folds all three complete sets into one house, already cemented.
+    // During the opening move the target must equal the bid regardless, so
+    // prefer that first if it evenly divides the sum.
+    if (this.isOpening() && s?.bidValue != null && sum % s.bidValue === 0) return s.bidValue
+    if (isHouseValue(sum)) return sum
+    for (let v = 13; v >= 9; v--) {
+      if (sum % v === 0) return v
+    }
+    return sum
   })
 
   readonly canBuild = computed(() => {
     const s = this.state()
     const c = this.selectedCard()
     const target = this.buildTargetValue()
+    const sum = c ? this.looseSum() + captureValue(c) : 0
     return !!(
-      s && c && this.selectedHouses().length === 0 && isHouseValue(target) &&
+      s && c && this.selectedHouses().length === 0 && isHouseValue(target) && sum % target === 0 &&
       (!this.isOpening() || target === s.bidValue) &&
       !findHouseByValue(s.floor, target) &&
       hasCaptureValue(removeCard(s.hands.p1, c), target)
@@ -364,8 +379,11 @@ export class FourPlayerComponent {
     if (!s || !c) return
     const looseIds = this.selectedLoose().map((i) => i.id)
     const target = this.buildTargetValue()
+    const sum = this.looseSum() + captureValue(c)
+    const multiple = sum / target
+    const label = multiple > 1 ? `Building house of ${target} (${multiple}\u00d7, cemented)` : `Building house of ${target}`
     this.runPlayerAction(() => playFourPlayerBuildHouse(s, SeatId.P1, c, looseIds, target), () => ({
-      seat: SeatId.P1, kind: 'build', label: `Building house of ${target}`, playedCard: c,
+      seat: SeatId.P1, kind: 'build', label, playedCard: c,
       targetCards: allCardsOf(s.floor, looseIds), sweepBonus: 0,
     }))
   }

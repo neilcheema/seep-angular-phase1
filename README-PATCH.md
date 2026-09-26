@@ -1,74 +1,90 @@
-# Rule correction: a capture must take every matching group at once
+# Rule correction: building a house accepts a multiple of the target value
 
 ## The reported scenario
-Floor: 2♣, 8♣, 10♥. Bid/played card: 10. The player wanted to capture all
-three together (2+8=10, and the loose 10♥ is a second "ten") but the game
-only allowed capturing one group at a time — either the 2+8 pair, or the
-lone 10♥, never both together.
+Opening move, bid 13. Floor has a loose 9♣ plus two separate loose Kings
+(K♥, K♠ — each worth 13 on their own). Hand: 4♠ and K♦. The player wanted
+to combine 4+9 (=13, one set) together with both loose Kings (two more
+complete 13s) into a single house of 13, already cemented, in one move —
+total 4+9+13+13 = 39 = 3×13.
 
-## The corrected rule (confirmed with the user, two clarifying questions)
-A capture must take **every** disjoint group of loose cards that sums to
-the played card's value, combined into a single move — not just one such
-group. This mirrors the cementing generalization from the previous patch:
-a cemented house holding two separate sets of the same value is captured
-as one unit regardless of how many sets are inside it; loose cards on the
-floor now work the same way.
+## What was actually already legal vs. what was missing
+Worth being precise here, since my first answer to this was wrong: during
+an opening move, only the *target house value* must equal the bid — not
+the face value of the card played. So building 4+9=13 was already legal
+before this patch. What was missing was folding the two extra loose Kings
+into that same build — the engine only accepted a selection summing to
+*exactly* the target, not a multiple of it.
 
-Two design points were confirmed explicitly before implementing, since
-they meaningfully change the behavior:
+## The corrected rule
+Founding a house now accepts any combination (the played card plus loose
+floor cards) summing to a **positive multiple** of the declared target
+value — 1×, 2×, 3×, etc. — not just an exact match. This is the same
+generalization already applied to cementing (spec §15.5) and capturing
+(§21), now extended to building a brand-new house too. When the sum is
+more than 1× the target, the new house is created **already cemented**,
+since it inherently holds multiple complete sets from the moment it's
+formed.
 
-1. **The groups must be clean** — the selection must actually decompose
-   into distinct subsets that each exactly equal the card's value (like
-   2+8=10 and 10 alone). A combination whose *total* merely happens to be
-   divisible by the card's value, without a genuine way to split it into
-   exact-value groups, does **not** qualify. Example that must still be
-   rejected: floor 3, 4, 13 with a played 10 — total is 20 (2×10), but no
-   subset of {3, 4, 13} sums to exactly 10, so there's no clean split.
-2. **It's mandatory, not optional** — if a combined multi-group capture is
-   available, the player cannot choose to take just one group instead
-   (the same way today's mandatory-capture rule already forces capturing
-   over throwing when *any* capture exists).
+Unaffected by this change: the opening-move constraint (target must still
+equal the bid, exactly — regardless of the multiple), the "no duplicate
+house value" rule, the reserve-card requirement, and the "you can only
+found a house for yourself" rule (§8.5) — ownership is unaffected by how
+many sets got folded in at creation.
 
 ## What changed
-- **`floor.ts`** — two new shared helpers used by both engines:
-  - `findMaximalExactGroups(floor, target)`: finds the largest possible
-    number of disjoint loose-card groups each summing to `target`.
-  - `canDecomposeIntoExactGroups(floor, ids, target, groupCount)`: verifies
-    a specific set of ids actually splits cleanly into that many exact
-    groups (used to reject the "coincidental total" case above).
-- **`gameEngine.ts` / `fourPlayerEngine.ts`** (`playCapture` /
-  `playFourPlayerCapture`): a loose-only capture selection now must total
-  exactly `maxK * cardValue` (where `maxK` is the true maximum achievable
-  across the *whole* floor, not just what was selected) and must itself
-  decompose cleanly into that many groups. Houses are unaffected — still
-  always captured alone, never combined with a loose group even if one
-  happens to exist elsewhere on the floor.
-- **`computer.ts` / `computer4p.ts`**: both AIs' capture-finding logic now
-  computes the full maximal grouping instead of just one match, so they
-  correctly take the combined capture themselves rather than erroring
-  against the new engine rule.
-- **Fuzz tests** (`fuzz.test.ts`, `fourPlayerFuzz.test.ts`): their own
-  independent random-move generators were updated the same way — this is
-  what actually caught that the AI files needed fixing too, since these
-  tests failed immediately with the old logic against the new engine rule.
+- **`gameEngine.ts` / `fourPlayerEngine.ts`** (`playBuildHouse` /
+  `playFourPlayerBuildHouse`): validation changed from `sum !== targetValue`
+  to `sum % targetValue !== 0`; the new house's `cemented` flag is set to
+  `true` whenever the multiple is greater than 1.
+- **`four-player.component.ts` / `two-player.component.ts`**: this is
+  where most of the actual work was. The UI previously assumed
+  `target = sum` always (since that was the only legal case) — with
+  multiples now legal, `buildTargetValue` needed to *infer* the intended
+  target from a sum that might be a multiple of it, not equal to it:
+  - During an opening move, it now prefers the bid value first if the sum
+    is evenly divisible by it (matching the hard engine constraint).
+  - Otherwise, if the raw sum is itself a legal house value (9-13), that's
+    used directly — this is the common, everyday single-set case,
+    completely unchanged in behavior.
+  - Otherwise, it searches for the largest legal house value (13 down to
+    9) that evenly divides the sum, and uses that as the inferred target.
+  - `canBuild` now explicitly checks `sum % target === 0` (previously
+    implicit, since target was always defined as equal to sum).
+  - The reveal overlay's label now shows the multiple when relevant (e.g.
+    "Building house of 13 (3×, cemented)").
 
 ## New tests
-Six new tests in each of `game.test.ts` and `fourPlayerActions.test.ts`,
-including a direct reproduction of the reported 2♣+8♣+10♥ scenario, both
-"wrong subset" rejections, the tricky non-decomposable-coincidence case
-(3+4+13), confirmation an ordinary single-group capture still works when
-there's nothing else to combine with, and confirmation houses remain
-unaffected.
+Three new tests in each of `game.test.ts` and `fourPlayerActions.test.ts`:
+a direct reproduction of the reported 4+9+K+K scenario (asserting the
+resulting house is cemented with all 4 cards absorbed), confirmation an
+ordinary single-set build still produces an uncemented house exactly as
+before, and confirmation a non-multiple sum is still correctly rejected.
+A fourth test confirms the opening-move-must-match-bid constraint still
+holds regardless of the multiple.
+
+## Known scope limitation
+The computer AI's own house-building heuristic was **not** updated to
+seek out multi-set builds — it still only ever tries the simple 1× case.
+This wasn't required to fix the reported issue (which was specifically
+about the human player being unable to make this move), and extending the
+AI to recognize and prefer multi-set opportunities is a real judgment-call
+enhancement, similar in spirit to the AI limitation already documented
+back in Phase 4. Worth a look if you want a noticeably sharper computer
+opponent later.
 
 ## How to apply
-Copy these nine files into your repo at the paths shown, then:
+Copy these six files into your repo at the paths shown. The two component
+files are full-file replacements that carry forward every previous fix
+(rule-note feature, floor-state log summary, etc.) — apply these instead
+of any earlier version of these two files, not alongside them.
 
     npm test
     npm run lint
     npm run build
 
 ## Verified here
-103/103 tests passing (11 new), full `tsc` type-check clean, and the two
-randomized fuzz tests (which now exercise a meaningfully more complex
-combinatorial rule) re-run 5 times back to back with no flakiness and no
-performance degradation.
+110/110 tests passing (7 new), full `tsc` type-check clean on the engine
+side. As with every UI-touching patch: no full Angular workspace in this
+sandbox, so the two component files couldn't be run through `ng build`
+directly — reviewed carefully by hand, but `npm run build` on your end is
+the real confirmation.
