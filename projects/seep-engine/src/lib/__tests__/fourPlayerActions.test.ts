@@ -9,7 +9,7 @@ import {
   playFourPlayerThrow,
 } from '../fourPlayerEngine.ts'
 import { type FloorItem, type House } from '../floor.ts'
-import { chooseFourPlayerMove, chooseFourPlayerOpeningMove } from '../computer4p.ts'
+import { chooseFourPlayerMove } from '../computer4p.ts'
 
 function card(face: Face, suit: Suit): Card {
   return { face, suit }

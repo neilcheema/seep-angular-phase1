@@ -1,5 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { APP_VERSION } from '../../version';
+
 
 /**
  * The app's home route: two entry points, one per game variant (spec §6).
@@ -12,4 +14,6 @@ import { RouterLink } from '@angular/router';
   imports: [RouterLink],
   templateUrl: './landing.component.html',
 })
-export class LandingComponent {}
+export class LandingComponent {
+  readonly appVersion = APP_VERSION;
+}
