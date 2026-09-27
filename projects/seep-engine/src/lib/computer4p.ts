@@ -1,10 +1,11 @@
 import { type Card, MAX_HOUSE_VALUE, MIN_HOUSE_VALUE, captureValue, pointValue } from './card'
 import {
   type FloorItem, type House,
-  findHouseByValue, findItem, findMaximalExactGroups, hasAnyLegalCapture, isHouse, itemValue,
+  findHouseByValue, findItem, findMaximalExactGroups, hasAnyLegalCapture, isHouse, isLoose, itemValue,
+  removeItems,
 } from './floor'
 import { hasCaptureValue } from './hand'
-import { type SeatId, areTeammates, opponentsOf } from './seats'
+import { type SeatId, areTeammates } from './seats'
 import { type FourPlayerGameState, legalFourPlayerBids } from './fourPlayerEngine'
 
 /**
@@ -40,8 +41,102 @@ function findCaptureCombination(floor: FloorItem<SeatId>[], card: Card): string[
   return groups.length > 0 ? groups.flat() : null
 }
 
-function captureOpportunities(floor: FloorItem<SeatId>[], hand: Card[]): number {
-  return hand.filter((c) => hasAnyLegalCapture(floor, c)).length
+/**
+ * How many of the four copies of a given capture value are currently
+ * visible to the acting seat: in their own hand, anywhere on the floor
+ * (loose or inside a house), or in either team's capture pile. Anything
+ * short of four is unaccounted for — somewhere in another player's unseen
+ * hand. This is exactly the running tally a careful human player keeps in
+ * their head over the course of a hand; the AI is never given access to
+ * any hand but its own.
+ */
+function accountedCopies(value: number, state: FourPlayerGameState, actingSeat: SeatId): number {
+  const visible: Card[] = [
+    ...state.hands[actingSeat],
+    ...state.floor.flatMap((item) => (isHouse(item) ? item.cards : [item.card])),
+    ...state.captures.teamA,
+    ...state.captures.teamB,
+  ]
+  return visible.filter((c) => captureValue(c) === value).length
+}
+
+/**
+ * True if an opponent (not the acting seat or their partner) owns an
+ * uncaptured house on the floor at exactly this value. Founding or
+ * maintaining a house requires holding a matching reserve card, so a
+ * visible opponent house is a direct, public tell about their hand — the
+ * same clue a human watching the table would pick up on, not a peek at
+ * anything hidden.
+ */
+function opponentHouseRevealsValue(floor: FloorItem<SeatId>[], value: number, actingSeat: SeatId): boolean {
+  return floor.some(
+    (item) =>
+      isHouse(item) &&
+      item.captureValue === value &&
+      item.owners.some((o) => o !== actingSeat && !areTeammates(o, actingSeat)),
+  )
+}
+
+/** True if a card of this value could capture something on the floor, regardless of which card it is. */
+function hasCaptureAtValue(floor: FloorItem<SeatId>[], value: number): boolean {
+  if (findHouseByValue(floor, value)) return true
+  return findMaximalExactGroups(floor, value).length > 0
+}
+
+/**
+ * True if this value is plausibly still in an opponent's hand: either an
+ * opponent's own house on the floor confirms it directly, or fewer than
+ * all four copies are visible anywhere the acting seat can actually see
+ * (own hand, floor, both capture piles) — meaning the rest are unseen and
+ * could be with an opponent. Deliberately conservative: an unseen card
+ * could equally be the acting seat's partner's, but with no way to tell
+ * which, treating it as a possible risk mirrors how a cautious human
+ * player would weigh the same uncertainty.
+ */
+function isValueAtRisk(value: number, state: FourPlayerGameState, actingSeat: SeatId): boolean {
+  if (opponentHouseRevealsValue(state.floor, value, actingSeat)) return true
+  return accountedCopies(value, state, actingSeat) < 4
+}
+
+/**
+ * Deduced exposure score for a hypothetical floor: counts how many
+ * distinct, still-plausibly-live values could capture something on it.
+ * Replaces counting an opponent's actual matching cards (which would
+ * require seeing their hand) with counting values that aren't yet
+ * deducibly ruled out — the fair equivalent for picking the safest card
+ * to throw.
+ */
+function deducedRiskScore(floor: FloorItem<SeatId>[], state: FourPlayerGameState, actingSeat: SeatId): number {
+  let score = 0
+  for (let value = 1; value <= MAX_HOUSE_VALUE; value++) {
+    if (hasCaptureAtValue(floor, value) && isValueAtRisk(value, state, actingSeat)) score++
+  }
+  return score
+}
+
+/**
+ * True if this exact floor could be swept whole by some value an opponent
+ * plausibly still holds — checked by deduction (see isValueAtRisk), not
+ * by inspecting any hand directly.
+ */
+function deducedSweepRisk(floor: FloorItem<SeatId>[], state: FourPlayerGameState, actingSeat: SeatId): boolean {
+  if (floor.length === 0) return false
+  const loose = floor.filter(isLoose)
+  const houses = floor.filter(isHouse)
+  if (houses.length > 1) return false
+
+  if (houses.length === 1) {
+    if (loose.length > 0) return false
+    return isValueAtRisk(houses[0]!.captureValue, state, actingSeat)
+  }
+
+  for (let value = 1; value <= MAX_HOUSE_VALUE; value++) {
+    const groups = findMaximalExactGroups(floor, value)
+    if (loose.length > 0 && groups.flat().length === loose.length && isValueAtRisk(value, state, actingSeat)) {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -193,6 +288,36 @@ function findFreeTeammateCement(
  *    scoring point value, not its capture value — those diverge for
  *    every non-spade card.
  */
+/**
+ * True if some opponent hand contains a card that would sweep this exact
+ * floor whole on their next turn. Checking actual opponent hands directly
+ * is consistent with how this AI already evaluates throw safety further
+ * below (it already inspects opponent hands there too) — the same
+ * semi-omniscient risk assessment, just applied one step earlier, before
+ * committing to a capture rather than only when picking a throw.
+ */
+/**
+ * Finds the safest card to throw instead — restricted to cards with no
+ * capture of their own available (mandatory capture would otherwise block
+ * throwing them), preferring whichever leaves the fewest deduced exposure
+ * on the resulting floor. Returns null if every card in hand can capture
+ * something, in which case there is no safer alternative to fall back to.
+ */
+function findSaferThrow(floor: FloorItem<SeatId>[], hand: Card[], state: FourPlayerGameState, actingSeat: SeatId): Card | null {
+  let safest: Card | null = null
+  let safestScore = Infinity
+  for (const card of hand) {
+    if (hasAnyLegalCapture(floor, card)) continue
+    const hypotheticalFloor: FloorItem<SeatId>[] = [...floor, { kind: 'loose', id: '__hypothetical__', card }]
+    const score = deducedRiskScore(hypotheticalFloor, state, actingSeat)
+    if (!safest || score < safestScore || (score === safestScore && pointValue(card) < pointValue(safest))) {
+      safest = card
+      safestScore = score
+    }
+  }
+  return safest
+}
+
 export function chooseFourPlayerMove(state: FourPlayerGameState): ComputerPlayAction4P {
   const seat = state.turn
   const hand = state.hands[seat]
@@ -236,6 +361,19 @@ export function chooseFourPlayerMove(state: FourPlayerGameState): ComputerPlayAc
   }
 
   if (bestCapture) {
+    const floorAfter = removeItems(state.floor, bestCapture.targetItemIds)
+    if (deducedSweepRisk(floorAfter, state, seat)) {
+      const saferThrow = findSaferThrow(state.floor, hand, state, seat)
+      if (saferThrow) {
+        return {
+          type: 'throw',
+          card: saferThrow,
+          reason:
+            'held back an available capture that would have left an opponent a likely sweep, ' +
+            'and threw a safer card instead',
+        }
+      }
+    }
     return {
       type: 'capture',
       card: bestCapture.card,
@@ -261,13 +399,12 @@ export function chooseFourPlayerMove(state: FourPlayerGameState): ComputerPlayAc
 
   let safest = hand[0]!
   let safestScore = Infinity
-  const opponentSeats = opponentsOf(seat)
   for (const card of hand) {
     const hypotheticalFloor: FloorItem<SeatId>[] = [
       ...state.floor,
       { kind: 'loose', id: '__hypothetical__', card },
     ]
-    const score = opponentSeats.reduce((t, s) => t + captureOpportunities(hypotheticalFloor, state.hands[s]), 0)
+    const score = deducedRiskScore(hypotheticalFloor, state, seat)
     if (score < safestScore || (score === safestScore && pointValue(card) < pointValue(safest))) {
       safest = card
       safestScore = score
@@ -278,7 +415,7 @@ export function chooseFourPlayerMove(state: FourPlayerGameState): ComputerPlayAc
     card: safest,
     reason:
       safestScore === 0
-        ? 'threw down a card that gives your opponents no capture at all'
-        : 'threw down the card that opens the fewest capture opportunities for your opponents',
+        ? 'threw down a card that gives your opponents no likely capture at all'
+        : 'threw down the card that opens the fewest deduced capture risks for your opponents',
   }
 }

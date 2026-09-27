@@ -287,6 +287,9 @@ describe('the computer AI\'s build logic correctly handles multi-set combination
         { kind: 'loose', id: 'f3', card: card(Face.King, Suit.Spades) },
       ],
       hands: { opponent: [card(Face.Four, Suit.Spades), card(Face.King, Suit.Diamonds), card(Face.Two, Suit.Hearts)], player: [] },
+      // The other three Nines are already accounted for, so the Nine left
+      // on the floor after this capture is deducibly safe.
+      captures: { player: [card(Face.Nine, Suit.Hearts)], opponent: [card(Face.Nine, Suit.Diamonds), card(Face.Nine, Suit.Spades)] },
       turn: 'opponent',
     })
     const action = chooseComputerMove(state)

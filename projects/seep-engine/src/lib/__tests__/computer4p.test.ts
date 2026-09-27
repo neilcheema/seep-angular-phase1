@@ -106,6 +106,14 @@ describe('chooseFourPlayerMove', () => {
         p2: [card(Face.Seven, Suit.Clubs), card(Face.Five, Suit.Hearts), card(Face.Nine, Suit.Spades)],
         p1: [], p3: [], p4: [],
       },
+      // The other three Fours are already accounted for (captured earlier
+      // in the hand), so the Four that would be left on the floor after
+      // this capture is deducibly safe — isolates this test to what it's
+      // actually checking (capture priority), not sweep-risk avoidance.
+      captures: {
+        teamA: [card(Face.Four, Suit.Hearts), card(Face.Four, Suit.Diamonds)],
+        teamB: [card(Face.Four, Suit.Spades)],
+      },
       turn: SeatId.P2,
     })
     const action = chooseFourPlayerMove(state)
@@ -237,5 +245,97 @@ describe('AI-driven full match fuzzing', () => {
       }
     }
     expect(sawABuildOrModify).toBe(true)
+  })
+})
+
+describe('the AI avoids a capture that would leave an opponent a free sweep, when a safer card exists', () => {
+  it('reproduces the exact reported scenario: throws instead of capturing a 9 that leaves a lone Queen exposed', () => {
+    const state = makeState({
+      turn: SeatId.P3,
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Spades) },
+        { kind: 'loose', id: 'f2', card: card(Face.Queen, Suit.Clubs) },
+      ],
+      hands: {
+        p1: [], p2: [card(Face.Two, Suit.Hearts)],
+        p3: [card(Face.Nine, Suit.Hearts), card(Face.Three, Suit.Diamonds)],
+        p4: [card(Face.Queen, Suit.Spades)], // an opponent holds a matching Queen — the real risk
+      },
+    })
+    const action = chooseFourPlayerMove(state)
+    expect(action.type).toBe('throw')
+    if (action.type === 'throw') {
+      expect(action.card).toEqual(card(Face.Three, Suit.Diamonds))
+    }
+  })
+
+  it('still captures normally when the leftover value is deducibly safe (all four copies accounted for)', () => {
+    const state = makeState({
+      turn: SeatId.P3,
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Spades) },
+        { kind: 'loose', id: 'f2', card: card(Face.Queen, Suit.Clubs) },
+      ],
+      hands: {
+        p1: [], p2: [card(Face.Two, Suit.Hearts)],
+        p3: [card(Face.Nine, Suit.Hearts), card(Face.Three, Suit.Diamonds)],
+        p4: [card(Face.Four, Suit.Spades)],
+      },
+      // Three of the four Queens are already captured; the fourth (Q♣) is
+      // the one that would be left on the floor — together that's all four
+      // accounted for, so no other seat could possibly hold a matching one.
+      captures: {
+        teamA: [card(Face.Queen, Suit.Hearts), card(Face.Queen, Suit.Spades)],
+        teamB: [card(Face.Queen, Suit.Diamonds)],
+      },
+    })
+    const action = chooseFourPlayerMove(state)
+    expect(action.type).toBe('capture')
+    if (action.type === 'capture') {
+      expect(action.targetItemIds).toEqual(['f1'])
+    }
+  })
+
+  it('still captures despite the risk when no safer card exists in hand at all', () => {
+    const state = makeState({
+      turn: SeatId.P3,
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Spades) },
+        { kind: 'loose', id: 'f2', card: card(Face.Queen, Suit.Clubs) },
+      ],
+      hands: {
+        p1: [], p2: [card(Face.Two, Suit.Hearts)],
+        p3: [card(Face.Nine, Suit.Hearts)], // the only card in hand — no alternative to fall back on
+        p4: [card(Face.Queen, Suit.Spades)],
+      },
+    })
+    const action = chooseFourPlayerMove(state)
+    expect(action.type).toBe('capture')
+  })
+
+  it('treats a lone opponent-owned house left behind as risky via the house tell', () => {
+    // Floor: a loose 7 (about to be captured) plus a house of 11 owned by
+    // an opponent, built from a 5+6 combination (no literal Jack inside
+    // it, so this isn't just "there's a visible Jack sitting right
+    // there"). Capturing the loose 7 would leave the house alone on the
+    // floor — a lone house is directly swept by any matching card, and its
+    // existence is a public tell that its owner holds a reserve Jack.
+    const state = makeState({
+      turn: SeatId.P3,
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Seven, Suit.Diamonds) },
+        { kind: 'house', id: 'h1', captureValue: 11, cemented: false, owners: [SeatId.P4], cards: [card(Face.Five, Suit.Diamonds), card(Face.Six, Suit.Clubs)] },
+      ],
+      hands: {
+        p1: [], p2: [],
+        p3: [card(Face.Seven, Suit.Clubs), card(Face.Three, Suit.Diamonds)],
+        p4: [],
+      },
+    })
+    const action = chooseFourPlayerMove(state)
+    expect(action.type).toBe('throw')
+    if (action.type === 'throw') {
+      expect(action.card).toEqual(card(Face.Three, Suit.Diamonds))
+    }
   })
 })

@@ -1,79 +1,78 @@
-# App versioning: v1.1.0
+# Fair AI: no hand-peeking, deduction only — replaces the previous patch entirely
 
-## What this adds
-- A single source of truth for the app's version (`version.ts`).
-- A small, unobtrusive version number at the bottom of both game pages
-  (below "How to play").
-- The version included in every "notice something off?" report email, so
-  any report you get can always be tied back to the exact build it came
-  from — this was the main practical reason to add versioning now, not
-  just cosmetic display.
+## What you asked for
+The AI should never see what's actually in an opponent's hand. It should
+only reason from what a human player could legitimately know: cards
+already played/captured, what's currently on the floor, and the fact that
+building or maintaining a house reveals its owner is holding a matching
+reserve card.
 
-## Why 1.1.0
-Treating everything already live before this conversation's changes
-(mandatory maximal capture, mandatory maximal build, the mobile side-hand
-layout, Clarity analytics, the rule-note feature, etc.) as an implicit
-baseline "1.0.0", this round — the maximal-capture and maximal-build rule
-corrections plus the smarter AI — is a real behavior/rule change, not just
-a bug patch, so I bumped the minor version rather than the patch version.
-Adjust this if you'd prefer a different starting number or scheme; it's
-just a string in one file from here on.
+## What I found and fixed
+This wasn't just about the risk-check I'd added in the previous patch —
+the **original** throw-safety logic, present since early in this project,
+also directly inspected the opponent's real hand
+(`captureOpportunities(floor, state.hands.player)`, and the four-player
+equivalent per opponent seat). Both games had this. All of it is now
+replaced with deduction from public information only. Neither AI is ever
+given access to any hand but its own, anywhere in either file.
 
-## Files included (safe to apply directly)
-- `version.ts` — new file, the single source of truth.
-- `four-player.component.ts` / `.html` — full-file replacements, carrying
-  forward every previous fix, plus the version import/display/email
-  inclusion.
-- `two-player.component.ts` / `.html` — same.
+## The deduction model (both games)
+1. **Card-counting**: for any capture value, count how many of its four
+   copies are visible — in the acting seat's own hand, anywhere on the
+   floor (loose or inside a house), or in either side's capture pile. If
+   fewer than four are visible, the rest are somewhere in an unseen hand.
+   This is exactly the running tally a careful human player keeps in their
+   head over a hand.
+2. **The house tell you specifically asked for**: an opponent's uncaptured
+   house on the floor is a direct, public signal that they're holding a
+   matching reserve card — the same clue a human watching the table would
+   pick up on.
 
-## Two things I did NOT touch, and why
-I don't have your current `landing.component.html` or
-`projects/seep-web/package.json` in front of me in this session, and
-guessing at their exact content risked silently clobbering something.
-Instead, here's exactly what to add by hand — both are small, quick edits:
+These replace `captureOpportunities` (which counted an opponent's actual
+matching cards) with `deducedRiskScore` and `deducedSweepRisk` (which
+count values that aren't yet deducibly ruled out). Used in two places in
+each file: the risk-check before committing to an ordinary capture (from
+the previous patch, now fixed to use deduction), and the original
+throw-safety fallback (which needed the exact same fix).
 
-### 1. `projects/seep-web/package.json`
-Find the `"version"` field and set it to match:
+## An honest limitation worth knowing about
+I tried to construct a test proving the house-tell adds information
+beyond card-counting alone, and traced through why it mostly can't in the
+normal case: if a house's owner still holds their original reserve card
+(the expected case), that card is inherently unaccounted-for anyway, so
+card-counting alone already catches it. The house-tell only diverges from
+card-counting in a rare edge case — the owner has already spent that
+reserve on something else, and by coincidence all four copies of the
+value are otherwise accounted for — where it would actually cause a false
+positive (treating an already-dead house as live risk). I kept the
+mechanism because it's what you asked for and it makes the AI's reasoning
+traceable to a concrete, visible event rather than only an abstract count,
+and the false-positive case just makes the AI a little more cautious than
+strictly optimal in an unusual scenario — not a broken decision. Flagging
+this now rather than presenting the house-tell as adding more than it
+reliably does.
 
-    "version": "1.1.0",
-
-### 2. `projects/seep-web/src/app/pages/landing/landing.component.html`
-Add this near the bottom of the template, just before its final closing
-`</div>` (matching the same small, muted footer style used on the game
-pages):
-
-    <div style="text-align: center; padding: 4px 0 10px; font-size: 10px; color: rgba(255,255,255,0.3);">
-      v1.1.0
-    </div>
-
-If you'd rather this pull from the same `version.ts` constant instead of
-being a hardcoded string (so you only ever update one file per release),
-add this import to `landing.component.ts`:
-
-    import { APP_VERSION } from '../../version';
-
-and a field on the class:
-
-    readonly appVersion = APP_VERSION;
-
-then use `v{{ appVersion }}` in the template snippet above instead of the
-literal `v1.1.0`. This is exactly the pattern used in both game
-components — recommended if you want true single-source-of-truth
-versioning, but I left the landing page as a plain hardcoded string
-option too, since I can't see the file to wire up the class field myself.
+## Test changes
+Every test from the previous patch that constructed a "the opponent's
+configured hand does/doesn't have a matching card" scenario no longer
+makes sense under this model — the AI has no such hand to check anymore.
+Rewritten to construct genuine *deducible* safety instead (accounting for
+a value's other copies via capture piles, matching how a hand would
+actually have evolved) or genuine risk (leaving copies unaccounted for).
+One new test specifically exercises the house-tell mechanism (a lone
+opponent house built from a non-obvious combination, with no literal
+matching card visible anywhere else, still correctly flagged as risky).
 
 ## How to apply
-Copy the four `.ts`/`.html` files into your repo at the paths shown, add
-`version.ts`, make the two manual edits above, then:
+Copy these six files into your repo at the paths shown — full
+replacements for both AI files and all four of their test files.
 
-    npm run build
+    npm test
     npm run lint
-
-No engine changes in this patch, so no `npm test` needed — this is purely
-version plumbing and display.
+    npm run build
 
 ## Verified here
-Grepped all four files to confirm consistent single-reference usage of
-`appVersion`/`APP_VERSION` with no naming collisions. As with every
-UI-touching patch: no full Angular workspace in this sandbox to run
-`ng build` against directly — reviewed by hand.
+125/125 tests passing (1 new since the last patch), full `tsc`
+type-check clean, plus the stricter `--noUnusedLocals
+--noUnusedParameters` pass — clean. Both randomized fuzz tests re-run 5
+times back to back with no flakiness.

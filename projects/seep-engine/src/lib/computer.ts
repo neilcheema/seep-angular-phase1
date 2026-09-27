@@ -1,6 +1,7 @@
 import { type Card, MAX_HOUSE_VALUE, MIN_HOUSE_VALUE, captureValue, isHouseValue, pointValue } from './card'
 import {
-  type FloorItem, findHouseByValue, findMaximalExactGroups, hasAnyLegalCapture, itemValue,
+  type FloorItem, findHouseByValue, findMaximalExactGroups, hasAnyLegalCapture, isHouse, isLoose,
+  itemValue, removeItems,
 } from './floor'
 import { hasCaptureValue } from './hand'
 import { type GameState, legalBids } from './gameEngine'
@@ -37,9 +38,101 @@ function findCaptureCombination(floor: FloorItem[], card: Card): string[] | null
   return groups.length > 0 ? groups.flat() : null
 }
 
-/** Counts how many of `hand`'s cards would find a legal capture against `floor`. */
-function captureOpportunities(floor: FloorItem[], hand: Card[]): number {
-  return hand.filter(c => hasAnyLegalCapture(floor, c)).length
+/**
+ * How many of the four copies of a given capture value are currently
+ * visible to the computer: in its own hand, anywhere on the floor (loose
+ * or inside a house), or in either player's capture pile. Anything short
+ * of four is unaccounted for — in the human's unseen hand. This is the
+ * same running tally a careful human player keeps in their head over a
+ * hand; the AI is never given access to the human's actual hand.
+ */
+function accountedCopies(value: number, state: GameState): number {
+  const visible: Card[] = [
+    ...state.hands.opponent,
+    ...state.floor.flatMap((item) => (isHouse(item) ? item.cards : [item.card])),
+    ...state.captures.player,
+    ...state.captures.opponent,
+  ]
+  return visible.filter(c => captureValue(c) === value).length
+}
+
+/**
+ * True if the human owns an uncaptured house on the floor at exactly this
+ * value. Founding or maintaining a house requires holding a matching
+ * reserve card, so a visible house is a direct, public tell — the same
+ * clue a human opponent watching the table would pick up on.
+ */
+function playerHouseRevealsValue(floor: FloorItem[], value: number): boolean {
+  return floor.some(item => isHouse(item) && item.captureValue === value && item.owners.includes('player'))
+}
+
+/** True if a card of this value could capture something on the floor, regardless of which card it is. */
+function hasCaptureAtValue(floor: FloorItem[], value: number): boolean {
+  if (findHouseByValue(floor, value)) return true
+  return findMaximalExactGroups(floor, value).length > 0
+}
+
+/**
+ * True if this value is plausibly still in the human's hand: either their
+ * own house on the floor confirms it directly, or fewer than all four
+ * copies are visible anywhere the computer can actually see (own hand,
+ * floor, both capture piles) — meaning the rest must be in the human's
+ * unseen hand (there is only one other hand in a two-player game, so this
+ * is exact, not a guess).
+ */
+function isValueAtRisk(value: number, state: GameState): boolean {
+  if (playerHouseRevealsValue(state.floor, value)) return true
+  return accountedCopies(value, state) < 4
+}
+
+/** Deduced exposure score for a hypothetical floor: how many distinct, still-plausibly-live values could capture something on it. */
+function deducedRiskScore(floor: FloorItem[], state: GameState): number {
+  let score = 0
+  for (let value = 1; value <= MAX_HOUSE_VALUE; value++) {
+    if (hasCaptureAtValue(floor, value) && isValueAtRisk(value, state)) score++
+  }
+  return score
+}
+
+/** True if this exact floor could be swept whole by some value the human plausibly still holds. */
+function deducedSweepRisk(floor: FloorItem[], state: GameState): boolean {
+  if (floor.length === 0) return false
+  const loose = floor.filter(isLoose)
+  const houses = floor.filter(isHouse)
+  if (houses.length > 1) return false
+
+  if (houses.length === 1) {
+    if (loose.length > 0) return false
+    return isValueAtRisk(houses[0]!.captureValue, state)
+  }
+
+  for (let value = 1; value <= MAX_HOUSE_VALUE; value++) {
+    const groups = findMaximalExactGroups(floor, value)
+    if (loose.length > 0 && groups.flat().length === loose.length && isValueAtRisk(value, state)) return true
+  }
+  return false
+}
+
+/**
+ * Finds the safest card to throw instead — restricted to cards with no
+ * capture of their own available (mandatory capture would otherwise block
+ * throwing them), preferring whichever leaves the fewest deduced exposure
+ * on the resulting floor. Returns null if every card in hand can capture
+ * something, in which case there is no safer alternative to fall back to.
+ */
+function findSaferThrow(floor: FloorItem[], hand: Card[], state: GameState): Card | null {
+  let safest: Card | null = null
+  let safestScore = Infinity
+  for (const card of hand) {
+    if (hasAnyLegalCapture(floor, card)) continue
+    const hypotheticalFloor: FloorItem[] = [...floor, { kind: 'loose', id: '__hypothetical__', card }]
+    const score = deducedRiskScore(hypotheticalFloor, state)
+    if (!safest || score < safestScore || (score === safestScore && pointValue(card) < pointValue(safest))) {
+      safest = card
+      safestScore = score
+    }
+  }
+  return safest
 }
 
 /**
@@ -177,6 +270,21 @@ export function chooseComputerMove(state: GameState): ComputerPlayAction {
     }
   }
   if (bestCapture) {
+    if (!bestCapture.sweeps) {
+      const floorAfter = removeItems(state.floor, bestCapture.targetItemIds)
+      if (deducedSweepRisk(floorAfter, state)) {
+        const saferThrow = findSaferThrow(state.floor, myHand, state)
+        if (saferThrow) {
+          return {
+            type: 'throw',
+            card: saferThrow,
+            reason:
+              'held back an available capture that would have left the opponent a likely sweep, ' +
+              'and threw a safer card instead',
+          }
+        }
+      }
+    }
     return {
       type: 'capture', card: bestCapture.card, targetItemIds: bestCapture.targetItemIds,
       reason: bestCapture.sweeps
@@ -205,8 +313,7 @@ export function chooseComputerMove(state: GameState): ComputerPlayAction {
       ...state.floor,
       { kind: 'loose', id: '__hypothetical__', card },
     ]
-    const opponentHand = state.hands.player
-    const score = captureOpportunities(hypotheticalFloor, opponentHand)
+    const score = deducedRiskScore(hypotheticalFloor, state)
     if (score < safestScore || (score === safestScore && pointValue(card) < pointValue(safest))) {
       safest = card
       safestScore = score

@@ -209,6 +209,13 @@ describe('the computer AI\'s build logic correctly handles multi-set combination
         p1: [], p3: [], p4: [],
         p2: [card(Face.Four, Suit.Spades), card(Face.King, Suit.Diamonds), card(Face.Two, Suit.Hearts)],
       },
+      // The other three Nines are already accounted for, so the Nine left
+      // on the floor after this capture is deducibly safe — isolates this
+      // test to what it's actually checking (capture-vs-build priority).
+      captures: {
+        teamA: [card(Face.Nine, Suit.Hearts), card(Face.Nine, Suit.Diamonds)],
+        teamB: [card(Face.Nine, Suit.Spades)],
+      },
       turn: SeatId.P2,
     })
     const action = chooseFourPlayerMove(state)
