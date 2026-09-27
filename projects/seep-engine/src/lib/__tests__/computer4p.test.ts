@@ -29,7 +29,7 @@ function makeState(overrides: Partial<FourPlayerGameState> = {}): FourPlayerGame
     turn: SeatId.P1,
     phase: 'playing',
     bidValue: null,
-    bidderInitialCards: [],
+    pendingDeal: null,
     lastCapturer: null,
     cardsPlayedThisHand: 10,
     totalPlayableThisHand: 48,
@@ -61,7 +61,7 @@ describe('chooseFourPlayerBid', () => {
   it('always returns a value the bidder can actually support', () => {
     const state = makeState({
       phase: 'bidding',
-      bidderInitialCards: [card(Face.Two, Suit.Clubs), card(Face.King, Suit.Hearts)],
+      hands: { p1: [card(Face.Two, Suit.Clubs), card(Face.King, Suit.Hearts)], p2: [], p3: [], p4: [] },
     })
     expect(chooseFourPlayerBid(state)).toBe(13)
   })

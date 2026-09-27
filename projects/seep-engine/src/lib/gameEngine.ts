@@ -36,7 +36,15 @@ export interface GameState {
   readonly turn: PlayerId
   readonly phase: GamePhase
   readonly bidValue: number | null
-  readonly bidderInitialCards: Card[]
+  /**
+   * Cards dealt but not yet given to anyone's visible hand — the bidder's
+   * remaining cards and the other player's entire hand, held back until
+   * the opening move resolves (matching the real dealing procedure: only
+   * the bidder's first four cards and the four-card floor are dealt
+   * before bidding and the opening move; everything else is dealt right
+   * after). Null once the second deal has happened for this hand.
+   */
+  readonly pendingDeal: Record<PlayerId, Card[]> | null
   readonly lastCapturer: PlayerId | null
   readonly cardsPlayedThisHand: number
   readonly totalPlayableThisHand: number
@@ -63,25 +71,28 @@ export function dealHand(
 ): GameState {
   let attempt = 0
   let floor: Card[]
-  let bidderHand: Card[]
+  let bidderFirstFour: Card[]
+  let bidderRest: Card[]
   let otherHand: Card[]
 
   do {
     const deck = shuffleDeck(createDeck())
     const dealt = dealInitialHands(deck)
     floor = dealt.floor
-    bidderHand = dealt.bidderHand
+    bidderFirstFour = dealt.bidderFirstFour
+    bidderRest = dealt.bidderRest
     otherHand = dealt.otherHand
     attempt++
   } while (
-    !bidderHand.slice(0, 4).some(c => isHouseValue(captureValue(c))) &&
+    !bidderFirstFour.some(c => isHouseValue(captureValue(c))) &&
     attempt < MAX_MISDEAL_ATTEMPTS
   )
 
   const other = otherPlayer(bidder)
   const state: GameState = {
     floor: floor.map((card, i) => ({ kind: 'loose', id: `f${i}`, card }) as const),
-    hands: { [bidder]: bidderHand, [other]: otherHand } as Record<PlayerId, Card[]>,
+    hands: { [bidder]: bidderFirstFour, [other]: [] } as Record<PlayerId, Card[]>,
+    pendingDeal: { [bidder]: bidderRest, [other]: otherHand } as Record<PlayerId, Card[]>,
     captures: { player: [], opponent: [] },
     sweepPoints: { player: 0, opponent: 0 },
     matchScores,
@@ -89,10 +100,9 @@ export function dealHand(
     turn: bidder,
     phase: 'bidding',
     bidValue: null,
-    bidderInitialCards: bidderHand.slice(0, 4),
     lastCapturer: null,
     cardsPlayedThisHand: 0,
-    totalPlayableThisHand: bidderHand.length + otherHand.length,
+    totalPlayableThisHand: bidderFirstFour.length + bidderRest.length + otherHand.length,
     nextItemId: floor.length,
     log: attempt > 1 ? [`Misdealt ${attempt - 1} time(s) — no house card in the first four.`] : [],
     winner: null,
@@ -108,7 +118,7 @@ export function startMatch(firstBidder: PlayerId = 'player'): GameState {
 
 export function legalBids(state: GameState): number[] {
   if (state.phase !== 'bidding') return []
-  const values = new Set(state.bidderInitialCards.map(captureValue).filter(isHouseValue))
+  const values = new Set(state.hands[state.bidder].map(captureValue).filter(isHouseValue))
   return [...values].sort((a, b) => a - b)
 }
 
@@ -182,13 +192,27 @@ function finishMove(
   lastCapturer: PlayerId | null,
 ): GameState {
   const other = otherPlayer(playerId)
-  const otherHand = state.hands[other]
+  let finalHand = newHand
+  let finalOtherHand = state.hands[other]
+  let pendingDeal = state.pendingDeal
+
+  // The opening move completes the staged deal: the bidder's hand (down to
+  // whatever they didn't just play) is topped up with the rest of their
+  // cards, and the other player receives their full hand for the first
+  // time — matching the real dealing procedure (see GameState.pendingDeal).
+  if (state.phase === 'opening-move' && pendingDeal) {
+    finalHand = [...finalHand, ...pendingDeal[playerId]]
+    finalOtherHand = [...finalOtherHand, ...pendingDeal[other]]
+    pendingDeal = null
+  }
+
   const cardsPlayedThisHand = state.cardsPlayedThisHand + 1
-  const handOver = newHand.length === 0 && otherHand.length === 0
+  const handOver = finalHand.length === 0 && finalOtherHand.length === 0
 
   const base: GameState = {
     ...state,
-    hands: { ...state.hands, [playerId]: newHand },
+    hands: { ...state.hands, [playerId]: finalHand, [other]: finalOtherHand },
+    pendingDeal,
     floor: newFloor,
     captures: newCaptures,
     sweepPoints: newSweepPoints,

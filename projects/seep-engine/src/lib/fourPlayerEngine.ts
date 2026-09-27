@@ -24,7 +24,16 @@ export interface FourPlayerGameState {
   readonly turn: SeatId
   readonly phase: FourPlayerPhase
   readonly bidValue: number | null
-  readonly bidderInitialCards: Card[]
+  /**
+   * Cards dealt but not yet given to anyone's visible hand — the bidder's
+   * remaining eight cards and the other three seats' entire hands, held
+   * back until the opening move resolves (matching the real dealing
+   * procedure: only the bidder's first four cards and the four-card floor
+   * are dealt before bidding and the opening move; everyone else is dealt
+   * their full hand, all at once, right after). Null once the second deal
+   * has happened for this hand.
+   */
+  readonly pendingDeal: Record<SeatId, Card[]> | null
   readonly lastCapturer: TeamId | null
   readonly cardsPlayedThisHand: number
   readonly totalPlayableThisHand: number
@@ -54,21 +63,28 @@ export function dealFourPlayerHand(
   const bidder = nextSeat(dealer)
   let attempt = 0
   let floor: Card[] = []
-  let hands: Record<SeatId, Card[]> = emptyRecord(ALL_SEATS, () => [])
+  let bidderFirstFour: Card[] = []
+  let bidderRest: Card[] = []
+  let otherHands: Record<SeatId, Card[]> = emptyRecord(ALL_SEATS, () => [])
 
   do {
     const deck = shuffleDeck(createDeck())
     const dealt = dealFourPlayerHands(deck, bidder)
     floor = dealt.floor
-    hands = dealt.hands
+    bidderFirstFour = dealt.bidderFirstFour
+    bidderRest = dealt.bidderRest
+    otherHands = dealt.otherHands
     attempt++
-  } while (legalHouseBids(hands[bidder].slice(0, 4)).length === 0 && attempt < MAX_MISDEAL_ATTEMPTS)
+  } while (legalHouseBids(bidderFirstFour).length === 0 && attempt < MAX_MISDEAL_ATTEMPTS)
 
-  const totalPlayable = ALL_SEATS.reduce((t, s) => t + hands[s].length, 0)
+  const totalPlayable =
+    bidderFirstFour.length + bidderRest.length +
+    ALL_SEATS.filter((s) => s !== bidder).reduce((t, s) => t + otherHands[s].length, 0)
 
   const state: FourPlayerGameState = {
     floor: floor.map((card, i) => ({ kind: 'loose', id: `f${i}`, card }) as const),
-    hands,
+    hands: { ...emptyRecord(ALL_SEATS, () => [] as Card[]), [bidder]: bidderFirstFour },
+    pendingDeal: { ...emptyRecord(ALL_SEATS, () => [] as Card[]), [bidder]: bidderRest, ...otherHands },
     captures: emptyRecord(ALL_TEAMS, () => [] as Card[]),
     sweepPoints: emptyRecord(ALL_TEAMS, () => 0),
     matchScores,
@@ -77,7 +93,6 @@ export function dealFourPlayerHand(
     turn: bidder,
     phase: 'bidding',
     bidValue: null,
-    bidderInitialCards: hands[bidder].slice(0, 4),
     lastCapturer: null,
     cardsPlayedThisHand: 0,
     totalPlayableThisHand: totalPlayable,
@@ -102,7 +117,7 @@ export function dealNextFourPlayerHand(state: FourPlayerGameState): FourPlayerGa
 
 export function legalFourPlayerBids(state: FourPlayerGameState): number[] {
   if (state.phase !== 'bidding') return []
-  return legalHouseBids(state.bidderInitialCards)
+  return legalHouseBids(state.hands[state.bidder])
 }
 
 export function placeFourPlayerBid(state: FourPlayerGameState, seat: SeatId, value: number): FourPlayerGameState {
@@ -189,13 +204,28 @@ function finishMove(
   newSweepPoints: Record<TeamId, number>,
   lastCapturerTeam: TeamId | null,
 ): FourPlayerGameState {
-  const newHands = { ...state.hands, [seat]: newHand }
+  let newHands = { ...state.hands, [seat]: newHand }
+  let pendingDeal = state.pendingDeal
+
+  // The opening move completes the staged deal: the bidder's hand (down to
+  // whatever they didn't just play) is topped up with the rest of their
+  // cards, and all three other seats receive their full hands for the
+  // first time, all at once — matching the real dealing procedure (see
+  // FourPlayerGameState.pendingDeal).
+  if (state.phase === 'opening-move' && pendingDeal) {
+    newHands = Object.fromEntries(
+      ALL_SEATS.map((s) => [s, [...newHands[s], ...pendingDeal![s]]]),
+    ) as Record<SeatId, Card[]>
+    pendingDeal = null
+  }
+
   const cardsPlayedThisHand = state.cardsPlayedThisHand + 1
   const allHandsEmpty = ALL_SEATS.every((s) => newHands[s].length === 0)
 
   const base: FourPlayerGameState = {
     ...state,
     hands: newHands,
+    pendingDeal,
     floor: newFloor,
     captures: newCaptures,
     sweepPoints: newSweepPoints,

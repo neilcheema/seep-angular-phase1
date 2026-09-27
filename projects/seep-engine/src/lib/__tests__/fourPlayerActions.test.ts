@@ -27,7 +27,7 @@ function makeState(overrides: Partial<FourPlayerGameState> = {}): FourPlayerGame
     turn: SeatId.P1,
     phase: 'playing',
     bidValue: null,
-    bidderInitialCards: [],
+    pendingDeal: null,
     lastCapturer: null,
     cardsPlayedThisHand: 10,
     totalPlayableThisHand: 48,
@@ -65,6 +65,36 @@ describe('captured cards are pooled by team (spec §8.5)', () => {
     const next = playFourPlayerCapture(state, SeatId.P1, card(Face.Seven, Suit.Clubs), ['f1'])
     expect(next.captures.teamA).toHaveLength(2)
     expect(next.captures.teamB).toHaveLength(0)
+  })
+})
+
+describe('the second deal completes automatically when the opening move resolves', () => {
+  it('tops up the bidder and gives all three other seats their full hands, all at once', () => {
+    const state = makeState({
+      phase: 'opening-move',
+      bidder: SeatId.P1,
+      bidValue: 9,
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: {
+        p1: [card(Face.Nine, Suit.Clubs), card(Face.Three, Suit.Hearts)],
+        p2: [], p3: [], p4: [],
+      },
+      pendingDeal: {
+        p1: [card(Face.Ace, Suit.Spades), card(Face.Two, Suit.Diamonds)],
+        p2: [card(Face.Four, Suit.Clubs), card(Face.King, Suit.Hearts)],
+        p3: [card(Face.Six, Suit.Spades)],
+        p4: [card(Face.Seven, Suit.Clubs), card(Face.Eight, Suit.Hearts), card(Face.Ten, Suit.Diamonds)],
+      },
+      turn: SeatId.P1,
+    })
+    const next = playFourPlayerThrow(state, SeatId.P1, card(Face.Nine, Suit.Clubs))
+    expect(next.phase).toBe('playing')
+    expect(next.pendingDeal).toBeNull()
+    // P1: had [9, 3], threw the 9 (down to [3]), topped up with 2 pending = 3.
+    expect(next.hands.p1).toHaveLength(3)
+    expect(next.hands.p2).toHaveLength(2)
+    expect(next.hands.p3).toHaveLength(1)
+    expect(next.hands.p4).toHaveLength(3)
   })
 })
 

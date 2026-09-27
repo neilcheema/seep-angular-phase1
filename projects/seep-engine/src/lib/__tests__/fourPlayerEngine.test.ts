@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { Face, Suit, captureValue, type Card } from '../card'
-import { SeatId, TeamId, nextSeat } from '../seats'
+import { Face, Suit, captureValue, type Card } from '../card.ts'
+import { SeatId, TeamId, nextSeat } from '../seats.ts'
 import {
   type FourPlayerGameState,
   dealFourPlayerHand,
@@ -9,8 +9,8 @@ import {
   legalFourPlayerBids,
   placeFourPlayerBid,
   startFourPlayerMatch,
-} from '../fourPlayerEngine'
-import type { FloorItem } from '../floor'
+} from '../fourPlayerEngine.ts'
+import type { FloorItem } from '../floor.ts'
 
 function card(face: Face, suit: Suit): Card {
   return { face, suit }
@@ -28,7 +28,7 @@ function makeState(overrides: Partial<FourPlayerGameState> = {}): FourPlayerGame
     turn: SeatId.P1,
     phase: 'bidding',
     bidValue: null,
-    bidderInitialCards: [],
+    pendingDeal: null,
     lastCapturer: null,
     cardsPlayedThisHand: 0,
     totalPlayableThisHand: 47,
@@ -45,16 +45,22 @@ describe('dealFourPlayerHand', () => {
   it('always gives the bidder a house card (9-13) among their first four, across many deals', () => {
     for (let i = 0; i < 20; i++) {
       const state = dealFourPlayerHand(SeatId.P4)
-      const values = state.bidderInitialCards.map(captureValue)
-      expect(values.some((v) => v >= 9 && v <= 13)).toBe(true)
+      const values = state.hands[state.bidder].map(captureValue)
+      expect(values.some((v: number) => v >= 9 && v <= 13)).toBe(true)
     }
   })
 
-  it('deals 4 to the floor and 12 to each of the four seats from a 52-card deck', () => {
+  it('deals 4 to the floor and 4 to the bidder up front, holding everyone else pending until the opening move', () => {
     const state = dealFourPlayerHand(SeatId.P4)
     expect(state.floor).toHaveLength(4)
+    expect(state.hands[state.bidder]).toHaveLength(4)
     for (const seat of [SeatId.P1, SeatId.P2, SeatId.P3, SeatId.P4]) {
-      expect(state.hands[seat]).toHaveLength(12)
+      if (seat !== state.bidder) expect(state.hands[seat]).toHaveLength(0)
+    }
+    expect(state.pendingDeal).not.toBeNull()
+    expect(state.pendingDeal![state.bidder]).toHaveLength(8)
+    for (const seat of [SeatId.P1, SeatId.P2, SeatId.P3, SeatId.P4]) {
+      if (seat !== state.bidder) expect(state.pendingDeal![seat]).toHaveLength(12)
     }
   })
 
@@ -87,7 +93,7 @@ describe('startFourPlayerMatch', () => {
 describe('bidding', () => {
   it('rejects a bid the bidder cannot support from their first four cards', () => {
     const state = makeState({
-      bidderInitialCards: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)],
+      hands: { p1: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)], p2: [], p3: [], p4: [] },
     })
     expect(() => placeFourPlayerBid(state, SeatId.P1, 11)).toThrow()
   })
@@ -96,7 +102,7 @@ describe('bidding', () => {
     const state = makeState({
       bidder: SeatId.P1,
       turn: SeatId.P1,
-      bidderInitialCards: [card(Face.Nine, Suit.Hearts)],
+      hands: { p1: [card(Face.Nine, Suit.Hearts)], p2: [], p3: [], p4: [] },
     })
     expect(() => placeFourPlayerBid(state, SeatId.P3, 9)).toThrow()
   })
@@ -105,7 +111,7 @@ describe('bidding', () => {
     const state = makeState({
       bidder: SeatId.P2,
       turn: SeatId.P2,
-      bidderInitialCards: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)],
+      hands: { p1: [], p2: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)], p3: [], p4: [] },
     })
     const next = placeFourPlayerBid(state, SeatId.P2, 9)
     expect(next.phase).toBe('opening-move')
@@ -114,11 +120,10 @@ describe('bidding', () => {
 
   it('lists every distinct house value the bidder holds, sorted', () => {
     const state = makeState({
-      bidderInitialCards: [
-        card(Face.King, Suit.Clubs),
-        card(Face.Nine, Suit.Hearts),
-        card(Face.Queen, Suit.Spades),
-      ],
+      hands: {
+        p1: [card(Face.King, Suit.Clubs), card(Face.Nine, Suit.Hearts), card(Face.Queen, Suit.Spades)],
+        p2: [], p3: [], p4: [],
+      },
     })
     expect(legalFourPlayerBids(state)).toEqual([9, 12, 13])
   })
@@ -171,8 +176,8 @@ describe('finishFourPlayerHand', () => {
       matchScores: { teamA: 10, teamB: 5 },
     })
     const next = finishFourPlayerHand(state, [], null)
-    expect(next.lastHandTotals!.teamA.total).toBe(63) // 13 card points + 50 sweep
-    expect(next.matchScores.teamA).toBe(73) // 10 prior + 63
+    expect(next.lastHandTotals!.teamA.total).toBe(63)
+    expect(next.matchScores.teamA).toBe(73)
     expect(next.phase).toBe('hand-over')
     expect(next.winner).toBeNull()
   })
@@ -183,7 +188,7 @@ describe('finishFourPlayerHand', () => {
       matchScores: { teamA: 90, teamB: 0 },
     })
     const next = finishFourPlayerHand(state, [], null)
-    expect(next.matchScores.teamA).toBe(103) // 90 + 13
+    expect(next.matchScores.teamA).toBe(103)
     expect(next.phase).toBe('match-over')
     expect(next.winner).toBe(TeamId.TeamA)
   })

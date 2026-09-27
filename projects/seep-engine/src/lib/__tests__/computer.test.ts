@@ -18,7 +18,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     turn: 'opponent',
     phase: 'playing',
     bidValue: null,
-    bidderInitialCards: [],
+    pendingDeal: null,
     lastCapturer: null,
     cardsPlayedThisHand: 10,
     totalPlayableThisHand: 48,
@@ -36,7 +36,7 @@ describe('chooseComputerBid', () => {
     const state = makeState({
       phase: 'bidding',
       bidder: 'opponent',
-      bidderInitialCards: [card(Face.Two, Suit.Clubs), card(Face.King, Suit.Hearts)],
+      hands: { player: [], opponent: [card(Face.Two, Suit.Clubs), card(Face.King, Suit.Hearts)] },
     })
     expect(chooseComputerBid(state)).toBe(13)
   })

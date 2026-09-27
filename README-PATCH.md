@@ -1,78 +1,87 @@
-# Fair AI: no hand-peeking, deduction only — replaces the previous patch entirely
+# Real-game dealing: bidding and the opening move happen from 4 cards, not a full hand
 
-## What you asked for
-The AI should never see what's actually in an opponent's hand. It should
-only reason from what a human player could legitimately know: cards
-already played/captured, what's currently on the floor, and the fact that
-building or maintaining a house reveals its owner is holding a matching
-reserve card.
+## What was different from the physical game
+The digital game dealt everyone's full hand immediately at the start of a
+hand — before bidding even happened. The bid value was already correctly
+computed from just the bidder's first four cards (that part was already
+right), but the *data* backing it wasn't: the bidder's entire hand was
+already sitting in state, visible, and technically playable for the
+opening move — a card from anywhere in their full hand could satisfy the
+bid, not only one of the genuine first four. In the physical game, only
+four cards are dealt to the bidder and four to the floor before bidding;
+everyone else holds nothing yet, and the rest of the deck isn't dealt out
+until right after the opening move.
 
-## What I found and fixed
-This wasn't just about the risk-check I'd added in the previous patch —
-the **original** throw-safety logic, present since early in this project,
-also directly inspected the opponent's real hand
-(`captureOpportunities(floor, state.hands.player)`, and the four-player
-equivalent per opponent seat). Both games had this. All of it is now
-replaced with deduction from public information only. Neither AI is ever
-given access to any hand but its own, anywhere in either file.
+## The corrected sequence (confirmed before implementing)
+1. Shuffle. Deal four cards to the floor and four to the bidder. Every
+   other seat's hand is empty.
+2. Bidding happens from those four cards only.
+3. The bidder's opening move (capture or build) is played from those same
+   four cards, against the four-card floor.
+4. Immediately after the opening move resolves, the rest of the deck is
+   dealt: the bidder's hand is topped up to its full size, and every other
+   seat receives their complete hand for the first time — all at once in
+   four-player, not staggered.
+5. The floor itself never receives more cards during this second deal —
+   only hands do.
 
-## The deduction model (both games)
-1. **Card-counting**: for any capture value, count how many of its four
-   copies are visible — in the acting seat's own hand, anywhere on the
-   floor (loose or inside a house), or in either side's capture pile. If
-   fewer than four are visible, the rest are somewhere in an unseen hand.
-   This is exactly the running tally a careful human player keeps in their
-   head over a hand.
-2. **The house tell you specifically asked for**: an opponent's uncaptured
-   house on the floor is a direct, public signal that they're holding a
-   matching reserve card — the same clue a human watching the table would
-   pick up on.
+Confirmed explicitly before implementing: the final hand size per player
+is unchanged from before, this only affects *when* cards become visible;
+the floor doesn't grow during the second deal; and in four-player, all
+three non-bidding seats get their hands simultaneously, not in turn order.
 
-These replace `captureOpportunities` (which counted an opponent's actual
-matching cards) with `deducedRiskScore` and `deducedSweepRisk` (which
-count values that aren't yet deducibly ruled out). Used in two places in
-each file: the risk-check before committing to an ordinary capture (from
-the previous patch, now fixed to use deduction), and the original
-throw-safety fallback (which needed the exact same fix).
+## What changed
+- **`deck.ts`**: `dealInitialHands` (two-player) and `dealFourPlayerHands`
+  (four-player) now split the deck into the floor, the bidder's first
+  four, and everything else, instead of handing out full hands directly.
+- **Both `GameState` types**: the old `bidderInitialCards` field (which
+  only ever affected bid computation, not what was actually dealt) is
+  replaced by `pendingDeal` — the cards dealt but held back from every
+  hand until the opening move resolves.
+- **`legalBids` / `legalFourPlayerBids`**: now read the bidder's actual
+  hand directly (which is genuinely just four cards at this point) instead
+  of a separately-tracked field.
+- **`finishMove` in both engines**: when a move resolves while still in
+  the opening-move phase, `pendingDeal` is automatically merged in — the
+  acting player's hand (already reduced by whatever they just played) is
+  topped up, and everyone else's held-back hand becomes visible, all in
+  the same state transition. Ordinary (non-opening) moves are completely
+  unaffected — `pendingDeal` is just carried through untouched once it's
+  null.
 
-## An honest limitation worth knowing about
-I tried to construct a test proving the house-tell adds information
-beyond card-counting alone, and traced through why it mostly can't in the
-normal case: if a house's owner still holds their original reserve card
-(the expected case), that card is inherently unaccounted-for anyway, so
-card-counting alone already catches it. The house-tell only diverges from
-card-counting in a rare edge case — the owner has already spent that
-reserve on something else, and by coincidence all four copies of the
-value are otherwise accounted for — where it would actually cause a false
-positive (treating an already-dead house as live risk). I kept the
-mechanism because it's what you asked for and it makes the AI's reasoning
-traceable to a concrete, visible event rather than only an abstract count,
-and the false-positive case just makes the AI a little more cautious than
-strictly optimal in an unusual scenario — not a broken decision. Flagging
-this now rather than presenting the house-tell as adding more than it
-reliably does.
+## What did NOT need to change
+The UI required zero changes. Both game pages already just render however
+many cards happen to be in `state.hands` — with a genuinely 4-card hand
+during bidding, the human correctly sees only 4 cards, and opponent hands
+correctly render as empty (`OpponentHandComponent` already handles a
+count of 0 cleanly) until the second deal happens. The bid-choice UI
+already called into `legalBidsFor`, which forwards straight to the fixed
+engine functions. This turned out to be a fully contained engine-layer
+fix.
 
 ## Test changes
-Every test from the previous patch that constructed a "the opponent's
-configured hand does/doesn't have a matching card" scenario no longer
-makes sense under this model — the AI has no such hand to check anymore.
-Rewritten to construct genuine *deducible* safety instead (accounting for
-a value's other copies via capture piles, matching how a hand would
-actually have evolved) or genuine risk (leaving copies unaccounted for).
-One new test specifically exercises the house-tell mechanism (a lone
-opponent house built from a non-obvious combination, with no literal
-matching card visible anywhere else, still correctly flagged as risky).
+Every test file's `makeState` helper referenced the removed
+`bidderInitialCards` field and needed updating to set `pendingDeal`
+instead (usually `null`, since most tests construct mid-hand states where
+the second deal has already happened). A few tests explicitly asserted
+"full hand immediately after dealing" and were rewritten to assert the
+new staged reality (4 cards dealt, the rest sitting in `pendingDeal`). Two
+new tests directly verify the merge itself: the bidder's hand is topped up
+and everyone else receives their full hand the moment the opening move
+resolves, with `pendingDeal` cleared to null afterward.
+
+## Verified here
+128/128 tests passing (5 new), full `tsc` type-check clean, plus the
+stricter `--noUnusedLocals --noUnusedParameters` pass — clean. Both
+randomized fuzz tests re-run 5 times back to back with no flakiness,
+which is a meaningful signal here specifically: they call the same public
+engine functions with no awareness of the staging mechanic at all, so
+their passing confirms the change is transparent to every consumer of the
+engine, not just hand-picked test scenarios.
 
 ## How to apply
-Copy these six files into your repo at the paths shown — full
-replacements for both AI files and all four of their test files.
+Copy these eight files into your repo at the paths shown, then:
 
     npm test
     npm run lint
     npm run build
-
-## Verified here
-125/125 tests passing (1 new since the last patch), full `tsc`
-type-check clean, plus the stricter `--noUnusedLocals
---noUnusedParameters` pass — clean. Both randomized fuzz tests re-run 5
-times back to back with no flakiness.
