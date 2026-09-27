@@ -79,6 +79,10 @@ describe('chooseComputerMove', () => {
         opponent: [card(Face.Seven, Suit.Clubs), card(Face.Five, Suit.Hearts), card(Face.Nine, Suit.Spades)],
         player: [],
       },
+      // The other three Fours are already accounted for (captured earlier
+      // in the hand), so the Four left on the floor after this capture is
+      // deducibly safe — isolates this test to capture-vs-build priority.
+      captures: { player: [card(Face.Four, Suit.Hearts)], opponent: [card(Face.Four, Suit.Diamonds), card(Face.Four, Suit.Spades)] },
     })
     const action = chooseComputerMove(state)
     expect(action.type).toBe('capture')
@@ -117,5 +121,62 @@ describe('chooseComputerMove', () => {
     if (action.type === 'throw') {
       expect(action.card).toEqual(card(Face.King, Suit.Hearts))
     }
+  })
+})
+
+describe('the AI avoids a capture that would leave the opponent a free sweep, when a safer card exists', () => {
+  it('throws instead of capturing a 9 that would leave a lone Queen exposed to the opponent', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Spades) },
+        { kind: 'loose', id: 'f2', card: card(Face.Queen, Suit.Clubs) },
+      ],
+      hands: {
+        opponent: [card(Face.Nine, Suit.Hearts), card(Face.Three, Suit.Diamonds)],
+        player: [card(Face.Queen, Suit.Spades)],
+      },
+    })
+    const action = chooseComputerMove(state)
+    expect(action.type).toBe('throw')
+    if (action.type === 'throw') {
+      expect(action.card).toEqual(card(Face.Three, Suit.Diamonds))
+    }
+  })
+
+  it('still captures normally when the leftover value is deducibly safe (all four copies accounted for)', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Spades) },
+        { kind: 'loose', id: 'f2', card: card(Face.Queen, Suit.Clubs) },
+      ],
+      hands: {
+        opponent: [card(Face.Nine, Suit.Hearts), card(Face.Three, Suit.Diamonds)],
+        player: [card(Face.Four, Suit.Spades)],
+      },
+      // Three of the four Queens are already captured; the fourth (Q♣) is
+      // the one that would be left on the floor — together that's all four
+      // accounted for, so the human can't possibly hold a matching one.
+      captures: {
+        player: [card(Face.Queen, Suit.Hearts)],
+        opponent: [card(Face.Queen, Suit.Spades), card(Face.Queen, Suit.Diamonds)],
+      },
+    })
+    const action = chooseComputerMove(state)
+    expect(action.type).toBe('capture')
+    if (action.type === 'capture') {
+      expect(action.targetItemIds).toEqual(['f1'])
+    }
+  })
+
+  it('still captures despite the risk when no safer card exists in hand at all', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'loose', id: 'f1', card: card(Face.Nine, Suit.Spades) },
+        { kind: 'loose', id: 'f2', card: card(Face.Queen, Suit.Clubs) },
+      ],
+      hands: { opponent: [card(Face.Nine, Suit.Hearts)], player: [card(Face.Queen, Suit.Spades)] },
+    })
+    const action = chooseComputerMove(state)
+    expect(action.type).toBe('capture')
   })
 })
