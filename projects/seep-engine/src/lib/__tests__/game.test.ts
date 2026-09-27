@@ -22,7 +22,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     turn: 'player',
     phase: 'playing',
     bidValue: null,
-    bidderInitialCards: [],
+    pendingDeal: null,
     lastCapturer: null,
     cardsPlayedThisHand: 5,
     totalPlayableThisHand: 48,
@@ -54,16 +54,19 @@ describe('dealHand', () => {
   it('always gives the bidder a house card (9-13) among their first four', () => {
     for (let i = 0; i < 20; i++) {
       const state = dealHand('player')
-      const values = state.bidderInitialCards.map(captureValue)
-      expect(values.some(v => v >= 9 && v <= 13)).toBe(true)
+      const values = state.hands.player.map(captureValue)
+      expect(values.some((v: number) => v >= 9 && v <= 13)).toBe(true)
     }
   })
 
-  it('deals 4 to the floor and 24 to each player from a 52-card deck', () => {
+  it('deals 4 to the floor, 4 to the bidder up front, and holds the rest pending until the opening move', () => {
     const state = dealHand('player')
     expect(state.floor).toHaveLength(4)
-    expect(state.hands.player).toHaveLength(24)
-    expect(state.hands.opponent).toHaveLength(24)
+    expect(state.hands.player).toHaveLength(4)
+    expect(state.hands.opponent).toHaveLength(0)
+    expect(state.pendingDeal).not.toBeNull()
+    expect(state.pendingDeal!.player).toHaveLength(20)
+    expect(state.pendingDeal!.opponent).toHaveLength(24)
   })
 })
 
@@ -71,7 +74,7 @@ describe('bidding', () => {
   it('rejects a bid the bidder cannot support from their first four cards', () => {
     const state = makeState({
       phase: 'bidding',
-      bidderInitialCards: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)],
+      hands: { player: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)], opponent: [] },
     })
     expect(() => placeBid(state, 'player', 11)).toThrow()
   })
@@ -79,11 +82,50 @@ describe('bidding', () => {
   it('accepts a supported bid and moves to the opening move', () => {
     const state = makeState({
       phase: 'bidding',
-      bidderInitialCards: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)],
+      hands: { player: [card(Face.Two, Suit.Clubs), card(Face.Nine, Suit.Hearts)], opponent: [] },
     })
     const next = placeBid(state, 'player', 9)
     expect(next.phase).toBe('opening-move')
     expect(next.bidValue).toBe(9)
+  })
+})
+
+describe('the second deal completes automatically when the opening move resolves', () => {
+  it('tops up the bidder and gives the other player their full hand, all at once', () => {
+    const state = makeState({
+      phase: 'opening-move',
+      bidder: 'player',
+      bidValue: 9,
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: {
+        player: [card(Face.Nine, Suit.Clubs), card(Face.Three, Suit.Hearts)],
+        opponent: [],
+      },
+      pendingDeal: {
+        player: [card(Face.Ace, Suit.Spades), card(Face.Two, Suit.Diamonds)],
+        opponent: [card(Face.Four, Suit.Clubs), card(Face.King, Suit.Hearts), card(Face.Six, Suit.Spades)],
+      },
+    })
+    // Opening move: 9 has no capture on a lone 5, so throw the 9 to satisfy the bid.
+    const next = playThrow(state, 'player', card(Face.Nine, Suit.Clubs))
+    expect(next.phase).toBe('playing')
+    expect(next.pendingDeal).toBeNull()
+    // Player: had [9, 3], threw the 9 (down to [3]), then topped up with the
+    // 2 pending cards = 3 total.
+    expect(next.hands.player).toHaveLength(3)
+    // Opponent: had none, now has their full pending hand of 3.
+    expect(next.hands.opponent).toHaveLength(3)
+  })
+
+  it('leaves pendingDeal untouched on an ordinary (non-opening) move', () => {
+    const state = makeState({
+      phase: 'playing',
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Seven, Suit.Diamonds) }],
+      hands: { player: [card(Face.Seven, Suit.Clubs)], opponent: [] },
+      pendingDeal: null,
+    })
+    const next = playCapture(state, 'player', card(Face.Seven, Suit.Clubs), ['f1'])
+    expect(next.pendingDeal).toBeNull()
   })
 })
 
