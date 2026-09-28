@@ -1,87 +1,44 @@
-# Real-game dealing: bidding and the opening move happen from 4 cards, not a full hand
+# How-to-play text updated to match the pagat.com-verified rules
 
-## What was different from the physical game
-The digital game dealt everyone's full hand immediately at the start of a
-hand — before bidding even happened. The bid value was already correctly
-computed from just the bidder's first four cards (that part was already
-right), but the *data* backing it wasn't: the bidder's entire hand was
-already sitting in state, visible, and technically playable for the
-opening move — a card from anywhere in their full hand could satisfy the
-bid, not only one of the genuine first four. In the physical game, only
-four cards are dealt to the bidder and four to the floor before bidding;
-everyone else holds nothing yet, and the rest of the deck isn't dealt out
-until right after the opening move.
+Both games' "How to play" sections rewritten to be accurate and clearer,
+using plain language close to pagat.com's own phrasing where it helped.
 
-## The corrected sequence (confirmed before implementing)
-1. Shuffle. Deal four cards to the floor and four to the bidder. Every
-   other seat's hand is empty.
-2. Bidding happens from those four cards only.
-3. The bidder's opening move (capture or build) is played from those same
-   four cards, against the four-card floor.
-4. Immediately after the opening move resolves, the rest of the deck is
-   dealt: the bidder's hand is topped up to its full size, and every other
-   seat receives their complete hand for the first time — all at once in
-   four-player, not staggered.
-5. The floor itself never receives more cards during this second deal —
-   only hands do.
+## Four-player — what changed
+- **Removed an actively wrong line**: *"A house can only ever be captured
+  on its own — never combined with other loose floor cards in the same
+  move, even if the totals would add up."* This was exactly the rule just
+  corrected in the engine patch — leaving this text in would have actively
+  misled players about how the game now works.
+- **Added**: capture values (was missing entirely before), the staged
+  dealing explanation (bidding/opening move from just four cards), the
+  multi-set cementing rule, the corrected mandatory-and-combined capture
+  rule (with the house-value-never-arithmetically-combined caveat spelled
+  out), and the new win/lose-based dealer rotation.
+- **Kept**: partnership/pooled-capture rules, house founding/breaking/
+  adding rules, sweep tiers, scoring, and the match win condition —
+  reworded in a few places for clarity but unchanged in substance.
 
-Confirmed explicitly before implementing: the final hand size per player
-is unchanged from before, this only affects *when* cards become visible;
-the floor doesn't grow during the second deal; and in four-player, all
-three non-bidding seats get their hands simultaneously, not in turn order.
+## Two-player — what changed
+Same treatment for everything that applies equally to both games: added
+capture values context and the staged-dealing note, updated the cementing
+line to cover multi-set builds, and rewrote the capture rule to state the
+corrected mandatory-and-combined behavior with the same arithmetic-value
+caveat. The two-player game's own structure (a single continuous hand, no
+team play, no dealer rotation) is left exactly as it was, since that
+matches your instruction not to touch the two-player dealing structure —
+only the shared mechanics that were actually corrected are reflected here.
 
-## What changed
-- **`deck.ts`**: `dealInitialHands` (two-player) and `dealFourPlayerHands`
-  (four-player) now split the deck into the floor, the bidder's first
-  four, and everything else, instead of handing out full hands directly.
-- **Both `GameState` types**: the old `bidderInitialCards` field (which
-  only ever affected bid computation, not what was actually dealt) is
-  replaced by `pendingDeal` — the cards dealt but held back from every
-  hand until the opening move resolves.
-- **`legalBids` / `legalFourPlayerBids`**: now read the bidder's actual
-  hand directly (which is genuinely just four cards at this point) instead
-  of a separately-tracked field.
-- **`finishMove` in both engines**: when a move resolves while still in
-  the opening-move phase, `pendingDeal` is automatically merged in — the
-  acting player's hand (already reduced by whatever they just played) is
-  topped up, and everyone else's held-back hand becomes visible, all in
-  the same state transition. Ordinary (non-opening) moves are completely
-  unaffected — `pendingDeal` is just carried through untouched once it's
-  null.
-
-## What did NOT need to change
-The UI required zero changes. Both game pages already just render however
-many cards happen to be in `state.hands` — with a genuinely 4-card hand
-during bidding, the human correctly sees only 4 cards, and opponent hands
-correctly render as empty (`OpponentHandComponent` already handles a
-count of 0 cleanly) until the second deal happens. The bid-choice UI
-already called into `legalBidsFor`, which forwards straight to the fixed
-engine functions. This turned out to be a fully contained engine-layer
-fix.
-
-## Test changes
-Every test file's `makeState` helper referenced the removed
-`bidderInitialCards` field and needed updating to set `pendingDeal`
-instead (usually `null`, since most tests construct mid-hand states where
-the second deal has already happened). A few tests explicitly asserted
-"full hand immediately after dealing" and were rewritten to assert the
-new staged reality (4 cards dealt, the rest sitting in `pendingDeal`). Two
-new tests directly verify the merge itself: the bidder's hand is topped up
-and everyone else receives their full hand the moment the opening move
-resolves, with `pendingDeal` cleared to null afterward.
-
-## Verified here
-128/128 tests passing (5 new), full `tsc` type-check clean, plus the
-stricter `--noUnusedLocals --noUnusedParameters` pass — clean. Both
-randomized fuzz tests re-run 5 times back to back with no flakiness,
-which is a meaningful signal here specifically: they call the same public
-engine functions with no awareness of the staging mechanic at all, so
-their passing confirms the change is transparent to every consumer of the
-engine, not just hand-picked test scenarios.
+## Files
+Both are full-file HTML replacements — templates only, no `.ts` changes
+needed for this patch (this was purely a text/content update).
 
 ## How to apply
-Copy these eight files into your repo at the paths shown, then:
+Copy these two files into your repo at the paths shown, then:
 
-    npm test
-    npm run lint
     npm run build
+    npm run lint
+
+No engine changes in this patch — pure content. As with every UI-only
+patch: no full Angular workspace in this sandbox to run `ng build`
+against directly — reviewed by hand for accuracy against both the
+pagat.com source and the actual corrected engine behavior.

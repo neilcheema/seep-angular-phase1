@@ -32,13 +32,19 @@ export function chooseFourPlayerBid(state: FourPlayerGameState): number {
  * onto capturing) — every disjoint loose-card group summing to the card's
  * value, combined into one capture, not just one such group.
  */
+/**
+ * Finds what a card captures: a matching house, combined with every
+ * disjoint loose-card group also summing to the card's value (a house at
+ * exactly the played value and any separate loose groups are independent
+ * matches to the same card and must all be taken together — see spec's
+ * house-plus-loose-group capture rule).
+ */
 function findCaptureCombination(floor: FloorItem<SeatId>[], card: Card): string[] | null {
   const target = captureValue(card)
   const house = findHouseByValue(floor, target)
-  if (house) return [house.id]
-
   const groups = findMaximalExactGroups(floor, target)
-  return groups.length > 0 ? groups.flat() : null
+  const ids = house ? [house.id, ...groups.flat()] : groups.flat()
+  return ids.length > 0 ? ids : null
 }
 
 /**

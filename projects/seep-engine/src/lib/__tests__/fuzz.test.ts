@@ -26,11 +26,12 @@ function playRandomMove(state: GameState, playerId: PlayerId): GameState {
   const options: Option[] = []
 
   for (const card of candidates) {
-    const house = findHouseByValue(state.floor, captureValue(card))
-    if (house) options.push(() => playCapture(state, playerId, card, [house.id]))
-    const maxGroups = findMaximalExactGroups(state.floor, captureValue(card))
-    if (maxGroups.length > 0) {
-      options.push(() => playCapture(state, playerId, card, maxGroups.flat()))
+    const captureTarget = captureValue(card)
+    const house = findHouseByValue(state.floor, captureTarget)
+    const maxGroups = findMaximalExactGroups(state.floor, captureTarget)
+    const requiredIds = house ? [house.id, ...maxGroups.flat()] : maxGroups.flat()
+    if (requiredIds.length > 0) {
+      options.push(() => playCapture(state, playerId, card, requiredIds))
     }
 
     for (let target = 9; target <= 13; target++) {

@@ -115,21 +115,23 @@
     <details class="px-4 pb-2" style="color: rgba(255,255,255,0.65); font-size: 12px;">
       <summary style="cursor: pointer; color: var(--gold-lt);">How to play (team rules)</summary>
       <ul style="list-style: disc; padding-left: 18px; margin-top: 6px; line-height: 1.6;">
-        <li>You (Player 1) and Player 3 are partners (Team A) against Players 2 and 4 (Team B).</li>
-        <li>Captured cards are pooled by team, not by seat — your partner's captures count toward your score.</li>
-        <li>A house can only ever be captured on its own — never combined with other loose floor cards in the same move, even if the totals would add up.</li>
-        <li>A sweep bonus only applies when your move clears the *entire* floor, not just a house or a subset of loose cards.</li>
+        <li>Capture values: A=1, 2-10 face value, J=11, Q=12, K=13.</li>
+        <li>You (Player 1) and Player 3 are partners (Team A) against Players 2 and 4 (Team B) — captured cards are pooled by team, not by seat.</li>
+        <li>Bidding and the opening move are decided from just the bidder's first four cards and the four-card floor — everyone else's hands aren't dealt until right after the opening move.</li>
+        <li>Build a house (value 9-13) from your card plus loose floor cards — you need another card of that value left in hand.</li>
+        <li>A house can be cemented by adding any combination — a card from hand, plus optional loose floor cards — whose total is a multiple of the house's value, even at the moment you found it, combining several complete sets into one house that's cemented from the start.</li>
         <li>You can only found a new house for yourself, never on your partner's behalf.</li>
-        <li>You can't break a house you already own — a teammate or opponent has to break it instead.</li>
+        <li>You can't break a house you already own — a teammate or opponent has to break it instead. Breaking makes you the new owner, unless the new value matches a house your partner already holds, in which case the two merge into one cemented team house.</li>
         <li>Adding a matching card to your partner's house is free — no reserve card needed. Your own or an opponent's house still needs one.</li>
-        <li>Breaking a house makes you its new owner, unless the new value matches a house your partner already holds — then the two merge into one cemented team house.</li>
+        <li>You must capture if a capture is available with the card you play. If there's more than one exact match on the floor — a house plus one or more separate loose groups all worth the same value — you must take all of them together in one move, not just one.</li>
+        <li>A house is only captured by a card matching its own exact value — its value is never combined with loose cards to reach some other total.</li>
+        <li>Clearing the whole floor is a sweep: 50 points normally, 25 if it happens on the very first move of the hand, 0 if it's the very last card played in the hand.</li>
+        <li>Spades score their face value, other-suit aces score 1 point, and the Ten of Diamonds scores 6 — everything else is worth 0. Under 9 points in a hand scores 0.</li>
+        <li>First team to lead by 100 points wins the match.</li>
+        <li>The dealer's team deals again if they're behind or tied after a hand; once they're ahead, the deal passes to the next seat.</li>
         <li>Every move — yours and the computer's — pauses so you can check it before play continues.</li>
       </ul>
     </details>
-
-    <div style="text-align: center; padding: 4px 0 10px; font-size: 10px; color: rgba(255,255,255,0.3);">
-      v{{ appVersion }}
-    </div>
   </div>
 }
 
