@@ -829,3 +829,29 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
   font-size: 12px;
   min-width: auto;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   FLOOR SCATTER — slight, deterministic rotation per floor item for
+   a more natural "cards on a table" look (both games share
+   .floor-row, so this one rule covers both).
+
+   NOTE: this rotates a new wrapper div placed around each floor
+   item, not the floor-item component itself — deliberately, so it
+   can't conflict with whatever transform your existing "selected"
+   highlight state already applies inside that component. If you
+   have a selection effect that also uses `transform` (e.g. lifting
+   the card up), it will still work correctly nested inside this —
+   CSS transforms on a parent and a child both apply, they don't
+   override each other.
+═══════════════════════════════════════════════════════════════ */
+.floor-scatter-slot {
+  display: inline-flex;
+}
+.floor-scatter-slot:nth-child(8n+1) { transform: rotate(-7deg) translateY(2px); }
+.floor-scatter-slot:nth-child(8n+2) { transform: rotate(5deg) translateY(-3px); }
+.floor-scatter-slot:nth-child(8n+3) { transform: rotate(-4deg) translateY(4px); }
+.floor-scatter-slot:nth-child(8n+4) { transform: rotate(8deg) translateY(-2px); }
+.floor-scatter-slot:nth-child(8n+5) { transform: rotate(-6deg) translateY(3px); }
+.floor-scatter-slot:nth-child(8n+6) { transform: rotate(3deg) translateY(-4px); }
+.floor-scatter-slot:nth-child(8n+7) { transform: rotate(-8deg) translateY(2px); }
+.floor-scatter-slot:nth-child(8n+8) { transform: rotate(6deg) translateY(-3px); }
