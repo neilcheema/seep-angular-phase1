@@ -1,5 +1,5 @@
-<div [class]="fanClass">
+<div [class]="fanClass" [style]="fanStyle">
   @for (i of slots; track i) {
-    <div class="card card-back" [style.transform]="orientation() === 'top' ? ('rotate(' + rotationFor(i) + 'deg)') : null"></div>
+    <div class="card card-back" [style]="cardStyle(i)"></div>
   }
 </div>

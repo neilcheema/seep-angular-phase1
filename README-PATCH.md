@@ -1,54 +1,60 @@
-# Visual polish v2: bug fixed after reviewing your actual styles.css
+# Curved side hands + centred floor (four-player)
 
-## A real bug caught and fixed
-The first version of `opponent-hand.component.html` applied an inline
-`[style.transform]` to every card-back, and for left/right orientations
-that inline value was `rotate(0deg)`. Your `styles.css` has:
+## What you reported
+1. Floor cards sat too far to the left instead of the middle.
+2. Player 2 and Player 4 were still straight lines instead of curved fans.
 
-    .comp-fan--left .card-back  { transform: rotate(90deg); }
-    .comp-fan--right .card-back { transform: rotate(-90deg); }
+## What was actually going on (found by rendering it, not guessing)
+I rebuilt your table in a browser using your real styles.css, reproduced
+your screenshot exactly, and traced each problem:
 
-Inline styles always win over CSS class rules, so that `0deg` would have
-silently overridden the 90°/-90° rotation and broken Player 2/4's
-mobile-compact side hands the moment this was applied — undoing the
-mobile-orientation fix from earlier in this conversation. This is exactly
-the kind of thing I couldn't have caught without seeing the actual CSS.
+- **Floor off-centre**: the four-player floor row had no `justify-content:
+  center` (the two-player one already did). Houses are wide, so each wrapped
+  onto its own row and hugged the left edge.
+- **Floor overlapping Player 2**: the side cards were portrait cards rotated
+  90 degrees. CSS rotation doesn't change layout size, so each column reserved
+  the *narrow* width but was drawn *wide*, spilling into the floor area.
+- **A bug I hadn't noticed**: the last card in each side column stuck out
+  sideways. An old rule, `.comp-fan .card-back { margin-right: -22px }`, applies
+  to every card except the last, and in a vertical column that shifts them.
+- **Straight lines**: nothing ever varied the angle down the stack.
 
-**Fixed**: the inline transform is now only ever applied for `'top'`
-orientation (`orientation() === 'top' ? '...' : null` — passing `null`
-means Angular doesn't set the inline style at all, leaving your existing
-CSS class rules completely in control for left/right, exactly as before).
+## What changed (2 files, no CSS to merge)
+**opponent-hand.component.ts / .html**
+- Side seats: cards are laid landscape (width/height swapped) so the column's
+  footprint matches what you see. Each card tilts a little more than the last
+  down the stack, and outer cards ease toward the screen edge, so the column
+  bulges toward the table like a real fan seen from the side. Tighter overlap
+  also makes the columns roughly half as tall, which gives the floor room.
+- Top seat: same look as before, but a full hand no longer wraps to a second
+  row on tablet-width screens.
+- All of it is inline styles in the component, so it overrides the old CSS
+  rules without you touching styles.css.
 
-## Everything else, now confirmed safe against your real CSS
-- `.hand-row` and `.floor-row` both use flexbox `gap` for spacing, not
-  margin-based overlap — so wrapping their children in `.hand-card-slot`/
-  `.floor-scatter-slot` doesn't disturb spacing at all, on any screen size.
-- The only transform-based interactive state I found (`.card-valid:hover`,
-  the lift-and-scale effect when hovering a selectable card) applies to
-  the card itself, one level *inside* my wrapper divs — a rotated parent
-  and a separately-transformed child compound correctly in CSS, they
-  don't fight each other. Confirmed no conflict.
-- `.house-stack.selected` and other selection-highlight rules use
-  `border-color`/`box-shadow`, never `transform` — no interaction with
-  anything in this patch at all.
+**four-player.component.html**: floor row now centred (one inline style).
+This is the full file, so it carries forward your earlier how-to-play and
+floor-scatter changes.
 
-## Files in this version
-Same four files as before (`opponent-hand.component.ts/.html`, both game
-page templates, `styles-addition.css`), plus the new
-`player-hand.component.ts/.html` fan rotation from the follow-up. Only the
-opponent-hand files actually changed from what was delivered previously —
-everything else is unchanged and was already correct.
+## Verified
+- Compiled with the real Angular AOT compiler with `strictTemplates` on: clean.
+- Rendered the compiled component in Chromium at 375, 390, 430 and 768 px wide
+  with 12, 10, 4, 1 and 0 cards: no clipping, no overlap with the floor.
+- Before/after image included.
 
-## Still true from before
-This is still a visual change built without a live browser to check it
-in — the fix above was found through careful reading of your CSS, not by
-seeing it rendered. The rotation angles and scatter pattern are a
-reasonable first guess. Build it, look at it on your phone, tell me what
-to adjust.
+## Not verified
+The floor cards in my test were simplified stand-ins, since I don't have your
+floor-item component, and I haven't seen this on a real iPhone. Expect the
+centring to be right to within a few pixels, not exact.
 
-## How to apply
-1. Copy all files into your repo at the paths shown.
-2. Append `styles-addition.css`'s contents to the end of
-   `projects/seep-web/src/styles.css` (skip this step if you already
-   applied it from the previous delivery — it's unchanged).
-3. `npm run build && npm run lint`
+## If you want to tune it
+All in `cardStyle()` in opponent-hand.component.ts:
+- `-0.55` (side overlap): more negative = tighter stack.
+- `3.5` and `40` (tilt per card / total cap, degrees): fan width.
+- `radius = 210`: smaller = stronger arc, larger = flatter.
+
+## Optional cleanup
+The `.comp-fan--left` / `.comp-fan--right` blocks in styles.css (added in the
+earlier mobile patch) are now overridden and do nothing. Safe to delete.
+
+## Apply
+Copy the two folders over your repo, then `npm run build && npm run lint`.
