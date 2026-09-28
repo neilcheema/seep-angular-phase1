@@ -404,7 +404,12 @@ describe('a capture must take every matching group at once, not just one', () =>
     expect(() => playCapture(state, 'player', card(Face.Ten, Suit.Diamonds), ['f1', 'f2', 'f3'])).toThrow()
   })
 
-  it('a house is still captured alone, unaffected by an unrelated matching loose group elsewhere', () => {
+  it('a house combines with a separate matching loose group in one capture (pagat.com jack-house example)', () => {
+    // "If there is a jack-house and a loose 7 and a loose 4 on the floor,
+    // then by playing a jack you can pick up the house and also the 7 and
+    // the 4." — the house's own value exactly matches the played card, and
+    // the loose 7+4 is a fully separate, disjoint match to that same
+    // value; both must be taken together.
     const state = makeState({
       floor: [
         { kind: 'house', id: 'h1', cards: [card(Face.Ten, Suit.Spades)], captureValue: 10, cemented: false, owners: ['opponent'] },
@@ -413,9 +418,46 @@ describe('a capture must take every matching group at once, not just one', () =>
       ],
       hands: { player: [card(Face.Ten, Suit.Diamonds)], opponent: [card(Face.Four, Suit.Clubs)] },
     })
+    const next = playCapture(state, 'player', card(Face.Ten, Suit.Diamonds), ['h1', 'f1', 'f2'])
+    expect(next.floor).toHaveLength(0)
+    expect(next.captures.player).toHaveLength(4) // 10 (house), 2, 8, plus the played 10
+  })
+
+  it('rejects capturing the house alone when a separate matching loose group is also available', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'house', id: 'h1', cards: [card(Face.Ten, Suit.Spades)], captureValue: 10, cemented: false, owners: ['opponent'] },
+        { kind: 'loose', id: 'f1', card: card(Face.Two, Suit.Clubs) },
+        { kind: 'loose', id: 'f2', card: card(Face.Eight, Suit.Diamonds) },
+      ],
+      hands: { player: [card(Face.Ten, Suit.Diamonds)], opponent: [card(Face.Four, Suit.Clubs)] },
+    })
+    expect(() => playCapture(state, 'player', card(Face.Ten, Suit.Diamonds), ['h1'])).toThrow()
+  })
+
+  it('a house is still captured alone when no separate matching loose group exists', () => {
+    const state = makeState({
+      floor: [
+        { kind: 'house', id: 'h1', cards: [card(Face.Ten, Suit.Spades)], captureValue: 10, cemented: false, owners: ['opponent'] },
+        { kind: 'loose', id: 'f1', card: card(Face.Three, Suit.Clubs) },
+      ],
+      hands: { player: [card(Face.Ten, Suit.Diamonds)], opponent: [card(Face.Four, Suit.Clubs)] },
+    })
     const next = playCapture(state, 'player', card(Face.Ten, Suit.Diamonds), ['h1'])
-    const remaining = next.floor.filter((i) => i.kind === 'loose')
-    expect(remaining).toHaveLength(2)
+    expect(next.floor.filter(i => i.kind === 'loose')).toHaveLength(1) // the unrelated 3 stays
+  })
+
+  it('never allows a house\'s value to be arithmetically combined with loose cards to reach a different sum', () => {
+    // "on the floor is a 9-house and a 3. If you play a queen you cannot
+    // pick up the 9-house and the 3."
+    const state = makeState({
+      floor: [
+        { kind: 'house', id: 'h1', cards: [card(Face.Nine, Suit.Spades)], captureValue: 9, cemented: false, owners: ['opponent'] },
+        { kind: 'loose', id: 'f1', card: card(Face.Three, Suit.Clubs) },
+      ],
+      hands: { player: [card(Face.Queen, Suit.Diamonds)], opponent: [card(Face.Four, Suit.Clubs)] },
+    })
+    expect(() => playCapture(state, 'player', card(Face.Queen, Suit.Diamonds), ['h1', 'f1'])).toThrow()
   })
 })
 

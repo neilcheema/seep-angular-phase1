@@ -1,9 +1,9 @@
 import { type Card, captureValue, isHouseValue, legalHouseBids } from './card'
 import { createDeck, dealFourPlayerHands, shuffleDeck } from './deck'
-import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, teamOf } from './seats'
+import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, partnerOf, teamOf } from './seats'
 import {
   type FloorItem, type House,
-  allCardsOf, canDecomposeIntoExactGroups, findHouseByValue, findItem, findMaximalExactGroups,
+  allCardsOf, findHouseByValue, findItem, findMaximalExactGroups,
   hasAnyLegalCapture, isHouse, isLoose, itemValue, removeItems, sumValues,
 } from './floor'
 import { hasCard, hasCaptureValue, removeCard } from './hand'
@@ -110,9 +110,35 @@ export function startFourPlayerMatch(dealer: SeatId = SeatId.P4): FourPlayerGame
   return dealFourPlayerHand(dealer)
 }
 
+/**
+ * Computes who deals the next hand, per the real dealing procedure: the
+ * dealer's team deals again if they're behind or tied after the hand just
+ * played; if the hand put them ahead, the deal passes to the next seat.
+ * If the hand also completed a baazi, the deal instead passes to that
+ * next-in-line player's partner, not to them directly.
+ *
+ * The baazi branch is currently unreachable via dealNextFourPlayerHand,
+ * since a baazi ends the match outright here (spec §9's "first to 100
+ * wins") rather than resetting to continue toward a further baazi — kept
+ * correct and independently testable regardless, in case that design
+ * ever changes.
+ */
+export function computeNextDealer(
+  dealer: SeatId,
+  matchScoresAfterHand: Record<TeamId, number>,
+  baaziWinner: TeamId | null,
+): SeatId {
+  const dealerTeam = teamOf(dealer)
+  const otherTeam = ALL_TEAMS.find((t) => t !== dealerTeam)!
+  const normalNextDealer =
+    matchScoresAfterHand[dealerTeam] > matchScoresAfterHand[otherTeam] ? nextSeat(dealer) : dealer
+  return baaziWinner ? partnerOf(normalNextDealer) : normalNextDealer
+}
+
 export function dealNextFourPlayerHand(state: FourPlayerGameState): FourPlayerGameState {
   if (state.phase !== 'hand-over') throw new Error('The current hand has not finished.')
-  return dealFourPlayerHand(nextSeat(state.dealer), state.matchScores)
+  const nextDealer = computeNextDealer(state.dealer, state.matchScores, null)
+  return dealFourPlayerHand(nextDealer, state.matchScores)
 }
 
 export function legalFourPlayerBids(state: FourPlayerGameState): number[] {
@@ -258,37 +284,44 @@ export function playFourPlayerCapture(
   }
   if (targetItemIds.length === 0) throw new Error('Select at least one card or house to capture.')
 
-  const containsHouse = targetItemIds.some((id) => isHouse(findItem(state.floor, id)!))
-  if (containsHouse && targetItemIds.length > 1) {
-    throw new Error('A house can only be captured on its own, as a single unit.')
+  const target = captureValue(card)
+  const selectedHouse = targetItemIds.map((id) => findItem(state.floor, id)!).find(isHouse)
+
+  // A house's own value must exactly match the played card — it can never
+  // be combined arithmetically with other floor items to reach some other
+  // sum (a 9-house plus a loose 3 does not make a queen capturable). This
+  // is the one thing that never changes about houses.
+  if (selectedHouse && selectedHouse.captureValue !== target) {
+    throw new Error(
+      `A house can only be captured by a card matching its own value of ${selectedHouse.captureValue}.`,
+    )
   }
 
-  const sum = sumValues(state.floor, targetItemIds)
-  const target = captureValue(card)
+  // Beyond that, a house at exactly the played value and any disjoint loose
+  // groups also at that value are independent matches to the same card and
+  // must all be captured together — the same maximal-capture principle
+  // already applied to multiple loose groups (§21), now covering houses
+  // too: "if there is a jack-house and a loose 7 and a loose 4 on the
+  // floor, then by playing a jack you can pick up the house and also the
+  // 7 and the 4" (a house is simply never allowed to be one of the terms
+  // summed together to reach the target — it only ever matches on its own
+  // exact value, alongside whatever else also does).
+  const houseAtTarget = findHouseByValue(state.floor, target)
+  const maxGroups = findMaximalExactGroups(state.floor, target)
+  const requiredIds = new Set(houseAtTarget ? [houseAtTarget.id, ...maxGroups.flat()] : maxGroups.flat())
 
-  if (!containsHouse) {
-    // A capture must take every matching group of loose cards at once, not
-    // just one — the same way a cemented house holding multiple sets of
-    // its value is captured as a single unit regardless of how many sets
-    // it contains (spec §15.5's cementing generalization, mirrored here).
-    const maxGroups = findMaximalExactGroups(state.floor, target)
-    const maxK = maxGroups.length
-    if (maxK > 0) {
-      const requiredSum = maxK * target
-      if (sum !== requiredSum) {
-        throw new Error(
-          `A combined capture of ${requiredSum} is available on the floor — you must capture ` +
-            `every matching group of ${target} together, not just one.`,
-        )
-      }
-      if (!canDecomposeIntoExactGroups(state.floor, targetItemIds, target, maxK)) {
-        throw new Error(`Selected cards don't cleanly split into ${maxK} group(s) of ${target} each.`)
-      }
-    } else if (sum !== target) {
-      throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
+  if (requiredIds.size > 0) {
+    const selectedSet = new Set(targetItemIds)
+    const matches = requiredIds.size === selectedSet.size && [...requiredIds].every((id) => selectedSet.has(id))
+    if (!matches) {
+      throw new Error(
+        `A bigger combined capture of ${target} is available on the floor — you must capture ` +
+          `every matching house and group together, not just some of it.`,
+      )
     }
-  } else if (sum !== target) {
-    throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
+  } else {
+    const sum = sumValues(state.floor, targetItemIds)
+    if (sum !== target) throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
   }
 
   const newHand = takeCard(state, seat, card)

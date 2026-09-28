@@ -101,21 +101,18 @@
       <summary style="cursor: pointer; color: var(--gold-lt);">How to play</summary>
       <ul style="list-style: disc; padding-left: 18px; margin-top: 6px; line-height: 1.6;">
         <li>Capture values: A=1, 2-10 face value, J=11, Q=12, K=13.</li>
-        <li>Play a card and select floor cards/houses whose total equals its value to capture them.</li>
+        <li>Bidding and the opening move are decided from just the bidder's first four cards and the four-card floor — the rest of both hands aren't dealt until right after the opening move.</li>
         <li>Build a house (value 9-13) from your card plus loose floor cards — you need another card of that value left in hand.</li>
-        <li>Cement a house by adding a card (optionally with loose floor cards) whose total is a multiple of the house's value — you need another card of that value left in hand afterward.</li>
+        <li>A house can be cemented by adding any combination — a card from hand, plus optional loose floor cards — whose total is a multiple of the house's value, even at the moment you found it, combining several complete sets into one house that's cemented from the start.</li>
         <li>Select an existing house to break it up to a higher value instead, using a card (optionally with loose floor cards) that doesn't total a multiple of its current value.</li>
-        <li>You must capture if a capture is available — you can only throw a card down loose otherwise.</li>
-        <li>Clearing the whole floor is a sweep: worth 50 points (25 on the opening move, 0 on the last card).</li>
-        <li>Spades score their value, other aces score 1, the Ten of Diamonds scores 6. Under 9 points for a hand scores 0.</li>
+        <li>You must capture if a capture is available with the card you play. If there's more than one exact match on the floor — a house plus one or more separate loose groups all worth the same value — you must take all of them together in one move, not just one.</li>
+        <li>A house is only captured by a card matching its own exact value — its value is never combined with loose cards to reach some other total.</li>
+        <li>Clearing the whole floor is a sweep: 50 points normally, 25 if it happens on the very first move of the hand, 0 if it's the very last card played in the hand.</li>
+        <li>Spades score their face value, other-suit aces score 1 point, and the Ten of Diamonds scores 6 — everything else is worth 0. Under 9 points in a hand scores 0.</li>
         <li>First player to lead by 100 points wins the match.</li>
         <li>Every move — yours and the computer's — pauses so you can check it before play continues.</li>
       </ul>
     </details>
-
-    <div style="text-align: center; padding: 4px 0 10px; font-size: 10px; color: rgba(255,255,255,0.3);">
-      v{{ appVersion }}
-    </div>
   </div>
 }
 

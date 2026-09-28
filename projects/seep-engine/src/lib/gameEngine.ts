@@ -3,7 +3,7 @@ import { createDeck, dealInitialHands, shuffleDeck } from './deck'
 import { addCards, hasCard, hasCaptureValue, removeCard } from './hand'
 import {
   type FloorItem, type House,
-  allCardsOf, canDecomposeIntoExactGroups, findHouseByValue, findItem, findMaximalExactGroups,
+  allCardsOf, findHouseByValue, findItem, findMaximalExactGroups,
   hasAnyLegalCapture, isHouse, isLoose, itemValue, removeItems, sumValues,
 } from './floor'
 import { type PlayerId, otherPlayer } from './player'
@@ -277,37 +277,42 @@ export function playCapture(
   }
   if (targetItemIds.length === 0) throw new Error('Select at least one card or house to capture.')
 
-  const containsHouse = targetItemIds.some(id => isHouse(findItem(state.floor, id)!))
-  if (containsHouse && targetItemIds.length > 1) {
-    throw new Error('A house can only be captured on its own, as a single unit.')
+  const target = captureValue(card)
+  const selectedHouse = targetItemIds.map(id => findItem(state.floor, id)!).find(isHouse)
+
+  // A house's own value must exactly match the played card — it can never
+  // be combined arithmetically with other floor items to reach some other
+  // sum (a 9-house plus a loose 3 does not make a queen capturable). This
+  // is the one thing that never changes about houses.
+  if (selectedHouse && selectedHouse.captureValue !== target) {
+    throw new Error(
+      `A house can only be captured by a card matching its own value of ${selectedHouse.captureValue}.`,
+    )
   }
 
-  const sum = sumValues(state.floor, targetItemIds)
-  const target = captureValue(card)
+  // Beyond that, a house at exactly the played value and any disjoint loose
+  // groups also at that value are independent matches to the same card and
+  // must all be captured together — the same maximal-capture principle
+  // already applied to multiple loose groups, now covering houses too: a
+  // house is simply never allowed to be one of the terms summed together
+  // to reach the target — it only ever matches on its own exact value,
+  // alongside whatever else also does.
+  const houseAtTarget = findHouseByValue(state.floor, target)
+  const maxGroups = findMaximalExactGroups(state.floor, target)
+  const requiredIds = new Set(houseAtTarget ? [houseAtTarget.id, ...maxGroups.flat()] : maxGroups.flat())
 
-  if (!containsHouse) {
-    // A capture must take every matching group of loose cards at once, not
-    // just one — the same way a cemented house holding multiple sets of
-    // its value is captured as a single unit regardless of how many sets
-    // it contains.
-    const maxGroups = findMaximalExactGroups(state.floor, target)
-    const maxK = maxGroups.length
-    if (maxK > 0) {
-      const requiredSum = maxK * target
-      if (sum !== requiredSum) {
-        throw new Error(
-          `A combined capture of ${requiredSum} is available on the floor — you must capture ` +
-            `every matching group of ${target} together, not just one.`,
-        )
-      }
-      if (!canDecomposeIntoExactGroups(state.floor, targetItemIds, target, maxK)) {
-        throw new Error(`Selected cards don't cleanly split into ${maxK} group(s) of ${target} each.`)
-      }
-    } else if (sum !== target) {
-      throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
+  if (requiredIds.size > 0) {
+    const selectedSet = new Set(targetItemIds)
+    const matches = requiredIds.size === selectedSet.size && [...requiredIds].every(id => selectedSet.has(id))
+    if (!matches) {
+      throw new Error(
+        `A bigger combined capture of ${target} is available on the floor — you must capture ` +
+          `every matching house and group together, not just some of it.`,
+      )
     }
-  } else if (sum !== target) {
-    throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
+  } else {
+    const sum = sumValues(state.floor, targetItemIds)
+    if (sum !== target) throw new Error(`Selected cards total ${sum}, but ${card.face} captures ${target}.`)
   }
 
   const newHand = takeCard(state, playerId, card)

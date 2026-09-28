@@ -3,6 +3,7 @@ import { Face, Suit, captureValue, type Card } from '../card.ts'
 import { SeatId, TeamId, nextSeat } from '../seats.ts'
 import {
   type FourPlayerGameState,
+  computeNextDealer,
   dealFourPlayerHand,
   dealNextFourPlayerHand,
   finishFourPlayerHand,
@@ -191,5 +192,52 @@ describe('finishFourPlayerHand', () => {
     expect(next.matchScores.teamA).toBe(103)
     expect(next.phase).toBe('match-over')
     expect(next.winner).toBe(TeamId.TeamA)
+  })
+})
+
+describe('dealer rotation follows who is winning, not simple round-robin', () => {
+  // These reproduce the exact worked examples from the authoritative rules
+  // (pagat.com): the dealer's team deals again if behind or tied after the
+  // hand, and the deal passes to the next seat only once the dealer's team
+  // is actually ahead. P1/P3 are teamA; P2/P4 are teamB.
+  it('keeps the same dealer when their team is behind after the hand', () => {
+    const scores = { teamA: 20, teamB: 56 } // dealer P1 is teamA, and teamA is behind
+    expect(computeNextDealer(SeatId.P1, scores, null)).toBe(SeatId.P1)
+  })
+
+  it('keeps the same dealer when the two teams are exactly tied', () => {
+    const scores = { teamA: 40, teamB: 40 }
+    expect(computeNextDealer(SeatId.P1, scores, null)).toBe(SeatId.P1)
+  })
+
+  it('passes the deal to the next seat once the dealer\'s team is ahead', () => {
+    const scores = { teamA: 56, teamB: 20 } // dealer P1 is teamA, and teamA is now ahead
+    expect(computeNextDealer(SeatId.P1, scores, null)).toBe(nextSeat(SeatId.P1))
+  })
+
+  it('a baazi sends the deal to the partner of who would have dealt, not that player directly', () => {
+    // Dealer P1 (teamA) is behind, so the normal rule says P1 deals again —
+    // but teamB just won a baazi, so the deal instead goes to P1's partner
+    // (P3), not back to P1.
+    const scores = { teamA: 0, teamB: 106 }
+    expect(computeNextDealer(SeatId.P1, scores, TeamId.TeamB)).toBe(SeatId.P3)
+  })
+
+  it('a baazi combined with the dealer\'s team taking the lead sends the deal to that next seat\'s partner', () => {
+    // Dealer P2 (teamB) is now ahead and teamB is the one who won the
+    // baazi (a team can only win a baazi by being the one in the lead) — so
+    // the normal rule would pass to nextSeat(P2) = P3, but the baazi sends
+    // it instead to P3's partner (P1).
+    const scores = { teamA: 0, teamB: 106 }
+    expect(computeNextDealer(SeatId.P2, scores, TeamId.TeamB)).toBe(SeatId.P1)
+  })
+
+  it('dealNextFourPlayerHand actually uses this rule for the ongoing match', () => {
+    // startFourPlayerMatch(P4) deals with dealer = P4 (teamB). Give teamB
+    // the lead, so the deal should move on to the next seat rather than
+    // staying with P4.
+    const state = { ...startFourPlayerMatch(SeatId.P4), phase: 'hand-over' as const, matchScores: { teamA: 10, teamB: 30 } }
+    const next = dealNextFourPlayerHand(state)
+    expect(next.dealer).toBe(nextSeat(SeatId.P4))
   })
 })
