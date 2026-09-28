@@ -1,7 +1,7 @@
 import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute } from '@angular/router'
-import { APP_VERSION } from '../../version'
+import { APP_VERSION, FEEDBACK_EMAIL } from '../../version'
 import {
   type Card as CardModel,
   cardEquals,
@@ -326,7 +326,7 @@ export class FourPlayerComponent {
 
     const subject = 'Seep — a rule that might need a look (4 Player)'
     const body = header + logText + omittedNote
-    window.location.href = `mailto:narender.cheema@cheemaclan.org?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    window.location.href = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 
     this.ruleNotePanelOpen.set(false)
     this.ruleNoteText.set('')

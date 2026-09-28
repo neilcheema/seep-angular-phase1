@@ -1,8 +1,13 @@
 /**
- * Single source of truth for the app's version. Shown in the landing page
- * footer and in both game pages, and included in "notice something off?"
- * reports so any report can always be tied back to the exact build it came
- * from. Bump this — and the version field in package.json to match — with
- * each meaningful release.
+ * App-wide constants that more than one place needs.
+ *
+ * APP_VERSION is shown in the landing page footer and in both game pages, and
+ * is included in "notice something off?" reports so any report can be tied
+ * back to the exact build it came from. Bump it - and the version field in
+ * package.json to match - with each meaningful release.
+ *
+ * FEEDBACK_EMAIL is where the "notice something off?" note is addressed.
  */
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
+
+export const FEEDBACK_EMAIL = 'info@seep.quest';

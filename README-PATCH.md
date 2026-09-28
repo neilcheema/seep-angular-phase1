@@ -1,60 +1,43 @@
-# Curved side hands + centred floor (four-player)
+# Feedback address and version bump
 
-## What you reported
-1. Floor cards sat too far to the left instead of the middle.
-2. Player 2 and Player 4 were still straight lines instead of curved fans.
+## Changes
+- **Address**: the "notice something off?" note now goes to
+  info@seep.quest (was narender.cheema@cheemaclan.org).
+- **Version**: 1.1.0 -> 1.2.0. It appears in the page footers and in the
+  "Version:" line of every note, so notes sent from the new build are
+  identifiable.
 
-## What was actually going on (found by rendering it, not guessing)
-I rebuilt your table in a browser using your real styles.css, reproduced
-your screenshot exactly, and traced each problem:
+## Where they live now
+Both are constants in `version.ts` (APP_VERSION, FEEDBACK_EMAIL). Both game
+pages read them from there, so the address is no longer written out in two
+components; future changes are one line in one file.
 
-- **Floor off-centre**: the four-player floor row had no `justify-content:
-  center` (the two-player one already did). Houses are wide, so each wrapped
-  onto its own row and hugged the left edge.
-- **Floor overlapping Player 2**: the side cards were portrait cards rotated
-  90 degrees. CSS rotation doesn't change layout size, so each column reserved
-  the *narrow* width but was drawn *wide*, spilling into the floor area.
-- **A bug I hadn't noticed**: the last card in each side column stuck out
-  sideways. An old rule, `.comp-fan .card-back { margin-right: -22px }`, applies
-  to every card except the last, and in a vertical column that shifts them.
-- **Straight lines**: nothing ever varied the angle down the stack.
+## Why 1.2.0
+Since 1.1.0: the computer players stopped reading hidden hands and reason from
+what has been played, the deal is staged as in the physical game, four-player
+dealer rotation follows the score, houses can be captured with separate loose
+groups, and the table layout was reworked. Nothing was removed, so I treated it
+as a minor bump. If you would rather call the rules changes a major release,
+it is one string.
 
-## What changed (2 files, no CSS to merge)
-**opponent-hand.component.ts / .html**
-- Side seats: cards are laid landscape (width/height swapped) so the column's
-  footprint matches what you see. Each card tilts a little more than the last
-  down the stack, and outer cards ease toward the screen edge, so the column
-  bulges toward the table like a real fan seen from the side. Tighter overlap
-  also makes the columns roughly half as tall, which gives the floor room.
-- Top seat: same look as before, but a full hand no longer wraps to a second
-  row on tablet-width screens.
-- All of it is inline styles in the component, so it overrides the old CSS
-  rules without you touching styles.css.
+## Two things I can't do from here
+1. **package.json**: set the "version" field in your root package.json to
+   1.2.0 to match.
+2. **Landing page footer**: I don't have that file. If it shows a hardcoded
+   "v1.1.0", change it to 1.2.0 (or import APP_VERSION as the game pages do,
+   so it can't drift again).
 
-**four-player.component.html**: floor row now centred (one inline style).
-This is the full file, so it carries forward your earlier how-to-play and
-floor-scatter changes.
+## Check the mailbox exists
+The note opens the visitor's mail app addressed to info@seep.quest. It only
+reaches you if that mailbox or a forwarding rule exists for the domain. Send
+yourself a test note after deploying.
 
-## Verified
-- Compiled with the real Angular AOT compiler with `strictTemplates` on: clean.
-- Rendered the compiled component in Chromium at 375, 390, 430 and 768 px wide
-  with 12, 10, 4, 1 and 0 cards: no clipping, no overlap with the floor.
-- Before/after image included.
-
-## Not verified
-The floor cards in my test were simplified stand-ins, since I don't have your
-floor-item component, and I haven't seen this on a real iPhone. Expect the
-centring to be right to within a few pixels, not exact.
-
-## If you want to tune it
-All in `cardStyle()` in opponent-hand.component.ts:
-- `-0.55` (side overlap): more negative = tighter stack.
-- `3.5` and `40` (tilt per card / total cap, degrees): fan width.
-- `radius = 210`: smaller = stronger arc, larger = flatter.
-
-## Optional cleanup
-The `.comp-fan--left` / `.comp-fan--right` blocks in styles.css (added in the
-earlier mobile patch) are now overridden and do nothing. Safe to delete.
+## Files
+version.ts, four-player.component.ts, two-player.component.ts (full-file
+replacements; no template or CSS changes, so nothing to merge).
 
 ## Apply
-Copy the two folders over your repo, then `npm run build && npm run lint`.
+Copy over your repo, then `npm run build && npm run lint`.
+Verified here: all three files parse cleanly and the old address no longer
+appears anywhere in them. I could not run `ng build` (no Angular workspace
+here).
