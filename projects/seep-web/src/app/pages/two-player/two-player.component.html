@@ -24,12 +24,14 @@
         <div class="board-slot">Floor empty</div>
       }
       @for (item of s.floor; track item.id) {
-        <app-floor-item
-          [item]="item"
-          [selected]="isFloorSelected(item.id)"
-          [selectable]="isPlayerTurn() && !!selectedCard()"
-          (itemClick)="onFloorClick(item)"
-        />
+        <div class="floor-scatter-slot">
+          <app-floor-item
+            [item]="item"
+            [selected]="isFloorSelected(item.id)"
+            [selectable]="isPlayerTurn() && !!selectedCard()"
+            (itemClick)="onFloorClick(item)"
+          />
+        </div>
       }
     </div>
 

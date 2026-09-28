@@ -1,44 +1,54 @@
-# How-to-play text updated to match the pagat.com-verified rules
+# Visual polish v2: bug fixed after reviewing your actual styles.css
 
-Both games' "How to play" sections rewritten to be accurate and clearer,
-using plain language close to pagat.com's own phrasing where it helped.
+## A real bug caught and fixed
+The first version of `opponent-hand.component.html` applied an inline
+`[style.transform]` to every card-back, and for left/right orientations
+that inline value was `rotate(0deg)`. Your `styles.css` has:
 
-## Four-player — what changed
-- **Removed an actively wrong line**: *"A house can only ever be captured
-  on its own — never combined with other loose floor cards in the same
-  move, even if the totals would add up."* This was exactly the rule just
-  corrected in the engine patch — leaving this text in would have actively
-  misled players about how the game now works.
-- **Added**: capture values (was missing entirely before), the staged
-  dealing explanation (bidding/opening move from just four cards), the
-  multi-set cementing rule, the corrected mandatory-and-combined capture
-  rule (with the house-value-never-arithmetically-combined caveat spelled
-  out), and the new win/lose-based dealer rotation.
-- **Kept**: partnership/pooled-capture rules, house founding/breaking/
-  adding rules, sweep tiers, scoring, and the match win condition —
-  reworded in a few places for clarity but unchanged in substance.
+    .comp-fan--left .card-back  { transform: rotate(90deg); }
+    .comp-fan--right .card-back { transform: rotate(-90deg); }
 
-## Two-player — what changed
-Same treatment for everything that applies equally to both games: added
-capture values context and the staged-dealing note, updated the cementing
-line to cover multi-set builds, and rewrote the capture rule to state the
-corrected mandatory-and-combined behavior with the same arithmetic-value
-caveat. The two-player game's own structure (a single continuous hand, no
-team play, no dealer rotation) is left exactly as it was, since that
-matches your instruction not to touch the two-player dealing structure —
-only the shared mechanics that were actually corrected are reflected here.
+Inline styles always win over CSS class rules, so that `0deg` would have
+silently overridden the 90°/-90° rotation and broken Player 2/4's
+mobile-compact side hands the moment this was applied — undoing the
+mobile-orientation fix from earlier in this conversation. This is exactly
+the kind of thing I couldn't have caught without seeing the actual CSS.
 
-## Files
-Both are full-file HTML replacements — templates only, no `.ts` changes
-needed for this patch (this was purely a text/content update).
+**Fixed**: the inline transform is now only ever applied for `'top'`
+orientation (`orientation() === 'top' ? '...' : null` — passing `null`
+means Angular doesn't set the inline style at all, leaving your existing
+CSS class rules completely in control for left/right, exactly as before).
+
+## Everything else, now confirmed safe against your real CSS
+- `.hand-row` and `.floor-row` both use flexbox `gap` for spacing, not
+  margin-based overlap — so wrapping their children in `.hand-card-slot`/
+  `.floor-scatter-slot` doesn't disturb spacing at all, on any screen size.
+- The only transform-based interactive state I found (`.card-valid:hover`,
+  the lift-and-scale effect when hovering a selectable card) applies to
+  the card itself, one level *inside* my wrapper divs — a rotated parent
+  and a separately-transformed child compound correctly in CSS, they
+  don't fight each other. Confirmed no conflict.
+- `.house-stack.selected` and other selection-highlight rules use
+  `border-color`/`box-shadow`, never `transform` — no interaction with
+  anything in this patch at all.
+
+## Files in this version
+Same four files as before (`opponent-hand.component.ts/.html`, both game
+page templates, `styles-addition.css`), plus the new
+`player-hand.component.ts/.html` fan rotation from the follow-up. Only the
+opponent-hand files actually changed from what was delivered previously —
+everything else is unchanged and was already correct.
+
+## Still true from before
+This is still a visual change built without a live browser to check it
+in — the fix above was found through careful reading of your CSS, not by
+seeing it rendered. The rotation angles and scatter pattern are a
+reasonable first guess. Build it, look at it on your phone, tell me what
+to adjust.
 
 ## How to apply
-Copy these two files into your repo at the paths shown, then:
-
-    npm run build
-    npm run lint
-
-No engine changes in this patch — pure content. As with every UI-only
-patch: no full Angular workspace in this sandbox to run `ng build`
-against directly — reviewed by hand for accuracy against both the
-pagat.com source and the actual corrected engine behavior.
+1. Copy all files into your repo at the paths shown.
+2. Append `styles-addition.css`'s contents to the end of
+   `projects/seep-web/src/styles.css` (skip this step if you already
+   applied it from the previous delivery — it's unchanged).
+3. `npm run build && npm run lint`

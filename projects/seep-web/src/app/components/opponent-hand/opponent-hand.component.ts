@@ -26,4 +26,20 @@ export class OpponentHandComponent {
   get fanClass(): string {
     return `comp-fan comp-fan--${this.orientation()}`
   }
+
+  /**
+   * Rotation for the card at this position, giving the 'top' hand the
+   * look of a real fanned hand (outer cards tilted outward, middle
+   * roughly upright). Only ever called for 'top' — the template gates
+   * this entirely for 'left'/'right' so their existing fixed 90°/-90°
+   * CSS rotation (from .comp-fan--left/.comp-fan--right in styles.css)
+   * is left completely alone, not overridden by an inline style.
+   */
+  rotationFor(index: number): number {
+    const total = this.count()
+    if (total <= 1) return 0
+    const maxSpread = Math.min(6 * (total - 1), 30)
+    const step = maxSpread / (total - 1)
+    return -maxSpread / 2 + step * index
+  }
 }
