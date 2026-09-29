@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Face, Suit, type Card } from '../card.ts'
 import { chooseComputerBid, chooseComputerMove } from '../computer.ts'
 import type { GameState } from '../gameEngine.ts'
+import { ENGINE_VERSION } from '../version.ts'
 
 function card(face: Face, suit: Suit): Card {
   return { face, suit }
@@ -27,6 +28,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     winner: null,
     lastHandTotals: null,
     misdeals: 0,
+    engineVersion: ENGINE_VERSION,
   }
   return { ...base, ...overrides }
 }

@@ -17,10 +17,48 @@ export function createDeck(): Card[] {
   return deck
 }
 
-export function shuffleDeck(deck: Card[]): Card[] {
+/**
+ * Uses the Web Crypto API for a cryptographically random float in [0, 1) —
+ * available globally in both browsers and Node 19+. Math.random() is not
+ * suitable for anything where unpredictability actually matters, like a
+ * card shuffle.
+ */
+function cryptoRandom(): number {
+  const buf = new Uint32Array(1)
+  // Typed narrowly rather than adding "DOM" to this package's tsconfig lib
+  // — this needs to type-check the same way whether it ends up running in
+  // a browser or, later, a Node backend, and only this one call needs it.
+  const cryptoObj = (globalThis as unknown as { crypto: { getRandomValues(a: Uint32Array): Uint32Array } }).crypto
+  cryptoObj.getRandomValues(buf)
+  return buf[0]! / 0x100000000
+}
+
+/**
+ * Deterministic PRNG (mulberry32), used only when an explicit seed is
+ * given — for reproducible tests, or for replaying a specific reported
+ * game exactly as it was dealt.
+ */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6d2b79f5) | 0
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/**
+ * Fisher-Yates shuffle. Pass `seed` for a reproducible shuffle (tests,
+ * replay); omitted, it uses a cryptographically random source, not
+ * Math.random().
+ */
+export function shuffleDeck(deck: Card[], seed?: number): Card[] {
+  const random = seed === undefined ? cryptoRandom : seededRandom(seed)
   const shuffled = [...deck]
   for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = Math.floor(random() * (i + 1))
     const tmp = shuffled[i]!
     shuffled[i] = shuffled[j]!
     shuffled[j] = tmp

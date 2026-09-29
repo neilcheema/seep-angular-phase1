@@ -1,6 +1,7 @@
 import { type Card, captureValue, isHouseValue } from './card'
 import { createDeck, dealInitialHands, shuffleDeck } from './deck'
 import { addCards, hasCard, hasCaptureValue, removeCard } from './hand'
+import { ENGINE_VERSION } from './version'
 import {
   type FloorItem, type House,
   allCardsOf, findHouseByValue, findItem, findMaximalExactGroups,
@@ -53,6 +54,8 @@ export interface GameState {
   readonly winner: PlayerId | null
   readonly lastHandTotals: Record<PlayerId, HandTotals> | null
   readonly misdeals: number
+  /** The engine version this game was dealt under — see version.ts. */
+  readonly engineVersion: string
 }
 
 const MAX_MISDEAL_ATTEMPTS = 25
@@ -68,6 +71,7 @@ function pushLog(state: GameState, message: string): GameState {
 export function dealHand(
   bidder: PlayerId,
   matchScores: Record<PlayerId, number> = { player: 0, opponent: 0 },
+  seed?: number,
 ): GameState {
   let attempt = 0
   let floor: Card[]
@@ -76,7 +80,9 @@ export function dealHand(
   let otherHand: Card[]
 
   do {
-    const deck = shuffleDeck(createDeck())
+    // Retries (on a misdeal) stay deterministic too when a seed is given,
+    // so the same seed always reproduces the same hand, retries included.
+    const deck = shuffleDeck(createDeck(), seed === undefined ? undefined : seed + attempt)
     const dealt = dealInitialHands(deck)
     floor = dealt.floor
     bidderFirstFour = dealt.bidderFirstFour
@@ -108,18 +114,55 @@ export function dealHand(
     winner: null,
     lastHandTotals: null,
     misdeals: attempt - 1,
+    engineVersion: ENGINE_VERSION,
   }
   return pushLog(state, `New hand dealt. ${bidder === 'player' ? 'You' : 'Opponent'} must bid.`)
 }
 
-export function startMatch(firstBidder: PlayerId = 'player'): GameState {
-  return dealHand(firstBidder)
+export function startMatch(firstBidder: PlayerId = 'player', seed?: number): GameState {
+  return dealHand(firstBidder, { player: 0, opponent: 0 }, seed)
 }
 
 export function legalBids(state: GameState): number[] {
   if (state.phase !== 'bidding') return []
   const values = new Set(state.hands[state.bidder].map(captureValue).filter(isHouseValue))
   return [...values].sort((a, b) => a - b)
+}
+
+/**
+ * Every kind of move a player can make, as one JSON-serializable type —
+ * what a future server would actually receive over the wire from a
+ * client, instead of the client needing to know which of five
+ * differently-shaped functions to call.
+ */
+export type Intent =
+  | { type: 'bid'; value: number }
+  | { type: 'capture'; card: Card; targetItemIds: string[] }
+  | { type: 'build'; card: Card; looseItemIds: string[]; targetValue: number }
+  | { type: 'modify'; card: Card; houseId: string; extraLooseItemIds?: string[] }
+  | { type: 'throw'; card: Card }
+
+/**
+ * Single entry point for applying a move: routes to
+ * placeBid/playCapture/playBuildHouse/playModifyHouse/playThrow based on
+ * intent.type. Every one of those functions already validates its own
+ * move and throws on anything illegal, so this adds no new validation of
+ * its own — it's purely a dispatch, kept as a thin wrapper on purpose so
+ * there is only one place the rules actually live.
+ */
+export function applyMove(state: GameState, playerId: PlayerId, intent: Intent): GameState {
+  switch (intent.type) {
+    case 'bid':
+      return placeBid(state, playerId, intent.value)
+    case 'capture':
+      return playCapture(state, playerId, intent.card, intent.targetItemIds)
+    case 'build':
+      return playBuildHouse(state, playerId, intent.card, intent.looseItemIds, intent.targetValue)
+    case 'modify':
+      return playModifyHouse(state, playerId, intent.card, intent.houseId, intent.extraLooseItemIds)
+    case 'throw':
+      return playThrow(state, playerId, intent.card)
+  }
 }
 
 export function placeBid(state: GameState, playerId: PlayerId, value: number): GameState {
@@ -518,9 +561,66 @@ export function playThrow(state: GameState, playerId: PlayerId, card: Card): Gam
   return pushLog(next, `${label(playerId)} threw down ${card.face} of ${card.suit}.`)
 }
 
-export function dealNextHand(state: GameState): GameState {
+export function dealNextHand(state: GameState, seed?: number): GameState {
   if (state.phase !== 'hand-over') throw new Error('The current hand has not finished.')
-  return dealHand(otherPlayer(state.bidder), state.matchScores)
+  return dealHand(otherPlayer(state.bidder), state.matchScores, seed)
+}
+
+/**
+ * What one player is allowed to see — the shape a future server would
+ * actually send over the wire. Everything hidden from this player is
+ * gone, not merely marked hidden: the opponent's hand becomes a count,
+ * and pendingDeal (cards dealt but not yet given to any visible hand)
+ * doesn't appear at all, since a client has no legitimate use for it —
+ * a player never needs to know how many cards are waiting to be dealt to
+ * anyone. nextItemId is dropped too, as pure internal bookkeeping with no
+ * meaning to a client.
+ */
+export interface GameView {
+  readonly viewer: PlayerId
+  readonly floor: FloorItem[]
+  readonly myHand: Card[]
+  readonly opponentCardCount: number
+  readonly captures: Record<PlayerId, Card[]>
+  readonly sweepPoints: Record<PlayerId, number>
+  readonly matchScores: Record<PlayerId, number>
+  readonly bidder: PlayerId
+  readonly turn: PlayerId
+  readonly phase: GamePhase
+  readonly bidValue: number | null
+  readonly lastCapturer: PlayerId | null
+  readonly cardsPlayedThisHand: number
+  readonly totalPlayableThisHand: number
+  readonly log: string[]
+  readonly winner: PlayerId | null
+  readonly lastHandTotals: Record<PlayerId, HandTotals> | null
+  readonly misdeals: number
+  readonly engineVersion: string
+}
+
+export function viewFor(state: GameState, viewer: PlayerId): GameView {
+  const opponent = otherPlayer(viewer)
+  return {
+    viewer,
+    floor: state.floor,
+    myHand: state.hands[viewer],
+    opponentCardCount: state.hands[opponent].length,
+    captures: state.captures,
+    sweepPoints: state.sweepPoints,
+    matchScores: state.matchScores,
+    bidder: state.bidder,
+    turn: state.turn,
+    phase: state.phase,
+    bidValue: state.bidValue,
+    lastCapturer: state.lastCapturer,
+    cardsPlayedThisHand: state.cardsPlayedThisHand,
+    totalPlayableThisHand: state.totalPlayableThisHand,
+    log: state.log,
+    winner: state.winner,
+    lastHandTotals: state.lastHandTotals,
+    misdeals: state.misdeals,
+    engineVersion: state.engineVersion,
+  }
 }
 
 export { addCards }
