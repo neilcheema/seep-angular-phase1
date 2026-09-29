@@ -19,13 +19,13 @@
 
     <div class="partner-row">
       <span class="seat-label">Player 3 · Your partner</span>
-      <app-opponent-hand [count]="s.hands.p3.length" />
+      <app-opponent-hand [count]="s.handCounts.p3" />
     </div>
 
     <div class="four-seat-row">
       <div class="side-hand">
         <span class="seat-label">Player 2</span>
-        <app-opponent-hand [count]="s.hands.p2.length" orientation="left" />
+        <app-opponent-hand [count]="s.handCounts.p2" orientation="left" />
       </div>
 
       <div class="floor-row" style="justify-content: center;">
@@ -46,7 +46,7 @@
 
       <div class="side-hand">
         <span class="seat-label">Player 4</span>
-        <app-opponent-hand [count]="s.hands.p4.length" orientation="right" />
+        <app-opponent-hand [count]="s.handCounts.p4" orientation="right" />
       </div>
     </div>
 
@@ -94,9 +94,9 @@
 
     <div class="gold-line"></div>
     <app-player-hand
-      [cards]="s.hands.p1"
+      [cards]="s.myHand"
       [selectedCard]="selectedCard()"
-      [selectableCards]="isPlayerTurn() ? s.hands.p1 : []"
+      [selectableCards]="isPlayerTurn() ? s.myHand : []"
       (cardSelected)="onCardSelect($event)"
     />
 
@@ -191,10 +191,10 @@
       <div class="bug-report-prompt" role="dialog" aria-label="Something felt off">
         <div class="bug-report-header">
           <span>
-            It's possible a rule got missed while I was building this \u2014 if something
+            It's possible a rule got missed while I was building this — if something
             didn't play out the way you expected, let me know what happened.
           </span>
-          <button type="button" class="bug-report-close" (click)="toggleRuleNotePanel()" aria-label="Close">\u00d7</button>
+          <button type="button" class="bug-report-close" (click)="toggleRuleNotePanel()" aria-label="Close">×</button>
         </div>
         <textarea
           class="bug-report-textarea"
