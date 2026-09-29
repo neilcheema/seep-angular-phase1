@@ -1,45 +1,33 @@
-# Phase 1, last piece: public-api.ts was missing version.ts
+# vitest.config.ts, corrected: the include glob alone wasn't enough
 
-## What was wrong
-Every module this session touched or added is re-exported from
-public-api.ts with a wildcard (`export * from './lib/gameEngine'`, etc.),
-which is exactly why applyMove, Intent, viewFor, GameView,
-applyFourPlayerMove, FourPlayerIntent, viewForSeat, and
-FourPlayerGameView were already reachable through the `seep-engine`
-import path without needing anything added here — they ride along
-automatically with everything else those two files export.
+## What your test run actually found
+The previous patch's include-glob fix worked — local-session.test.ts was
+discovered. But it then failed with `Cannot find package 'seep-engine'`.
 
-version.ts — the one genuinely new file this session created — was
-never added to this list. ENGINE_VERSION was real, tested, and correctly
-stamped onto every GameState/FourPlayerGameState as `engineVersion`, but
-the constant itself had no way out of the library. Anything outside
-seep-engine wanting to compare "is this game's version the current one"
-had no way to reach it.
+## Why
+Vitest doesn't read tsconfig.json's `paths` on its own — that mapping
+(`"seep-engine": ["./projects/seep-engine/src/public-api.ts"]`) is a
+TypeScript/Angular-CLI concept, not a Vite one. Your engine's own tests
+never hit this because every one of them imports the engine with a
+relative path (`from '../gameEngine.ts'`), never the bare `seep-engine`
+specifier. local-session.test.ts is the first thing to actually import
+`from 'seep-engine'` under vitest, and that's what exposed the gap.
 
-## What changed
-One line added: `export * from './lib/version';`
+## The fix
+Added `resolve.alias`, mapping `seep-engine` to
+`./projects/seep-engine/src/public-api.ts` directly — the same target
+your tsconfig.json's path mapping points at, just expressed in the form
+Vite's resolver understands. No new dependency needed.
 
-## Verified
-Checked with the real file content, in a directory structure mirroring
-your actual layout (public-api.ts next to a lib/ folder, not above it —
-an early attempt at this check used the wrong relative layout and
-produced a misleading error for a reason that had nothing to do with the
-fix). With that corrected, tsc resolves ENGINE_VERSION, applyMove,
-viewFor, applyFourPlayerMove, and viewForSeat all successfully through
-this file, exactly as `import { ... } from 'seep-engine'` would in
-seep-web.
-
-## Also worth doing, whenever convenient, no urgency
-projects/seep-engine/package.json lists @angular/common and
-@angular/core as peerDependencies. Nothing in seep-engine's actual source
-imports anything Angular — every file across this whole project has
-been plain TypeScript — so these are almost certainly leftover from when
-`ng generate library` first scaffolded the project, not a real
-requirement. Worth confirming and removing at some point, since a future
-Node.js backend importing this same engine source would have no reason
-to need them — but this doesn't block or affect anything today, and
-doesn't touch your build or deploy configuration at all.
+## Verified properly this time
+Built a directory tree matching your actual layout exactly — root
+vitest.config.ts, projects/seep-engine/src/..., and
+projects/seep-web/src/app/core/__tests__/local-session.test.ts in the
+right place relative to it — and ran the real suite against it. All 11
+test files, 170 tests, including local-session.test.ts genuinely
+resolving and importing from 'seep-engine' through the alias. Re-ran 3
+times for stability.
 
 ## Apply
-Copy this one file to projects/seep-engine/src/public-api.ts, then
-`npm run build && npm test`.
+Replace your root vitest.config.ts with this file, then
+`npm test && npm run lint && npm run build`.
