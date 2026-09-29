@@ -31,9 +31,10 @@ export class LocalSession implements GameSession<GameView, Intent, PlayerId> {
     this.botId = myId === 'player' ? 'opponent' : 'player';
     this.state = startMatch(firstBidder);
     this.publish(this.state);
+    this.scheduleBotMoveIfNeeded(this.state); // no prior reveal to wait for at the very start of a match
   }
 
-  /** Submits a move on the viewer's own behalf. Throws the same validation errors the engine always has — the caller catches these exactly as it did calling the engine directly before. */
+  /** Submits a move on the viewer's own behalf. Throws the same validation errors the engine always has — the caller catches these exactly as it did calling the engine directly before. Does not itself schedule a bot move — see acknowledge(). */
   submit(intent: Intent): void {
     const before = viewFor(this.state, this.myId);
     const next = applyMove(this.state, this.myId, intent);
@@ -42,26 +43,33 @@ export class LocalSession implements GameSession<GameView, Intent, PlayerId> {
     this.lastMove.set({ actor: this.myId, intent, before, after: viewFor(next, this.myId) });
   }
 
+  acknowledge(): void {
+    this.scheduleBotMoveIfNeeded(this.state);
+  }
+
   startNewMatch(): void {
     this.cancelPendingBotMove();
     this.lastMove.set(null);
     this.state = startMatch(this.myId);
     this.publish(this.state);
+    this.scheduleBotMoveIfNeeded(this.state); // fresh match, nothing pending to acknowledge yet
   }
 
   dealNext(): void {
     this.lastMove.set(null);
     this.state = dealNextHand(this.state);
     this.publish(this.state);
+    this.scheduleBotMoveIfNeeded(this.state); // new hand, nothing pending to acknowledge yet
   }
 
   dispose(): void {
     this.cancelPendingBotMove();
   }
 
+  /** Updates the published view only. Scheduling a bot move is always a separate, explicit step — see the callers of scheduleBotMoveIfNeeded. */
   private publish(next: GameState): void {
+    this.cancelPendingBotMove();
     this.view.set(viewFor(next, this.myId));
-    this.scheduleBotMoveIfNeeded(next);
   }
 
   private scheduleBotMoveIfNeeded(s: GameState): void {

@@ -1,41 +1,32 @@
-# Phase 2, part 2: LocalFourPlayerSession
+# Re-delivery: the acknowledge-fix patch (lost in the accidental deletion)
 
-The four-player equivalent of the LocalSession patch from before — same
-GameSession interface, same pattern, adapted for four seats and teams.
-Still completely unwired from four-player.component.ts; this patch alone
-changes nothing about the live site.
+Your ng build error (`Property 'acknowledge' does not exist on type
+'LocalSession'`) confirmed exactly what happened: this patch's changes
+were applied to your disk but never committed, then lost when the
+earlier accidental deletion hit those files while they were in that
+uncommitted state. The recovery command correctly restored every
+deleted file to its last *commit* — but that commit predates this
+patch, so it restored the older, pre-fix version. Nothing git never had
+a record of could have come back on its own.
 
-## What's different from the two-player version
-- No single fixed "the bot" seat — whichever of the three non-viewer
-  seats currently holds the turn is the one that acts. This turned out
-  to need no real complexity: at any moment exactly one seat has the
-  turn (`state.turn`), so the gating is just "is that seat the viewer,
-  or not" — the same shape as two-player, just checked against a
-  4-seat enum instead of a 2-value union.
-- Uses viewForSeat/applyFourPlayerMove/FourPlayerIntent from the
-  four-player engine, and handles the 'modify' action the four-player
-  AI can choose that the two-player one never does (building/cementing
-  a house).
+Confirmed precisely: your test run showed local-session.test.ts with 6
+tests and local-four-player-session.test.ts with 7 — this patch's
+versions have 7 and 8 (each adds one test specifically proving the
+acknowledge-gate fix). The counts matched exactly what going missing
+would look like.
 
-## Verified
-- Compiled clean against the real `@angular/core`, the real engine, and
-  your project's actual tsconfig.json settings.
-- 7 tests: initial view redaction, submit+lastMove, illegal-move
-  rejection, a bot bidding on its own when the viewer is the dealer, play
-  continuing automatically through several bot seats in a row after the
-  human's own move with no further input needed, dispose() cancelling a
-  pending move, startNewMatch resetting cleanly.
-- Deliberately broke the bot-scheduling logic to confirm two of these
-  tests catch it (they did) before trusting them, and restored the file
-  — confirmed byte-for-byte with `diff`.
-- Ran the full combined suite (both engines' tests plus both session
-  layers) 5 times back to back: 177/177, stable.
+## These are the identical files as before
+Not regenerated, not re-derived — copied from the same verified sandbox
+copies as the original delivery, then independently re-verified from
+scratch before sending again: full test suite (179 tests) re-run
+against these exact files, and separately, compiled two-player.component.ts
+against this exact local-session.ts with the real Angular AOT compiler
+to confirm it resolves your specific build error.
 
 ## Apply
-Copy these two files into your repo at the paths shown, then
+Copy these five files into your repo at the paths shown, then
 `npm test && npm run lint && npm run build`.
 
-## What's still ahead
-The actual wiring — replacing two-player.component.ts and
-four-player.component.ts's direct engine calls with the GameSession each
-now has available. That's the next and last piece of Phase 2.
+## Worth doing right after this applies cleanly
+Commit. An uncommitted patch is exactly what made the earlier accident
+costly instead of a two-second `git restore`.

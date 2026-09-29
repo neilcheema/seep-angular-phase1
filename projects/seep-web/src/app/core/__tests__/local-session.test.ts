@@ -12,8 +12,8 @@ describe('LocalSession', () => {
     const session = new LocalSession('player', 'player')
     const view = session.view()
     expect(view).not.toBeNull()
-    expect(view!.myHand).toHaveLength(4) // bidder's staged first four
-    expect(view!.opponentCardCount).toBe(0) // opponent's pendingDeal isn't dealt yet, and wouldn't be visible either way
+    expect(view!.myHand).toHaveLength(4)
+    expect(view!.opponentCardCount).toBe(0)
     expect('pendingDeal' in view!).toBe(false)
     session.dispose()
   })
@@ -29,7 +29,7 @@ describe('LocalSession', () => {
     expect(move).not.toBeNull()
     expect(move!.actor).toBe('player')
     expect(move!.intent).toEqual({ type: 'bid', value })
-    expect(move!.reason).toBeUndefined() // the human's own move never carries a bot "reason"
+    expect(move!.reason).toBeUndefined()
     expect(move!.before.bidValue).toBeNull()
     expect(move!.after.bidValue).toBe(value)
     expect(session.view()!.bidValue).toBe(value)
@@ -38,13 +38,13 @@ describe('LocalSession', () => {
 
   it('submitting an illegal move throws, the same validation the engine has always had', () => {
     const session = new LocalSession('player', 'player')
-    expect(() => session.submit({ type: 'bid', value: 4 })).toThrow() // 4 is never a legal house-value bid
+    expect(() => session.submit({ type: 'bid', value: 4 })).toThrow()
     session.dispose()
   })
 
-  it('schedules and applies a bot move automatically once it is the bot\u2019s turn, then reports it via lastMove', async () => {
+  it('a fresh match with the bot as bidder schedules and applies its move automatically \u2014 no prior reveal to wait for', async () => {
     vi.useFakeTimers()
-    const session = new LocalSession('player', 'opponent') // bot (opponent) is the bidder — should bid on its own
+    const session = new LocalSession('player', 'opponent')
     expect(session.lastMove()).toBeNull()
 
     await vi.advanceTimersByTimeAsync(1000)
@@ -52,8 +52,38 @@ describe('LocalSession', () => {
     const move = session.lastMove()
     expect(move).not.toBeNull()
     expect(move!.actor).toBe('opponent')
-    expect(move!.reason).toBeDefined() // bot moves always carry a reason
+    expect(move!.reason).toBeDefined()
     expect(session.view()!.bidValue).not.toBeNull()
+    session.dispose()
+    vi.useRealTimers()
+  })
+
+  it('the critical fix: after the human\u2019s opening move, the bot\u2019s reply is NOT scheduled until acknowledge() is called', async () => {
+    vi.useFakeTimers()
+    const session = new LocalSession('player', 'player') // human is the bidder, and so plays the opening move too
+    const before = session.view()!
+    session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
+    // Same bidder plays the opening move next \u2014 turn does not switch to the
+    // opponent until this resolves, so throw the bid-matching card.
+    const afterBid = session.view()!
+    const bidCard = afterBid.myHand.find((c) => captureValue(c) === afterBid.bidValue)!
+    session.submit({ type: 'throw', card: bidCard })
+    const ownMove = session.lastMove()
+    expect(session.view()!.turn).toBe('opponent') // confirms the scenario: it is now genuinely the bot's turn
+
+    // Without this fix, submitting a move used to schedule the bot's next
+    // move immediately (the original bug this patch corrects) — the bot
+    // would start computing its reply before the page had even shown the
+    // human their own move's reveal. Advancing well past the bot's think
+    // time here must NOT produce a new move.
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(session.lastMove()).toBe(ownMove) // still the human's own move — nothing snuck in
+
+    session.acknowledge()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(session.lastMove()).not.toBe(ownMove)
+    expect(session.lastMove()!.actor).toBe('opponent') // now the bot has replied, only after acknowledge()
     session.dispose()
     vi.useRealTimers()
   })

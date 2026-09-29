@@ -59,27 +59,55 @@ describe('LocalFourPlayerSession', () => {
     vi.useRealTimers()
   })
 
-  it('after the human\u2019s move, play continues automatically through multiple bot seats without further input', async () => {
+  it('the critical fix: after the human\u2019s opening move, the next bot\u2019s reply is NOT scheduled until acknowledge() is called', async () => {
     vi.useFakeTimers()
     const session = new LocalFourPlayerSession(SeatId.P1, SeatId.P4) // P1 is the bidder
     const before = session.view()!
     session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
+    const afterBid = session.view()!
+    const bidCard = afterBid.myHand.find((c) => captureValue(c as never) === afterBid.bidValue)!
+    session.submit({ type: 'throw', card: bidCard })
+    const ownMove = session.lastMove()
+    expect(session.view()!.turn).not.toBe(SeatId.P1) // confirms the scenario: it's now a bot's turn
 
-    // It's now the opening move, still P1's turn (the bidder plays first) — submit a plausible opening move.
+    // Without this fix, submitting a move used to schedule the next bot
+    // move immediately, before the page had shown the human their own
+    // move's reveal. Advancing well past the bot's think time here must
+    // NOT produce a new move.
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(session.lastMove()).toBe(ownMove)
+
+    session.acknowledge()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(session.lastMove()).not.toBe(ownMove)
+    expect(session.lastMove()!.actor).not.toBe(SeatId.P1)
+    session.dispose()
+    vi.useRealTimers()
+  })
+
+  it('with four seats, several bot turns happen in a row, but each one still waits for its own acknowledge()', async () => {
+    vi.useFakeTimers()
+    const session = new LocalFourPlayerSession(SeatId.P1, SeatId.P4)
+    const before = session.view()!
+    session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
     const afterBid = session.view()!
     const bidCard = afterBid.myHand.find((c) => captureValue(c as never) === afterBid.bidValue)!
     session.submit({ type: 'throw', card: bidCard })
 
-    // From here it should be seat P2's turn, then P3, then P4, all bots — advance
-    // enough real time for several bot moves and confirm the turn has moved on
-    // past P1 without needing any further human input.
-    const seatAfterHuman = session.view()!.turn
-    expect(seatAfterHuman).not.toBe(SeatId.P1)
+    // Walk through bot turns one at a time, each requiring its own
+    // acknowledge() — stop once it's the human's turn again or after a
+    // generous number of steps (should never take anywhere near this many
+    // for three bot seats to each go once).
+    const actors: unknown[] = []
+    for (let i = 0; i < 6 && session.view()!.turn !== SeatId.P1; i++) {
+      session.acknowledge()
+      await vi.advanceTimersByTimeAsync(1000)
+      actors.push(session.lastMove()!.actor)
+    }
 
-    await vi.advanceTimersByTimeAsync(3000)
-
-    expect(session.lastMove()).not.toBeNull()
-    expect(session.lastMove()!.actor).not.toBe(SeatId.P1)
+    expect(actors.length).toBeGreaterThan(0)
+    expect(actors.every((a) => a !== SeatId.P1)).toBe(true) // every move in this stretch was a bot's
     session.dispose()
     vi.useRealTimers()
   })

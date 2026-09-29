@@ -16,7 +16,7 @@
     <div class="gold-line"></div>
 
     <div class="flex flex-col items-center gap-1 py-2">
-      <app-opponent-hand [count]="s.hands.opponent.length" />
+      <app-opponent-hand [count]="s.opponentCardCount" />
     </div>
 
     <div class="floor-row" style="flex: 1; justify-content: center;">
@@ -79,9 +79,9 @@
 
     <div class="gold-line"></div>
     <app-player-hand
-      [cards]="s.hands.player"
+      [cards]="s.myHand"
       [selectedCard]="selectedCard()"
-      [selectableCards]="isPlayerTurn() ? s.hands.player : []"
+      [selectableCards]="isPlayerTurn() ? s.myHand : []"
       (cardSelected)="onCardSelect($event)"
     />
 
