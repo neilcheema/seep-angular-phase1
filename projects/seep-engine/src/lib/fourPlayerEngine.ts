@@ -1,6 +1,7 @@
 import { type Card, captureValue, isHouseValue, legalHouseBids } from './card'
 import { createDeck, dealFourPlayerHands, shuffleDeck } from './deck'
 import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, partnerOf, teamOf } from './seats'
+import { ENGINE_VERSION } from './version'
 import {
   type FloorItem, type House,
   allCardsOf, findHouseByValue, findItem, findMaximalExactGroups,
@@ -42,6 +43,8 @@ export interface FourPlayerGameState {
   readonly winner: TeamId | null
   readonly lastHandTotals: Record<TeamId, HandSideTotals> | null
   readonly misdeals: number
+  /** The engine version this game was dealt under — see version.ts. */
+  readonly engineVersion: string
 }
 
 const MAX_MISDEAL_ATTEMPTS = 25
@@ -59,6 +62,7 @@ function pushLog(state: FourPlayerGameState, message: string): FourPlayerGameSta
 export function dealFourPlayerHand(
   dealer: SeatId,
   matchScores: Record<TeamId, number> = emptyRecord(ALL_TEAMS, () => 0),
+  seed?: number,
 ): FourPlayerGameState {
   const bidder = nextSeat(dealer)
   let attempt = 0
@@ -68,7 +72,8 @@ export function dealFourPlayerHand(
   let otherHands: Record<SeatId, Card[]> = emptyRecord(ALL_SEATS, () => [])
 
   do {
-    const deck = shuffleDeck(createDeck())
+    // Retries (on a misdeal) stay deterministic too when a seed is given.
+    const deck = shuffleDeck(createDeck(), seed === undefined ? undefined : seed + attempt)
     const dealt = dealFourPlayerHands(deck, bidder)
     floor = dealt.floor
     bidderFirstFour = dealt.bidderFirstFour
@@ -102,12 +107,13 @@ export function dealFourPlayerHand(
     winner: null,
     lastHandTotals: null,
     misdeals: attempt - 1,
+    engineVersion: ENGINE_VERSION,
   }
   return pushLog(state, `New hand dealt. Dealer: ${dealer}. ${bidder} must bid.`)
 }
 
-export function startFourPlayerMatch(dealer: SeatId = SeatId.P4): FourPlayerGameState {
-  return dealFourPlayerHand(dealer)
+export function startFourPlayerMatch(dealer: SeatId = SeatId.P4, seed?: number): FourPlayerGameState {
+  return dealFourPlayerHand(dealer, emptyRecord(ALL_TEAMS, () => 0), seed)
 }
 
 /**
@@ -135,15 +141,54 @@ export function computeNextDealer(
   return baaziWinner ? partnerOf(normalNextDealer) : normalNextDealer
 }
 
-export function dealNextFourPlayerHand(state: FourPlayerGameState): FourPlayerGameState {
+export function dealNextFourPlayerHand(state: FourPlayerGameState, seed?: number): FourPlayerGameState {
   if (state.phase !== 'hand-over') throw new Error('The current hand has not finished.')
   const nextDealer = computeNextDealer(state.dealer, state.matchScores, null)
-  return dealFourPlayerHand(nextDealer, state.matchScores)
+  return dealFourPlayerHand(nextDealer, state.matchScores, seed)
 }
 
 export function legalFourPlayerBids(state: FourPlayerGameState): number[] {
   if (state.phase !== 'bidding') return []
   return legalHouseBids(state.hands[state.bidder])
+}
+
+/**
+ * Every kind of move a player can make, as one JSON-serializable type —
+ * what a future server would actually receive over the wire from a
+ * client, instead of the client needing to know which of five
+ * differently-shaped functions to call.
+ */
+export type FourPlayerIntent =
+  | { type: 'bid'; value: number }
+  | { type: 'capture'; card: Card; targetItemIds: string[] }
+  | { type: 'build'; card: Card; looseItemIds: string[]; targetValue: number }
+  | { type: 'modify'; card: Card; houseId: string; extraLooseItemIds?: string[] }
+  | { type: 'throw'; card: Card }
+
+/**
+ * Single entry point for applying a move: routes to
+ * placeFourPlayerBid/playFourPlayerCapture/playFourPlayerBuildHouse/
+ * playFourPlayerModifyHouse/playFourPlayerThrow based on intent.type.
+ * Every one of those functions already validates its own move and throws
+ * on anything illegal, so this adds no new validation of its own — it's
+ * purely a dispatch, kept as a thin wrapper on purpose so there is only
+ * one place the rules actually live.
+ */
+export function applyFourPlayerMove(
+  state: FourPlayerGameState, seat: SeatId, intent: FourPlayerIntent,
+): FourPlayerGameState {
+  switch (intent.type) {
+    case 'bid':
+      return placeFourPlayerBid(state, seat, intent.value)
+    case 'capture':
+      return playFourPlayerCapture(state, seat, intent.card, intent.targetItemIds)
+    case 'build':
+      return playFourPlayerBuildHouse(state, seat, intent.card, intent.looseItemIds, intent.targetValue)
+    case 'modify':
+      return playFourPlayerModifyHouse(state, seat, intent.card, intent.houseId, intent.extraLooseItemIds)
+    case 'throw':
+      return playFourPlayerThrow(state, seat, intent.card)
+  }
 }
 
 export function placeFourPlayerBid(state: FourPlayerGameState, seat: SeatId, value: number): FourPlayerGameState {
@@ -540,4 +585,65 @@ export function playFourPlayerThrow(state: FourPlayerGameState, seat: SeatId, ca
 
   const next = finishMove(seeded, seat, newHand, newFloor, seeded.captures, seeded.sweepPoints, null)
   return pushLog(next, `${seat} threw down ${card.face} of ${card.suit}.`)
+}
+
+/**
+ * What one seat is allowed to see — the shape a future server would
+ * actually send over the wire. The other three seats' hands become
+ * counts (handCounts covers all four seats, including the viewer's own,
+ * so a client always has one uniform source for "how many cards does
+ * seat X hold" rather than treating its own hand as a special case).
+ * pendingDeal (cards dealt but not yet given to any visible hand) never
+ * appears at all — a client has no legitimate use for knowing how many
+ * cards are waiting to be dealt to anyone. nextItemId is dropped too, as
+ * pure internal bookkeeping with no meaning to a client.
+ */
+export interface FourPlayerGameView {
+  readonly viewer: SeatId
+  readonly floor: FloorItem<SeatId>[]
+  readonly myHand: Card[]
+  readonly handCounts: Record<SeatId, number>
+  readonly captures: Record<TeamId, Card[]>
+  readonly sweepPoints: Record<TeamId, number>
+  readonly matchScores: Record<TeamId, number>
+  readonly dealer: SeatId
+  readonly bidder: SeatId
+  readonly turn: SeatId
+  readonly phase: FourPlayerPhase
+  readonly bidValue: number | null
+  readonly lastCapturer: TeamId | null
+  readonly cardsPlayedThisHand: number
+  readonly totalPlayableThisHand: number
+  readonly log: string[]
+  readonly winner: TeamId | null
+  readonly lastHandTotals: Record<TeamId, HandSideTotals> | null
+  readonly misdeals: number
+  readonly engineVersion: string
+}
+
+export function viewForSeat(state: FourPlayerGameState, viewer: SeatId): FourPlayerGameView {
+  const handCounts = {} as Record<SeatId, number>
+  for (const seat of ALL_SEATS) handCounts[seat] = state.hands[seat].length
+  return {
+    viewer,
+    floor: state.floor,
+    myHand: state.hands[viewer],
+    handCounts,
+    captures: state.captures,
+    sweepPoints: state.sweepPoints,
+    matchScores: state.matchScores,
+    dealer: state.dealer,
+    bidder: state.bidder,
+    turn: state.turn,
+    phase: state.phase,
+    bidValue: state.bidValue,
+    lastCapturer: state.lastCapturer,
+    cardsPlayedThisHand: state.cardsPlayedThisHand,
+    totalPlayableThisHand: state.totalPlayableThisHand,
+    log: state.log,
+    winner: state.winner,
+    lastHandTotals: state.lastHandTotals,
+    misdeals: state.misdeals,
+    engineVersion: state.engineVersion,
+  }
 }

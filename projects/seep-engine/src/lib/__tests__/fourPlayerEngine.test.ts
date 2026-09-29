@@ -11,6 +11,7 @@ import {
   placeFourPlayerBid,
   startFourPlayerMatch,
 } from '../fourPlayerEngine.ts'
+import { ENGINE_VERSION } from '../version.ts'
 import type { FloorItem } from '../floor.ts'
 
 function card(face: Face, suit: Suit): Card {
@@ -38,6 +39,7 @@ function makeState(overrides: Partial<FourPlayerGameState> = {}): FourPlayerGame
     winner: null,
     lastHandTotals: null,
     misdeals: 0,
+    engineVersion: ENGINE_VERSION,
   }
   return { ...base, ...overrides }
 }
@@ -63,6 +65,7 @@ describe('dealFourPlayerHand', () => {
     for (const seat of [SeatId.P1, SeatId.P2, SeatId.P3, SeatId.P4]) {
       if (seat !== state.bidder) expect(state.pendingDeal![seat]).toHaveLength(12)
     }
+    expect(state.engineVersion).toBe(ENGINE_VERSION)
   })
 
   it('makes the bidder the seat after the dealer in turn order', () => {
@@ -239,5 +242,27 @@ describe('dealer rotation follows who is winning, not simple round-robin', () =>
     const state = { ...startFourPlayerMatch(SeatId.P4), phase: 'hand-over' as const, matchScores: { teamA: 10, teamB: 30 } }
     const next = dealNextFourPlayerHand(state)
     expect(next.dealer).toBe(nextSeat(SeatId.P4))
+  })
+})
+
+describe('seeded dealing is reproducible', () => {
+  it('the same seed deals the exact same floor and hands every time', () => {
+    const a = dealFourPlayerHand(SeatId.P4, undefined, 42)
+    const b = dealFourPlayerHand(SeatId.P4, undefined, 42)
+    expect(a.floor).toEqual(b.floor)
+    expect(a.hands).toEqual(b.hands)
+    expect(a.pendingDeal).toEqual(b.pendingDeal)
+  })
+
+  it('different seeds deal different hands', () => {
+    const a = dealFourPlayerHand(SeatId.P4, undefined, 1)
+    const b = dealFourPlayerHand(SeatId.P4, undefined, 2)
+    expect(a.hands).not.toEqual(b.hands)
+  })
+
+  it('omitting the seed still deals a full, valid hand (unseeded default path still works)', () => {
+    const state = dealFourPlayerHand(SeatId.P4)
+    expect(state.hands[state.bidder]).toHaveLength(4)
+    expect(state.floor).toHaveLength(4)
   })
 })

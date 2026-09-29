@@ -11,6 +11,7 @@ import {
   playFourPlayerThrow,
   startFourPlayerMatch,
 } from '../fourPlayerEngine.ts'
+import { ENGINE_VERSION } from '../version.ts'
 import { chooseFourPlayerBid, chooseFourPlayerMove, chooseFourPlayerOpeningMove } from '../computer4p.ts'
 
 function card(face: Face, suit: Suit): Card {
@@ -38,6 +39,7 @@ function makeState(overrides: Partial<FourPlayerGameState> = {}): FourPlayerGame
     winner: null,
     lastHandTotals: null,
     misdeals: 0,
+    engineVersion: ENGINE_VERSION,
   }
   return { ...base, ...overrides }
 }

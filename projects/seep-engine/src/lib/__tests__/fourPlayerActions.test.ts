@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { Face, Suit, type Card } from '../card.ts'
 import { SeatId } from '../seats.ts'
 import {
-  type FourPlayerGameState,
+  type FourPlayerGameState, type FourPlayerIntent,
+  applyFourPlayerMove,
+  placeFourPlayerBid,
   playFourPlayerBuildHouse,
   playFourPlayerCapture,
   playFourPlayerModifyHouse,
   playFourPlayerThrow,
 } from '../fourPlayerEngine.ts'
+import { ENGINE_VERSION } from '../version.ts'
 import { type FloorItem, type House } from '../floor.ts'
 import { chooseFourPlayerMove } from '../computer4p.ts'
 
@@ -36,6 +39,7 @@ function makeState(overrides: Partial<FourPlayerGameState> = {}): FourPlayerGame
     winner: null,
     lastHandTotals: null,
     misdeals: 0,
+    engineVersion: ENGINE_VERSION,
   }
   return { ...base, ...overrides }
 }
@@ -668,5 +672,67 @@ describe('hand-over detection waits for all four hands to empty', () => {
     const next = playFourPlayerThrow(state, SeatId.P4, card(Face.Two, Suit.Clubs))
     expect(next.phase).toBe('hand-over')
     expect(next.lastHandTotals).not.toBeNull()
+  })
+})
+
+describe('applyFourPlayerMove dispatches every intent type to the matching existing function', () => {
+  it('bid', () => {
+    const state = makeState({
+      phase: 'bidding',
+      hands: { p1: [card(Face.Nine, Suit.Hearts)], p2: [], p3: [], p4: [] },
+    })
+    const viaIntent = applyFourPlayerMove(state, SeatId.P1, { type: 'bid', value: 9 })
+    const viaDirect = placeFourPlayerBid(state, SeatId.P1, 9)
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('capture', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Seven, Suit.Diamonds) }],
+      hands: { p1: [card(Face.Seven, Suit.Clubs)], p2: [], p3: [], p4: [] },
+    })
+    const c = card(Face.Seven, Suit.Clubs)
+    const viaIntent = applyFourPlayerMove(state, SeatId.P1, { type: 'capture', card: c, targetItemIds: ['f1'] })
+    const viaDirect = playFourPlayerCapture(state, SeatId.P1, c, ['f1'])
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('build', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { p1: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], p2: [], p3: [], p4: [] },
+    })
+    const c = card(Face.Six, Suit.Clubs)
+    const viaIntent = applyFourPlayerMove(state, SeatId.P1, { type: 'build', card: c, looseItemIds: ['f1'], targetValue: 11 })
+    const viaDirect = playFourPlayerBuildHouse(state, SeatId.P1, c, ['f1'], 11)
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('modify', () => {
+    const state = makeState({
+      floor: [{ kind: 'house', id: 'h1', cards: [card(Face.Nine, Suit.Hearts)], captureValue: 9, cemented: false, owners: [SeatId.P1] }],
+      hands: { p1: [card(Face.Nine, Suit.Clubs), card(Face.Nine, Suit.Spades)], p2: [], p3: [], p4: [] },
+    })
+    const c = card(Face.Nine, Suit.Clubs)
+    const viaIntent = applyFourPlayerMove(state, SeatId.P1, { type: 'modify', card: c, houseId: 'h1' })
+    const viaDirect = playFourPlayerModifyHouse(state, SeatId.P1, c, 'h1', [])
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('throw', () => {
+    const state = makeState({
+      floor: [],
+      hands: { p1: [card(Face.Two, Suit.Clubs)], p2: [], p3: [], p4: [] },
+    })
+    const c = card(Face.Two, Suit.Clubs)
+    const viaIntent = applyFourPlayerMove(state, SeatId.P1, { type: 'throw', card: c })
+    const viaDirect = playFourPlayerThrow(state, SeatId.P1, c)
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('an intent round-trips through JSON, since that is the whole point', () => {
+    const intent: FourPlayerIntent = { type: 'capture', card: card(Face.Seven, Suit.Clubs), targetItemIds: ['f1'] }
+    const revived = JSON.parse(JSON.stringify(intent))
+    expect(revived).toEqual(intent)
   })
 })

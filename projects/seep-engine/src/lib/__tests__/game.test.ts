@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { Face, Suit, captureValue, pointValue } from '../card.ts'
 import {
-  type GameState,
-  dealHand, placeBid, playBuildHouse, playCapture, playModifyHouse, playThrow,
+  type GameState, type Intent,
+  applyMove, dealHand, placeBid, playBuildHouse, playCapture, playModifyHouse, playThrow,
 } from '../gameEngine.ts'
+import { ENGINE_VERSION } from '../version.ts'
 import { isHouse } from '../floor.ts'
 import { chooseComputerMove } from '../computer.ts'
 
@@ -31,6 +32,7 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
     winner: null,
     lastHandTotals: null,
     misdeals: 0,
+    engineVersion: ENGINE_VERSION,
   }
   return { ...base, ...overrides }
 }
@@ -67,6 +69,7 @@ describe('dealHand', () => {
     expect(state.pendingDeal).not.toBeNull()
     expect(state.pendingDeal!.player).toHaveLength(20)
     expect(state.pendingDeal!.opponent).toHaveLength(24)
+    expect(state.engineVersion).toBe(ENGINE_VERSION)
   })
 })
 
@@ -570,5 +573,89 @@ describe('hand-over scoring', () => {
     expect(next.phase).toBe('hand-over')
     expect(next.lastHandTotals!.player.qualifyingCardPoints).toBe(0)
     expect(next.lastHandTotals!.opponent.qualifyingCardPoints).toBe(13)
+  })
+})
+
+describe('seeded dealing is reproducible', () => {
+  it('the same seed deals the exact same floor and hands every time', () => {
+    const a = dealHand('player', { player: 0, opponent: 0 }, 42)
+    const b = dealHand('player', { player: 0, opponent: 0 }, 42)
+    expect(a.floor).toEqual(b.floor)
+    expect(a.hands).toEqual(b.hands)
+    expect(a.pendingDeal).toEqual(b.pendingDeal)
+  })
+
+  it('different seeds deal different hands', () => {
+    const a = dealHand('player', { player: 0, opponent: 0 }, 1)
+    const b = dealHand('player', { player: 0, opponent: 0 }, 2)
+    expect(a.hands).not.toEqual(b.hands)
+  })
+
+  it('omitting the seed still deals a full, valid hand (unseeded default path still works)', () => {
+    const state = dealHand('player')
+    expect(state.hands.player).toHaveLength(4)
+    expect(state.floor).toHaveLength(4)
+  })
+})
+
+describe('applyMove dispatches every intent type to the matching existing function', () => {
+  it('bid', () => {
+    const state = makeState({
+      phase: 'bidding',
+      hands: { player: [card(Face.Nine, Suit.Hearts)], opponent: [] },
+    })
+    const viaIntent = applyMove(state, 'player', { type: 'bid', value: 9 })
+    const viaDirect = placeBid(state, 'player', 9)
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('capture', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Seven, Suit.Diamonds) }],
+      hands: { player: [card(Face.Seven, Suit.Clubs)], opponent: [] },
+    })
+    const c = card(Face.Seven, Suit.Clubs)
+    const viaIntent = applyMove(state, 'player', { type: 'capture', card: c, targetItemIds: ['f1'] })
+    const viaDirect = playCapture(state, 'player', c, ['f1'])
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('build', () => {
+    const state = makeState({
+      floor: [{ kind: 'loose', id: 'f1', card: card(Face.Five, Suit.Diamonds) }],
+      hands: { player: [card(Face.Six, Suit.Clubs), card(Face.Jack, Suit.Hearts)], opponent: [] },
+    })
+    const c = card(Face.Six, Suit.Clubs)
+    const viaIntent = applyMove(state, 'player', { type: 'build', card: c, looseItemIds: ['f1'], targetValue: 11 })
+    const viaDirect = playBuildHouse(state, 'player', c, ['f1'], 11)
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('modify', () => {
+    const state = makeState({
+      floor: [{ kind: 'house', id: 'h1', cards: [card(Face.Nine, Suit.Hearts)], captureValue: 9, cemented: false, owners: ['player'] }],
+      hands: { player: [card(Face.Nine, Suit.Clubs), card(Face.Nine, Suit.Spades)], opponent: [] },
+    })
+    const c = card(Face.Nine, Suit.Clubs)
+    const viaIntent = applyMove(state, 'player', { type: 'modify', card: c, houseId: 'h1' })
+    const viaDirect = playModifyHouse(state, 'player', c, 'h1', [])
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('throw', () => {
+    const state = makeState({
+      floor: [],
+      hands: { player: [card(Face.Two, Suit.Clubs)], opponent: [] },
+    })
+    const c = card(Face.Two, Suit.Clubs)
+    const viaIntent = applyMove(state, 'player', { type: 'throw', card: c })
+    const viaDirect = playThrow(state, 'player', c)
+    expect(viaIntent).toEqual(viaDirect)
+  })
+
+  it('an intent round-trips through JSON, since that is the whole point', () => {
+    const intent: Intent = { type: 'capture', card: card(Face.Seven, Suit.Clubs), targetItemIds: ['f1'] }
+    const revived = JSON.parse(JSON.stringify(intent))
+    expect(revived).toEqual(intent)
   })
 })
