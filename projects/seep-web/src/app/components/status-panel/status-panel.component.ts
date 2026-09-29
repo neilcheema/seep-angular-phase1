@@ -1,7 +1,7 @@
 import { Component, input } from '@angular/core';
-import type { GameState } from 'seep-engine';
+import type { GameView } from 'seep-engine';
 
-const PHASE_LABEL: Record<GameState['phase'], string> = {
+const PHASE_LABEL: Record<GameView['phase'], string> = {
   bidding: 'Bidding',
   'opening-move': 'Opening move',
   playing: 'In play',
@@ -16,7 +16,7 @@ const PHASE_LABEL: Record<GameState['phase'], string> = {
   templateUrl: './status-panel.component.html',
 })
 export class StatusPanelComponent {
-  readonly state = input.required<GameState>();
+  readonly state = input.required<GameView>();
 
   get phaseLabel(): string {
     return PHASE_LABEL[this.state().phase];

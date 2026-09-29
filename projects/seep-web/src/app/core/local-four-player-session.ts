@@ -35,9 +35,10 @@ export class LocalFourPlayerSession implements GameSession<FourPlayerGameView, F
     this.myId = myId;
     this.state = startFourPlayerMatch(dealer);
     this.publish(this.state);
+    this.scheduleBotMoveIfNeeded(this.state); // no prior reveal to wait for at the very start of a match
   }
 
-  /** Submits a move on the viewer's own behalf. Throws the same validation errors the engine always has. */
+  /** Submits a move on the viewer's own behalf. Throws the same validation errors the engine always has. Does not itself schedule a bot move — see acknowledge(). */
   submit(intent: FourPlayerIntent): void {
     const before = viewForSeat(this.state, this.myId);
     const next = applyFourPlayerMove(this.state, this.myId, intent);
@@ -46,26 +47,43 @@ export class LocalFourPlayerSession implements GameSession<FourPlayerGameView, F
     this.lastMove.set({ actor: this.myId, intent, before, after: viewForSeat(next, this.myId) });
   }
 
+  /**
+   * Schedules the next bot move, if any is due — called once the page
+   * has finished showing whatever it wanted to show about the last move.
+   * With four seats, several bot turns can genuinely happen in a row
+   * (unlike two-player, where a bot move is always immediately followed
+   * by the human's own turn) — the page calls this once per reveal it
+   * dismisses, the same as it always has, and each bot move in the
+   * sequence waits for its own acknowledge() exactly like the human's
+   * moves do.
+   */
+  acknowledge(): void {
+    this.scheduleBotMoveIfNeeded(this.state);
+  }
+
   startNewMatch(): void {
     this.cancelPendingBotMove();
     this.lastMove.set(null);
     this.state = startFourPlayerMatch();
     this.publish(this.state);
+    this.scheduleBotMoveIfNeeded(this.state); // fresh match, nothing pending to acknowledge yet
   }
 
   dealNext(): void {
     this.lastMove.set(null);
     this.state = dealNextFourPlayerHand(this.state);
     this.publish(this.state);
+    this.scheduleBotMoveIfNeeded(this.state); // new hand, nothing pending to acknowledge yet
   }
 
   dispose(): void {
     this.cancelPendingBotMove();
   }
 
+  /** Updates the published view only. Scheduling a bot move is always a separate, explicit step — see the callers of scheduleBotMoveIfNeeded. */
   private publish(next: FourPlayerGameState): void {
+    this.cancelPendingBotMove();
     this.view.set(viewForSeat(next, this.myId));
-    this.scheduleBotMoveIfNeeded(next);
   }
 
   private scheduleBotMoveIfNeeded(s: FourPlayerGameState): void {

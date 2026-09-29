@@ -37,6 +37,18 @@ export interface GameSession<TView, TIntent, TActor> {
   readonly view: Signal<TView | null>;
   readonly lastMove: Signal<MoveEvent<TView, TIntent, TActor> | null>;
   submit(intent: TIntent): void;
+  /**
+   * Tells the session the page has finished showing whatever it wanted
+   * to show about the last move (e.g. the move-reveal overlay was
+   * dismissed) and it's safe to proceed. A LocalSession only schedules
+   * its next bot move once this is called — never automatically right
+   * after a move resolves — the same "every move pauses until Next"
+   * pacing the two-player and four-player pages have always had. Call
+   * this once, right when the page dismisses its own reveal; a
+   * RemoteSession is free to make this a no-op, since pacing between
+   * real players' moves isn't something a session needs to gate.
+   */
+  acknowledge(): void;
   startNewMatch(): void;
   dealNext(): void;
   /** Cancels any pending bot-move timer. Call from the page's DestroyRef. */
