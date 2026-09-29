@@ -10,6 +10,8 @@ import {
   SeatId,
   Suit,
   allCardsOf,
+  nextSeat,
+  partnerOf,
   captureValue,
   cardEquals,
   cardLabel,
@@ -60,8 +62,8 @@ const SUIT_SYMBOL: Record<Suit, string> = {
   [Suit.Diamonds]: '\u2666',
 }
 
-const SEAT_TAG: Record<SeatId, string> = {
-  p1: 'You', p2: 'Player 2', p3: 'Your partner', p4: 'Player 4',
+const SEAT_LABEL: Record<SeatId, string> = {
+  p1: 'Player 1', p2: 'Player 2', p3: 'Player 3', p4: 'Player 4',
 }
 
 /**
@@ -85,6 +87,18 @@ const SEAT_TAG: Record<SeatId, string> = {
  * have been mislabeled "Breaking house" in its own reveal. buildReveal()
  * uses the correct, general check — the one the human side already had
  * — for both.
+ *
+ * mySeat: the viewer's seat is no longer hardcoded to SeatId.P1 — every
+ * place that used to check `=== SeatId.P1` now checks `=== this.mySeat()`,
+ * and the table's four screen positions (bottom/left/top/right) are
+ * derived from it via the engine's own nextSeat/partnerOf, not assumed.
+ * mySeat is still fixed to P1 today, since there's no mechanism yet to
+ * assign a viewer to a different seat (that's an online-multiplayer
+ * concern, not something this local, bots-only game can reach) — but the
+ * whole page is now written so that changing what mySeat resolves to,
+ * later, is the only change needed to make the layout and every "You"/
+ * "Your partner" label correctly follow whichever seat the viewer
+ * actually sits in.
  */
 @Component({
   selector: 'app-four-player',
@@ -100,6 +114,20 @@ export class FourPlayerComponent {
   private readonly destroyRef = inject(DestroyRef)
 
   readonly appVersion = APP_VERSION
+
+  /**
+   * The viewer's own seat. Fixed to P1 for now (see the class doc
+   * comment) — but every reference to "which seat is mine" in this file
+   * goes through this signal, not a literal, so that's a one-line change
+   * whenever there's a real seat assignment to read it from.
+   */
+  readonly mySeat = signal<SeatId>(SeatId.P1)
+  /** The seat rendered at the top of the table — always the viewer's partner, two seats away in either direction. */
+  readonly partnerSeat = computed(() => partnerOf(this.mySeat()))
+  /** The seat rendered on the left — the next seat after the viewer in turn order. */
+  readonly leftSeat = computed(() => nextSeat(this.mySeat()))
+  /** The seat rendered on the right — the partner of whoever is on the left. */
+  readonly rightSeat = computed(() => partnerOf(this.leftSeat()))
 
   readonly session = signal<LocalFourPlayerSession | null>(null)
   readonly state = computed<FourPlayerGameView | null>(() => this.session()?.view() ?? null)
@@ -119,8 +147,8 @@ export class FourPlayerComponent {
     return (
       !!s &&
       !this.pendingReveal() &&
-      s.turn === SeatId.P1 &&
-      (s.phase === 'playing' || (s.phase === 'opening-move' && s.bidder === SeatId.P1))
+      s.turn === this.mySeat() &&
+      (s.phase === 'playing' || (s.phase === 'opening-move' && s.bidder === this.mySeat()))
     )
   })
 
@@ -225,7 +253,15 @@ export class FourPlayerComponent {
     if (existing) {
       existing.startNewMatch()
     } else {
-      this.session.set(new LocalFourPlayerSession())
+      // Explicit dealer, not the session's own default: nextSeat(dealer)
+      // is who bids first, and a fresh game should always start with the
+      // viewer bidding — the same "you always bid first on Deal" the
+      // page has always had. rightSeat() is exactly the seat whose
+      // nextSeat is mySeat(), by construction (see the class doc
+      // comment's rotation note) — passing SeatId.P4's old default here
+      // would only coincidentally make P1 the bidder; for any other
+      // mySeat it would leave the viewer bidder-less on a fresh hand.
+      this.session.set(new LocalFourPlayerSession(this.mySeat(), this.rightSeat()))
     }
     this.clearSelection()
     this.message.set(null)
@@ -241,8 +277,16 @@ export class FourPlayerComponent {
     return this.selectedFloorIds().includes(id)
   }
 
+  /** How to refer to a seat in running text (the move-reveal overlay, the move log) — relative to the viewer, not the seat's fixed identity. */
   seatTag(seat: SeatId): string {
-    return SEAT_TAG[seat]
+    if (seat === this.mySeat()) return 'You'
+    if (seat === this.partnerSeat()) return 'Your partner'
+    return SEAT_LABEL[seat]
+  }
+
+  /** How to label a seat's hand around the table (the partner row, the two side hands) — always names the seat, adding the relationship only for the partner, matching how the page has always labeled that one specially. */
+  seatHeaderLabel(seat: SeatId): string {
+    return seat === this.partnerSeat() ? `${SEAT_LABEL[seat]} \u00b7 Your partner` : SEAT_LABEL[seat]
   }
 
   dismissReveal(): void {
@@ -419,7 +463,7 @@ export class FourPlayerComponent {
 
   /** Unlocks the "notice something off?" note once both the human and at least one computer seat have each played a move (a bid counts). Never re-locks once unlocked. */
   private trackMove(seat: SeatId): void {
-    if (seat === SeatId.P1) this.humanHasMoved.set(true)
+    if (seat === this.mySeat()) this.humanHasMoved.set(true)
     else this.opponentHasMoved.set(true)
   }
 
@@ -436,7 +480,7 @@ export class FourPlayerComponent {
     const teams = new Set(owners.map(teamOf))
     if (teams.size > 1) return 'Shared'
     const [onlyTeam] = teams
-    return onlyTeam === 'teamA' ? 'Human team' : 'AI team'
+    return onlyTeam === teamOf(this.mySeat()) ? 'Human team' : 'AI team'
   }
 
   private shortCard(c: CardModel): string {

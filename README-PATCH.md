@@ -1,79 +1,81 @@
-# Phase 2: four-player.component.ts wired to LocalFourPlayerSession
+# Phase 2 complete: mySeat and table rotation
 
-Same pattern as the two-player wiring, adapted for four seats and teams.
-The page no longer talks to the engine directly — it holds a
-LocalFourPlayerSession, reads its redacted view, submits intents, and
-reacts to whatever move the session reports, whether from the human's
-own submit() or any bot seat's scheduled move.
+The last piece of Phase 2 — the viewer's seat is no longer hardcoded to
+P1 anywhere. Six files: the page, its two child components, the session
+layer (one real bug found and fixed there), and that fix's tests.
 
-## What changed, and what didn't
-**Behavior: unchanged**, verified below — same bidding, opening move,
-capture/build/cement/break/throw, move-reveal pauses (now correctly
-gated through every bot seat individually — this is the first place the
-acknowledge fix is exercised with more than one bot in the chain), move
-log, rule-note feature, Deal/Play again flow.
+## What changed
 
-**Structural changes, mirroring two-player exactly:**
-1. `state` is now `computed(() => this.session()?.view() ?? null)` — a
-   `FourPlayerGameView`. The five template bindings that referenced
-   `s.hands.p2/p3/p4.length` and `s.hands.p1` now read
-   `s.handCounts.p2/p3/p4` and `s.myHand`.
-2. `legalBidsFor` computes from the view's own `myHand` instead of
-   taking a full `FourPlayerGameState`.
-3. Six separate places that used to hand-build a `MoveReveal` (one per
-   human action, plus `applyAction`/`snapshotAction` for computer moves)
-   are now one `buildReveal()`, driven by an effect watching the
-   session's `lastMove`.
+**four-player.component.ts**: a new `mySeat` signal (fixed to P1 for
+now — there's no mechanism yet to assign a viewer to a different seat,
+that's an online-multiplayer concern this local game can't reach) plus
+three computed signals derived from it via the engine's own
+`nextSeat`/`partnerOf`: `partnerSeat` (top), `leftSeat`, `rightSeat`.
+Every place that checked `=== SeatId.P1` now checks `=== this.mySeat()`.
+Two label helpers replace the old hardcoded map: `seatTag()` for running
+text ("You"/"Your partner"/"Player N"), `seatHeaderLabel()` for the
+three hand headers around the table.
 
-## One real behavioral fix, found while unifying those six call sites
-The original human-move cement/break check (`addedValue %
-house.captureValue === 0`, matching the engine's actual multi-set
-cementing rule) and the original AI-move check
-(`extraLooseItemIds.length === 0 && card value === house value`, a
-narrower special case) disagreed with each other. A computer move that
-cemented a house via a multi-card combination could have been
-mislabeled "Breaking house" in its own reveal — a real, pre-existing
-inconsistency, not something this patch introduces. `buildReveal()` uses
-the correct, general check for both human and computer moves now.
+**four-player.component.html**: the partner row and both side hands now
+read `partnerSeat()`/`leftSeat()`/`rightSeat()` instead of literal
+`p2`/`p3`/`p4`; the bidding-turn check reads `mySeat()` instead of the
+literal `'p1'`.
+
+**four-player-status-panel.component.ts** and
+**four-player-floor-item.component.ts**: both had the identical
+hardcoded-P1 problem in their own "You"/"Your partner" logic (bid label,
+house-owner tag). Both now take a `mySeat` input the page passes through.
+The floor-item's old "Team B's" fallback — which assumed the viewer was
+always on Team A — is now "Opponents'", which says the same thing
+without that assumption and reads more naturally besides. This is a
+small, real text change from what's shown today, not hidden in the
+refactor.
+
+## A real bug this surfaced, not just a refactor
+Testing only mySeat=P1 would have missed it entirely, which is exactly
+why I also tested other seats even though nothing in the product can
+reach them yet. `LocalFourPlayerSession.startNewMatch()` called
+`startFourPlayerMatch()` with no dealer argument, silently defaulting to
+the engine's own `SeatId.P4` — which only coincidentally made P1 the
+bidder. For any other viewer seat, this left them bidder-less (an empty
+staged hand, zero legal bids) on every restarted match. Fixed by
+computing the dealer from `myId` directly (`partnerOf(nextSeat(myId))`
+— the seat whose `nextSeat` is the viewer). The main component's
+`startNewGame()` had the equivalent issue on the very first game and is
+fixed the same way. Two new tests lock this in, covering both the
+construction path and the restart path, for a non-P1 seat.
 
 ## Verified
-- Real Angular AOT compiler, strict templates on, using every actual
-  component you sent (not stubs this time) — clean on the first attempt.
-- Confirmed `four-player-status-panel.component.ts` had the identical
-  `input.required<FourPlayerGameState>()` issue as `status-panel.component.ts`
-  — same fix (`FourPlayerGameView`), confirmed by reverting it and
-  reproducing the exact predicted compile error before trusting the fix
-  was necessary.
-- Ran the compiled component in a headless browser, three times, three
-  different random deals: start, bid, dismiss, opening move, dismiss,
-  then walked through every consecutive bot turn — waiting real time and
-  calling `dismissReveal()` (which calls `acknowledge()`) once per bot
-  move, the same way a person clicking "Next" would. Confirmed in the
-  browser:
-  - **The scenario unique to four-player**: three consecutive bot turns
-    (p2 → p3 → p4) each correctly waited for its own acknowledge — no
-    move ever appeared before it was actually dismissed and waited for.
-  - Capture, build, and throw moves all flowed correctly through
-    `buildReveal()`, each with a `reason` string for bot moves.
-  - `canShareRuleNote` correctly unlocked once both sides had moved.
-  - Zero console or page errors across all three runs.
+- Real Angular AOT compiler, strict templates, all real components:
+  clean.
+- Verified the seat-rotation formula itself in isolation first (three
+  unit tests) before building anything on it: P1 reproduces the known
+  values (left=P2, partner=P3, right=P4), P3 gives the mirror image, and
+  across all four seats the four computed positions are always four
+  distinct seats.
+- Ran the compiled component in a headless browser at three different
+  seats — P1, P2, and P3 — full sequence each time: start, bid, opening
+  move, walk every bot turn to completion. Confirmed for every seat: the
+  four screen positions are always four distinct seats, "You" and "Your
+  partner" always land correctly, no bot move is ever attributed to
+  mySeat itself, and `mySeat=P1` reproduces the exact original layout
+  (partner=P3, left=P2, right=P4) with zero drift.
+- Deliberately reverted the startNewMatch fix and confirmed the new unit
+  test catches it, before trusting the fix — then restored, confirmed
+  byte-for-byte with `diff`.
+- Full combined suite (engine + both session layers): 181 tests, 3 runs
+  back to back, stable.
 
-## The one thing not directly exercised at runtime
-None of these three runs happened to produce a computer 'modify'
-(cement/break) move in the first few turns — the AI tends to prefer an
-available capture when one exists, the same reason multi-set builds are
-rarely seen in AI play (documented earlier in this project). That path
-is still covered by the AOT compiler's type-checking, and its logic
-directly mirrors the two-player version's already runtime-verified
-modify handling — but I want to be precise about what was actually
-watched happen versus what's covered by the surrounding verification.
+## What I deliberately didn't touch
+The status panel's "Team A (You & Partner)" match-score label still
+assumes the viewer is on Team A. Fixing that properly means deciding how
+team names should display generally (probably "Your team" / "Their
+team" throughout, not just patching this one spot) — a real question,
+but a different and broader one than seat rotation. Flagging it rather
+than silently leaving it or silently expanding scope to fix it here.
 
 ## Apply
-Copy these three files into your repo at the paths shown, then
+Copy these six files into your repo at the paths shown, then
 `npm test && npm run lint && npm run build`, then commit.
 
-## What's left in Phase 2
-The mySeat/table-rotation piece from the original plan. With both
-LocalSession and LocalFourPlayerSession already parameterized by
-viewer identity (`myId`), this is now a smaller piece of work than it
-would have been before the wiring existed.
+With this, Phase 2 is complete.

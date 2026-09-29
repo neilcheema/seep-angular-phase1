@@ -3,7 +3,7 @@ import {
   type ComputerPlayAction4P, type FourPlayerGameState, type FourPlayerGameView,
   type FourPlayerIntent, SeatId,
   applyFourPlayerMove, chooseFourPlayerBid, chooseFourPlayerMove, chooseFourPlayerOpeningMove,
-  dealNextFourPlayerHand, startFourPlayerMatch, viewForSeat,
+  dealNextFourPlayerHand, nextSeat, partnerOf, startFourPlayerMatch, viewForSeat,
 } from 'seep-engine';
 import type { GameSession, MoveEvent } from './game-session';
 
@@ -64,7 +64,16 @@ export class LocalFourPlayerSession implements GameSession<FourPlayerGameView, F
   startNewMatch(): void {
     this.cancelPendingBotMove();
     this.lastMove.set(null);
-    this.state = startFourPlayerMatch();
+    // The dealer must be whichever seat's nextSeat is myId — that's what
+    // makes the viewer the bidder on a fresh hand, regardless of which
+    // seat they're actually in. Calling startFourPlayerMatch() with no
+    // dealer here would default to the engine's own SeatId.P4, which
+    // only coincidentally makes P1 the bidder — for any other myId it
+    // would leave the viewer bidder-less (an empty staged hand) on every
+    // restarted match, the same bug the constructor avoids by always
+    // being given dealer explicitly rather than relying on its default.
+    const dealer = partnerOf(nextSeat(this.myId));
+    this.state = startFourPlayerMatch(dealer);
     this.publish(this.state);
     this.scheduleBotMoveIfNeeded(this.state); // fresh match, nothing pending to acknowledge yet
   }

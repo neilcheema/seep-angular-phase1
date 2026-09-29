@@ -134,4 +134,31 @@ describe('LocalFourPlayerSession', () => {
     expect(session.view()!.phase).toBe('bidding')
     session.dispose()
   })
+
+  it('the viewer is always the bidder on a fresh match, for any seat — not just P1', () => {
+    // Regression coverage for a real bug: the dealer must be whichever
+    // seat's nextSeat is myId, or a non-P1 viewer ends up with an empty
+    // staged hand and zero legal bids on their own fresh game.
+    for (const seat of [SeatId.P1, SeatId.P2, SeatId.P3, SeatId.P4]) {
+      const dealer = { p1: SeatId.P4, p2: SeatId.P1, p3: SeatId.P2, p4: SeatId.P3 }[seat]
+      const session = new LocalFourPlayerSession(seat, dealer)
+      expect(session.view()!.myHand.length).toBeGreaterThan(0)
+      expect(legalBidsFromView(session.view()!.myHand).length).toBeGreaterThan(0)
+      session.dispose()
+    }
+  })
+
+  it('startNewMatch keeps the same viewer as bidder on every restart, for a non-P1 seat too', () => {
+    const session = new LocalFourPlayerSession(SeatId.P3, SeatId.P2)
+    expect(session.view()!.myHand.length).toBeGreaterThan(0)
+
+    session.startNewMatch()
+
+    // Before the fix, startNewMatch() ignored myId entirely and always
+    // dealt as if the viewer were P1 — for a P3 viewer this left
+    // myHand empty on every restart, not just the first deal.
+    expect(session.view()!.myHand.length).toBeGreaterThan(0)
+    expect(legalBidsFromView(session.view()!.myHand).length).toBeGreaterThan(0)
+    session.dispose()
+  })
 })
