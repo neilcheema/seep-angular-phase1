@@ -1,5 +1,5 @@
 import { Component, input } from '@angular/core'
-import type { FourPlayerGameView } from 'seep-engine'
+import { type FourPlayerGameView, SeatId, partnerOf } from 'seep-engine'
 
 const PHASE_LABEL: Record<FourPlayerGameView['phase'], string> = {
   bidding: 'Bidding',
@@ -9,14 +9,19 @@ const PHASE_LABEL: Record<FourPlayerGameView['phase'], string> = {
   'match-over': 'Match over',
 }
 
-const SEAT_LABEL: Record<string, string> = {
-  p1: 'You',
+const SEAT_LABEL: Record<SeatId, string> = {
+  p1: 'Player 1',
   p2: 'Player 2',
-  p3: 'Your partner',
+  p3: 'Player 3',
   p4: 'Player 4',
 }
 
-/** Score, bid, phase, and last-move summary header for the four-player table. */
+/**
+ * Score, bid, phase, and last-move summary header for the four-player
+ * table. mySeat defaults to P1 for backward compatibility with any other
+ * caller, but four-player.component.ts always passes its own mySeat
+ * explicitly, so "You"/"Your partner" here track the actual viewer.
+ */
 @Component({
   selector: 'app-four-player-status-panel',
   standalone: true,
@@ -24,13 +29,17 @@ const SEAT_LABEL: Record<string, string> = {
 })
 export class FourPlayerStatusPanelComponent {
   readonly state = input.required<FourPlayerGameView>()
+  readonly mySeat = input<SeatId>(SeatId.P1)
 
   get phaseLabel(): string {
     return PHASE_LABEL[this.state().phase]
   }
 
   get bidderLabel(): string {
-    return SEAT_LABEL[this.state().bidder] ?? this.state().bidder
+    const bidder = this.state().bidder
+    if (bidder === this.mySeat()) return 'You'
+    if (bidder === partnerOf(this.mySeat())) return 'Your partner'
+    return SEAT_LABEL[bidder]
   }
 
   get lastLog(): string | undefined {

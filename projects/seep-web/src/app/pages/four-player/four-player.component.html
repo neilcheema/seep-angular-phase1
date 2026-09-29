@@ -14,18 +14,18 @@
 }
 @if (state(); as s) {
   <div class="game-root">
-    <app-four-player-status-panel [state]="s" />
+    <app-four-player-status-panel [state]="s" [mySeat]="mySeat()" />
     <div class="gold-line"></div>
 
     <div class="partner-row">
-      <span class="seat-label">Player 3 · Your partner</span>
-      <app-opponent-hand [count]="s.handCounts.p3" />
+      <span class="seat-label">{{ seatHeaderLabel(partnerSeat()) }}</span>
+      <app-opponent-hand [count]="s.handCounts[partnerSeat()]" />
     </div>
 
     <div class="four-seat-row">
       <div class="side-hand">
-        <span class="seat-label">Player 2</span>
-        <app-opponent-hand [count]="s.handCounts.p2" orientation="left" />
+        <span class="seat-label">{{ seatHeaderLabel(leftSeat()) }}</span>
+        <app-opponent-hand [count]="s.handCounts[leftSeat()]" orientation="left" />
       </div>
 
       <div class="floor-row" style="justify-content: center;">
@@ -38,6 +38,7 @@
               [item]="item"
               [selected]="isFloorSelected(item.id)"
               [selectable]="isPlayerTurn() && !!selectedCard()"
+              [mySeat]="mySeat()"
               (itemClick)="onFloorClick(item)"
             />
           </div>
@@ -45,8 +46,8 @@
       </div>
 
       <div class="side-hand">
-        <span class="seat-label">Player 4</span>
-        <app-opponent-hand [count]="s.handCounts.p4" orientation="right" />
+        <span class="seat-label">{{ seatHeaderLabel(rightSeat()) }}</span>
+        <app-opponent-hand [count]="s.handCounts[rightSeat()]" orientation="right" />
       </div>
     </div>
 
@@ -54,7 +55,7 @@
       <div class="text-center text-sm" style="color: #ff8a8a; padding: 0 12px 6px;">{{ m }}</div>
     }
 
-    @if (s.phase === 'bidding' && s.turn === 'p1' && !pendingReveal()) {
+    @if (s.phase === 'bidding' && s.turn === mySeat() && !pendingReveal()) {
       <div class="action-bar">
         <span style="color: rgba(255,255,255,0.75);">Choose your bid:</span>
         @for (v of legalBidsFor(s); track v) {
