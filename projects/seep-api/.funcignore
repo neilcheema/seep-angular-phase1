@@ -1,0 +1,15 @@
+# Deliberately does NOT exclude node_modules: @azure/functions is marked
+# --external in the esbuild build (it has an internal dynamic require on
+# @azure/functions-core, which the Functions host resolves at runtime and
+# which esbuild cannot bundle), so the real npm package must be present
+# at deployment. Standard Azure Functions deployment runs npm install
+# server-side (Oryx) or packages node_modules directly \u2014 either way,
+# this file should only trim what's genuinely unneeded at runtime.
+src/
+*.ts
+tsconfig.json
+local.settings.json
+local.settings.json.example
+.git*
+*.md
+.vscode/

@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "FIREBASE_PROJECT_ID": "seep-quest",
+    "DATABASE_URL": "<Neon pooled connection string for this environment \u2014 dev or production, never both in the same file>"
+  }
+}

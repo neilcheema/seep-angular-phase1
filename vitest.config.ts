@@ -15,6 +15,7 @@ export default defineConfig({
     include: [
       'projects/seep-engine/src/**/*.test.ts',
       'projects/seep-web/src/**/*.test.ts',
+      'projects/seep-api/src/**/*.test.ts',
     ],
     environment: 'node',
   },
