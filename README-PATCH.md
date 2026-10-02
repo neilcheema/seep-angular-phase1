@@ -1,23 +1,44 @@
-# Version bump: 1.2.0 -> 1.3.0
+# Fix: the ESLint unused-parameter error on me.ts
 
-## What changed
-One line: APP_VERSION in version.ts.
+## What happened
+`context` in the me() handler was prefixed `_context`, following the
+TypeScript convention for an intentionally-unused parameter \u2014 which
+TypeScript's own noUnusedParameters respects by default (confirmed clean
+in this project's own strict typecheck). ESLint's
+@typescript-eslint/no-unused-vars does NOT share that convention
+automatically; it needs an argsIgnorePattern configured to recognise it.
+I never had this project's actual ESLint config to test against \u2014
+nothing before this needed `npm run lint` specifically, only tsc/vitest/
+esbuild \u2014 so this is a real gap in verification, not a hypothetical
+one, and it's worth being direct about that rather than implying it was
+caught in advance.
 
-## Why 1.3.0
-Since 1.2.0, Phase 2 shipped in full: both game pages are now wired to
-a GameSession abstraction (LocalSession / LocalFourPlayerSession) instead
-of calling the engine directly, the acknowledge-gated reveal pacing fix,
-and the four-player table now rotates around whichever seat the viewer
-is in rather than assuming P1. This is real architectural groundwork for
-online play, not a rules or UI change on its own, but it's a meaningful
-enough shift to warrant a minor version bump rather than a patch one.
+## The fix
+Rather than silence the warning or guess at your eslint config, context
+is now genuinely used: context.log(...) records the reason on an auth
+failure (never the token itself), via Azure's own structured logging
+rather than console.log \u2014 reaches Application Insights once deployed,
+which is useful on its own, not just a fix for the lint error.
 
-## Also worth doing, whenever convenient
-The root package.json's "version" field and the landing page footer (if
-it shows a hardcoded version rather than importing APP_VERSION) should
-be updated to match — same two spots flagged in the 1.2.0 bump, still
-outside what I can reach without those files.
+## Verified
+- Tests, strict typecheck, and the esbuild bundle all re-run clean.
+- The test file's fake InvocationContext needed its own fix \u2014 it had no
+  .log() method, which would have thrown at runtime the moment the real
+  code called it. Added a vi.fn() for it, and a new assertion that
+  actually checks the log call happened with the right message, not
+  just that nothing crashes.
+- Deliberately removed the context.log(...) call and confirmed the new
+  assertion catches it, before trusting it, then restored \u2014 same
+  discipline as every patch this whole project.
+
+## One ask, to close this exact gap going forward
+If you're willing to share your eslint config (.eslintrc.json,
+eslint.config.js, or whatever this project uses), I can run npm run
+lint-equivalent checks in my own sandbox for future seep-api patches,
+the same way tsc/vitest already happen before anything reaches you \u2014
+rather than finding out about a lint-specific issue after you've already
+run it.
 
 ## Apply
-Copy this file to projects/seep-web/src/app/version.ts, then
-`npm run build`.
+Replace these two files, then from the repo root:
+npm test && npm run lint && npm run build
