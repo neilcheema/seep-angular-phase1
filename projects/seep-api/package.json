@@ -5,7 +5,7 @@
   "main": "dist/src/index.js",
   "scripts": {
     "test": "vitest run",
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --external:@azure/functions --outfile=dist/src/index.js --sourcemap",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --external:@azure/functions --outfile=dist/src/index.js --sourcemap",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -19,6 +19,7 @@
     "jose": "^6.2.12"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@types/node": "^26.6.4",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
