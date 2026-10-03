@@ -85,7 +85,7 @@ let checks = 0
 let failures = 0
 
 async function api(token, method, path, body) {
-  const headers = { 'content-type': 'application/json', 'x-app-version': process.env.APP_VERSION || '1.4.0' }
+  const headers = { 'content-type': 'application/json', 'x-app-version': process.env.APP_VERSION || '1.5.0' }
   if (token) headers.authorization = `Bearer ${token}`
   const res = await fetch(`${base}/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   const text = await res.text()
