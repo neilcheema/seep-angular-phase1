@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
 const registered: { name: string; methods: string[]; route: string; authLevel: string }[] = []
+const timers: { name: string; schedule: string }[] = []
 vi.mock('@azure/functions', () => ({
   app: {
     http: (name: string, options: { methods: string[]; route: string; authLevel: string }) => {
       registered.push({ name, methods: options.methods, route: options.route, authLevel: options.authLevel })
+    },
+    timer: (name: string, options: { schedule: string }) => {
+      timers.push({ name, schedule: options.schedule })
     },
   },
 }))
@@ -35,5 +39,12 @@ describe('function registration', () => {
     // Auth is done in code with the Firebase token, so the platform's own key check is switched off —
     // every route being 'anonymous' at the platform level is intentional, and authed() is what protects it.
     expect(registered.every((r) => r.authLevel === 'anonymous')).toBe(true)
+  })
+
+  it('registers the daily cleanup on a timer, once a day, and nothing else on a timer', () => {
+    expect(timers).toHaveLength(1)
+    expect(timers[0]!.name).toBe('cleanup')
+    // second minute hour day month weekday: a fixed time of day, every day
+    expect(timers[0]!.schedule).toMatch(/^0 \d{1,2} \d{1,2} \* \* \*$/)
   })
 })

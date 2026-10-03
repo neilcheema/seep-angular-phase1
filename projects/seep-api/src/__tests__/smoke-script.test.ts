@@ -10,7 +10,7 @@ interface Registered {
   handler: (r: HttpRequest, c: InvocationContext) => Promise<HttpResponseInit>
 }
 const registered: Registered[] = []
-vi.mock('@azure/functions', () => ({ app: { http: (_name: string, o: Registered) => registered.push(o) } }))
+vi.mock('@azure/functions', () => ({ app: { http: (_name: string, o: Registered) => registered.push(o), timer: () => undefined } }))
 vi.mock('../lib/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/auth')>()
   return {

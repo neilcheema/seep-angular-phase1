@@ -15,7 +15,7 @@ import type { Db, Queryable } from '../../lib/db'
  * contention is a property of Postgres itself, not of this code.
  */
 
-export const MIGRATIONS = ['001_phase3_schema.sql', '002_phase4_games.sql', '003_phase4_turn_clock.sql'] as const
+export const MIGRATIONS = ['001_phase3_schema.sql', '002_phase4_games.sql', '003_phase4_turn_clock.sql', '004_phase4_cleanup_index.sql'] as const
 const MIGRATION_DIR = join(__dirname, '..', '..', '..', 'db')
 
 export function readMigration(name: string): string {
