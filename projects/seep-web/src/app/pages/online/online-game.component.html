@@ -39,7 +39,7 @@
       </div>
     </div>
   } @else {
-    <app-two-player [remote]="s" />
+    <app-two-player [remote]="s" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" />
   }
 } @else {
   <div class="game-root">

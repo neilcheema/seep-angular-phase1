@@ -224,7 +224,9 @@ describe('getGame', () => {
   it("answers a poll that is already current with a cheap 'unchanged'", async () => {
     const { a, gameId } = await startedGame()
     const res = await getGame(t.db, a.id, gameId, 1)
-    expect(res).toEqual({ changed: false, gameId, version: 1, status: 'active' })
+    expect(res).toMatchObject({ changed: false, gameId, version: 1, status: 'active' })
+    // ...which still carries the clock, so a restart (which changes no move) reaches the mover's screen.
+    expect((res as { clock: unknown }).clock).toMatchObject({ warnAfterMs: 60_000, forfeitAfterMs: 120_000 })
   })
 
   it('returns the moves made since the version the caller last saw', async () => {

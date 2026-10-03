@@ -1,5 +1,5 @@
 import { signal } from '@angular/core'
-import type { GameKind, GameStatus, GameSnapshotDto, MutationDto, PlayerInfoDto } from './api-types'
+import type { ClockDto, GameKind, GameStatus, GameSnapshotDto, MutationDto, PlayerInfoDto } from './api-types'
 import { ApiError, type GameApi } from './game-api'
 import type { GameSession, MoveEvent } from './game-session'
 import type { Perspective } from './perspective'
@@ -17,8 +17,15 @@ export interface RemoteSessionOptions<TView, TActor> {
 
 const MAX_BACKOFF_MS = 30_000
 
-function isDealNext(intent: unknown): boolean {
-  return typeof intent === 'object' && intent !== null && (intent as { type?: unknown }).type === 'deal-next'
+/** A clock reading plus when this device received it, so the time since can be added without trusting this device's idea of the date. */
+export interface ClockState extends ClockDto {
+  readonly receivedAt: number
+}
+
+/** Entries in the move list that are not plays, so are never shown as "what just happened". */
+function isNotAPlay(intent: unknown): boolean {
+  const type = typeof intent === 'object' && intent !== null ? (intent as { type?: unknown }).type : undefined
+  return type === 'deal-next' || type === 'forfeit'
 }
 
 /**
@@ -46,6 +53,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
   /** The viewer's own seat, in the server's absolute names. */
   readonly seat = signal<string | null>(null)
   readonly connection = signal<ConnectionState>('connecting')
+  /** Whose turn clock is running and for how long, or null (no clock, or an older server). */
+  readonly clock = signal<ClockState | null>(null)
 
   private readonly options: RemoteSessionOptions<TView, TActor>
   private version: number | undefined
@@ -137,6 +146,7 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
       if (this.version !== undefined && res.version < this.version) return
       this.unchangedPolls++
       this.status.set(res.status)
+      this.takeClock(res.clock)
       return
     }
     this.unchangedPolls = 0
@@ -156,8 +166,9 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
     this.players.set(res.players)
     this.inviteCode.set(res.inviteCode)
     this.view.set(after)
+    this.takeClock(res.clock)
 
-    const others = res.moves.filter((m) => m.seat !== res.seat && !isDealNext(m.intent))
+    const others = res.moves.filter((m) => m.seat !== res.seat && !isNotAPlay(m.intent))
     const last = others.at(-1)
     if (before !== null && last !== undefined) {
       this.lastMove.set({
@@ -177,8 +188,13 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
       this.seat.set(result.seat)
       this.status.set(result.status)
       this.view.set(after)
+      this.takeClock(result.clock)
     }
     return after
+  }
+
+  private takeClock(clock: ClockDto | undefined): void {
+    this.clock.set(clock ? { ...clock, receivedAt: Date.now() } : null)
   }
 
   private afterOwnChange(): void {

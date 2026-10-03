@@ -487,3 +487,76 @@ describe('RemoteSession: making moves', () => {
     session.dispose()
   })
 })
+
+describe('RemoteSession: the turn clock', () => {
+  const reading = { seat: 'player', elapsedMs: 15_000, warnAfterMs: 60_000, forfeitAfterMs: 120_000 }
+
+  it('exposes the clock from the first load, stamped with when it arrived', async () => {
+    vi.setSystemTime(5_000_000)
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce({ ...snapshot(s0, 'player', 1), clock: reading })
+    const session = await open(api)
+    expect(session.clock()).toEqual({ ...reading, receivedAt: 5_000_000 })
+    session.dispose()
+  })
+
+  it('takes a fresh reading from a "nothing new" poll, so a restarted clock reaches the mover without any move', async () => {
+    vi.setSystemTime(1_000)
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce({ ...snapshot(s0, 'player', 1), clock: { ...reading, elapsedMs: 110_000 } })
+    getGame.mockResolvedValue({ ...unchanged(1), clock: { ...reading, elapsedMs: 2_000 } }) // the waiting player returned: clock restarted
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(10_100)
+    expect(session.clock()?.elapsedMs).toBe(2_000)
+    session.dispose()
+  })
+
+  it('ignores the clock on a stale "nothing new" answer, like any other stale answer', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce({ ...snapshot(s1, 'opponent', 5), clock: { ...reading, elapsedMs: 1_000 } })
+    getGame.mockResolvedValueOnce({ ...unchanged(4), clock: { ...reading, elapsedMs: 99_000 } }) // older than what we hold
+    getGame.mockResolvedValue(unchanged(5))
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.clock()?.elapsedMs).toBe(1_000)
+    session.dispose()
+  })
+
+  it("starts the next mover's clock from the reply to the viewer's own move", async () => {
+    const { api, getGame, submitMove } = makeApi()
+    getGame.mockResolvedValueOnce({ ...snapshot(s0, 'player', 1), clock: { ...reading, elapsedMs: 50_000 } })
+    getGame.mockResolvedValue(unchanged(2))
+    submitMove.mockResolvedValueOnce({ ...mutation(s1, 'player', 2), clock: { ...reading, elapsedMs: 0 } })
+    const session = await open(api)
+    await session.submit(bid)
+    expect(session.clock()?.elapsedMs).toBe(0)
+    session.dispose()
+  })
+
+  it('copes with a server that does not send a clock yet (the website may be updated before the API)', async () => {
+    const { api, getGame, submitMove } = makeApi()
+    getGame.mockResolvedValueOnce(snapshot(s0, 'player', 1))
+    getGame.mockResolvedValue(unchanged(1))
+    submitMove.mockResolvedValueOnce(mutation(s1, 'player', 2))
+    const session = await open(api)
+    expect(session.clock()).toBeNull()
+    await vi.advanceTimersByTimeAsync(10_100)
+    await session.submit(bid)
+    expect(session.clock()).toBeNull()
+    expect(session.view()).not.toBeNull()
+    session.dispose()
+  })
+
+  it('learns the match was forfeited without mistaking the forfeit for a card play', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(snapshot(s0, 'opponent', 1))
+    getGame.mockResolvedValueOnce(
+      snapshot(s1, 'opponent', 2, { status: 'finished', moves: [{ version: 2, seat: 'player', intent: { type: 'forfeit', reason: 'timeout' } }] }),
+    )
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.status()).toBe('finished')
+    expect(session.lastMove()).toBeNull() // nothing for the page to try to present as a move
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})

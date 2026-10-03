@@ -138,6 +138,10 @@ async function main() {
   const leak = (mine, theirs) => (theirs?.myHand ?? []).some((c) => cards(mine).includes(`${cardKey(c)},"suit":"${c.suit}"`) || cards(mine).includes(`"suit":"${c.suit}","face":"${c.face}"`))
   check("A's view contains none of B's cards, and B's none of A's", !leak(a, b) && !leak(b, a))
 
+  // The turn clock (needs migration 003): the player on the move is on the clock, with a warning before the forfeit.
+  const clock = viewA.json?.clock
+  check('the game reports a turn clock for the player on the move (migration 003 applied)', clock?.seat === a.turn && clock?.warnAfterMs > 0 && clock?.forfeitAfterMs > clock?.warnAfterMs && clock?.elapsedMs < 60_000, JSON.stringify(clock))
+
   const moverIsA = a.turn === 'player'
   const [moverToken, moverView, otherToken] = moverIsA ? [TOKEN_A, a, TOKEN_B] : [TOKEN_B, b, TOKEN_A]
   const houseValues = moverView.myHand.map((c) => FACE_VALUE[c.face]).filter((v) => v >= 9 && v <= 13).sort((x, y) => x - y)

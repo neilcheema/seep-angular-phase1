@@ -1,0 +1,43 @@
+--- a/projects/seep-engine/src/lib/gameEngine.ts
++++ b/projects/seep-engine/src/lib/gameEngine.ts
+@@ -567,6 +567,20 @@
+ }
+ 
+ /**
++ * Ends the match because `loser` ran out of time. This is not a rule of play:
++ * it is how a game between two people ends when one of them stops responding
++ * (the server's turn clock decides when). The other player wins; scores are
++ * left as they stood, and the log says why.
++ */
++export function forfeitMatch(state: GameState, loser: PlayerId): GameState {
++  if (state.phase === 'match-over') throw new Error('The match is already over.')
++  return pushLog(
++    { ...state, phase: 'match-over', winner: otherPlayer(loser) },
++    `${label(loser)} ran out of time and forfeited the match.`,
++  )
++}
++
++/**
+  * What one player is allowed to see — the shape a future server would
+  * actually send over the wire. Everything hidden from this player is
+  * gone, not merely marked hidden: the opponent's hand becomes a count,
+--- a/projects/seep-engine/src/lib/fourPlayerEngine.ts
++++ b/projects/seep-engine/src/lib/fourPlayerEngine.ts
+@@ -147,6 +147,17 @@
+   return dealFourPlayerHand(nextDealer, state.matchScores, seed)
+ }
+ 
++/**
++ * Ends the match because `loser` ran out of time: the loser's whole team
++ * forfeits and the other team wins. Not a rule of play; see forfeitMatch in
++ * gameEngine.ts.
++ */
++export function forfeitFourPlayerMatch(state: FourPlayerGameState, loser: SeatId): FourPlayerGameState {
++  if (state.phase === 'match-over') throw new Error('The match is already over.')
++  const winner = ALL_TEAMS.find((team) => team !== teamOf(loser))!
++  return pushLog({ ...state, phase: 'match-over', winner }, `${loser} ran out of time and forfeited the match.`)
++}
++
+ export function legalFourPlayerBids(state: FourPlayerGameState): number[] {
+   if (state.phase !== 'bidding') return []
+   return legalHouseBids(state.hands[state.bidder])

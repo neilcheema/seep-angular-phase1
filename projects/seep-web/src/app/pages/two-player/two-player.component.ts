@@ -90,6 +90,9 @@ export class TwoPlayerComponent implements OnInit {
    * table screen. When absent this page plays the bots, exactly as it always has.
    */
   readonly remote = input<GameSession<GameView, Intent, PlayerId> | null>(null)
+  /** A line of text about the turn clock, supplied by the online table screen (never set against the bots). */
+  readonly clockLine = input<string | null>(null)
+  readonly clockUrgent = input(false)
   readonly session = signal<GameSession<GameView, Intent, PlayerId> | null>(null)
   readonly opponentPossessive = computed(() => (this.remote() ? "the other player's" : "the computer's"))
   readonly state = computed<GameView | null>(() => this.session()?.view() ?? null)

@@ -567,6 +567,20 @@ export function dealNextHand(state: GameState, seed?: number): GameState {
 }
 
 /**
+ * Ends the match because `loser` ran out of time. This is not a rule of play:
+ * it is how a game between two people ends when one of them stops responding
+ * (the server's turn clock decides when). The other player wins; scores are
+ * left as they stood, and the log says why.
+ */
+export function forfeitMatch(state: GameState, loser: PlayerId): GameState {
+  if (state.phase === 'match-over') throw new Error('The match is already over.')
+  return pushLog(
+    { ...state, phase: 'match-over', winner: otherPlayer(loser) },
+    `${label(loser)} ran out of time and forfeited the match.`,
+  )
+}
+
+/**
  * What one player is allowed to see — the shape a future server would
  * actually send over the wire. Everything hidden from this player is
  * gone, not merely marked hidden: the opponent's hand becomes a count,

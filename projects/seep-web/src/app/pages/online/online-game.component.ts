@@ -5,6 +5,7 @@ import { ApiError } from '../../core/game-api'
 import { AUTH, ONLINE_API } from '../../core/online'
 import { twoPlayerPerspective } from '../../core/perspective'
 import { RemoteSession } from '../../core/remote-session'
+import { describeClock } from '../../core/turn-clock-text'
 import { TwoPlayerComponent } from '../two-player/two-player.component'
 
 /**
@@ -34,6 +35,15 @@ export class OnlineGameComponent {
     return code ? `${window.location.origin}/join/${code}` : null
   })
 
+  /** Once a second, so the countdown moves. */
+  private readonly now = signal(Date.now())
+  private readonly ticker = setInterval(() => this.now.set(Date.now()), 1000)
+
+  readonly clockLine = computed(() => {
+    const session = this.session()
+    return session ? describeClock(session.clock(), session.seat(), this.now()) : null
+  })
+
   private disposed = false
   private readonly onVisibilityChange = (): void => {
     if (document.visibilityState === 'visible') void this.session()?.refreshNow()
@@ -44,6 +54,7 @@ export class OnlineGameComponent {
     document.addEventListener('visibilitychange', this.onVisibilityChange)
     this.destroyRef.onDestroy(() => {
       this.disposed = true
+      clearInterval(this.ticker)
       document.removeEventListener('visibilitychange', this.onVisibilityChange)
       this.session()?.dispose()
     })

@@ -227,3 +227,60 @@ describe('joining a table already in progress', () => {
     ).rejects.toMatchObject({ status: 404 })
   })
 })
+
+describe('the turn clock, through the real server', () => {
+  const age = (gameId: string, seconds: number) =>
+    t.db.query('UPDATE games SET turn_started_at = now() - make_interval(secs => $2::float8) WHERE id = $1', [gameId, seconds])
+
+  async function startedTable() {
+    const { sessions, gameId, users } = await openTable('two_player', 2)
+    const row = await serverRow(gameId)
+    const mover = sessions.find((s) => s.seat() === row.state.turn)!
+    const waiter = sessions.find((s) => s !== mover)!
+    return { sessions, gameId, users, mover, waiter }
+  }
+
+  it('hands both screens the clock from the start, naming the player on it', async () => {
+    const { sessions, mover } = await startedTable()
+    for (const s of sessions) {
+      expect(s.clock()).toMatchObject({ seat: mover.seat(), warnAfterMs: 60_000, forfeitAfterMs: 120_000 })
+      expect(s.clock()!.elapsedMs).toBeLessThan(10_000)
+    }
+    sessions.forEach((s) => s.dispose())
+  })
+
+  it('ends the match for a player who ran out of time, as both screens see it, with no phantom "move" and no more polling', { timeout: 60_000 }, async () => {
+    const { sessions, gameId, mover, waiter } = await startedTable()
+    await age(gameId, 130) // the waiting player has been polling all along, so they are present
+
+    await settle(() => waiter.status() === 'finished' && mover.status() === 'finished', 'both screens to learn the match was forfeited')
+
+    expect((waiter.view() as { phase: string }).phase).toBe('match-over')
+    expect((waiter.view() as { winner: string }).winner).toBe('player') // each screen sees itself as 'player': the waiter won
+    expect((mover.view() as { winner: string }).winner).toBe('opponent') // ...and the one who timed out lost
+    expect((mover.view() as { log: string[] }).log.at(-1)).toBe('You ran out of time and forfeited the match.')
+    expect(waiter.lastMove()).toBeNull()
+    expect(mover.lastMove()).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
+    await expect(mover.submit({ type: 'bid', value: 9 })).rejects.toThrow(/over/i)
+    sessions.forEach((s) => s.dispose())
+  })
+
+  it('does not hand a win to a player who had simply been away: the mover gets a fresh clock, and hears of it', { timeout: 60_000 }, async () => {
+    const { sessions, gameId, mover, waiter } = await startedTable()
+    // The waiting player's last sighting is ten minutes old, and the clock is long past its limit.
+    await t.db.query(
+      "UPDATE seats SET last_seen_at = now() - interval '10 minutes' WHERE game_id = $1 AND seat_key = $2",
+      [gameId, waiter.seat()],
+    )
+    await age(gameId, 400)
+
+    await settle(() => waiter.clock() !== null && waiter.clock()!.elapsedMs < 10_000, 'the returning player to get a fresh clock')
+    expect(waiter.status()).toBe('active')
+    // The mover's screen finds out through an ordinary poll, though no move was made.
+    await settle(() => mover.clock() !== null && mover.clock()!.elapsedMs < 30_000, "the mover's screen to hear the clock restarted")
+    expect(mover.status()).toBe('active')
+    expect((await serverRow(gameId)).status).toBe('active')
+    sessions.forEach((s) => s.dispose())
+  })
+})

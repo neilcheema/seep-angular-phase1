@@ -43,6 +43,10 @@
       <div class="text-center text-sm" style="color: rgba(255,255,255,0.6); padding: 0 12px 6px;">Waiting for the other player…</div>
     }
 
+    @if (clockLine(); as line) {
+      <div role="timer" class="text-center text-sm" style="padding: 0 12px 6px;" [style.color]="clockUrgent() ? '#ff8a8a' : 'rgba(255,255,255,0.7)'">{{ line }}</div>
+    }
+
     @if (s.phase === 'bidding' && s.turn === 'player' && !pendingReveal()) {
       <div class="action-bar">
         <span style="color: rgba(255,255,255,0.75);">Choose your bid:</span>

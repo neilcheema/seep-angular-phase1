@@ -4,6 +4,7 @@ import { type EngineAdapter, type GameKind, adapterFor } from './engines'
 import { BadRequestError, ConflictError, IllegalMoveError, NotFoundError } from './errors'
 import { parseIntent } from './intents'
 import { generateInviteCode, normalizeInviteCode } from './invite-code'
+import { CLOCK_PHASES, type ClockDto, PRESENCE_TOUCH_SECONDS, clockSettings } from './turn-clock'
 
 /**
  * The game-hosting service: everything the API does to a game, as plain
@@ -51,6 +52,7 @@ export interface GameSnapshot extends GameInfo {
   readonly view: unknown
   /** Moves after the `since` version the caller supplied (none if it supplied none). */
   readonly moves: MoveRecord[]
+  readonly clock: ClockDto
 }
 
 export interface GameUnchanged {
@@ -58,6 +60,7 @@ export interface GameUnchanged {
   readonly gameId: string
   readonly version: number
   readonly status: GameStatus
+  readonly clock: ClockDto
 }
 
 export interface MutationResult {
@@ -66,9 +69,10 @@ export interface MutationResult {
   readonly status: GameStatus
   readonly seat: string
   readonly view: unknown
+  readonly clock: ClockDto
 }
 
-interface MemberRow {
+interface ListRow {
   id: string
   kind: GameKind
   status: GameStatus
@@ -76,6 +80,14 @@ interface MemberRow {
   state: unknown
   invite_code: string | null
   seat_key: string
+}
+
+/** A game as seen by one of its players, with the timing facts the turn clock needs (measured by Postgres). */
+interface MemberRow extends ListRow {
+  /** How long the current mover's clock has been running. */
+  elapsed_ms: number
+  /** How long ago this player was last seen at the table; null if never. */
+  seen_ago_ms: number | null
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -103,7 +115,9 @@ function isUniqueViolation(err: unknown): boolean {
 /** Loads a game only if `userId` has a seat in it. Anyone else gets "not found". */
 async function loadMember(tx: Queryable, gameId: string, userId: string, lock: boolean): Promise<MemberRow> {
   const res = await tx.query<MemberRow>(
-    `SELECT g.id, g.kind, g.status, g.version, g.state, g.invite_code, s.seat_key
+    `SELECT g.id, g.kind, g.status, g.version, g.state, g.invite_code, s.seat_key,
+            (EXTRACT(EPOCH FROM (now() - g.turn_started_at)) * 1000)::float8 AS elapsed_ms,
+            (EXTRACT(EPOCH FROM (now() - s.last_seen_at)) * 1000)::float8 AS seen_ago_ms
        FROM games g
        JOIN seats s ON s.game_id = g.id AND s.user_id = $2
       WHERE g.id = $1
@@ -134,7 +148,7 @@ async function loadPlayers(tx: Queryable, gameId: string, userId: string, adapte
     .sort((a, b) => adapter.seatKeys.indexOf(a.seat) - adapter.seatKeys.indexOf(b.seat))
 }
 
-async function buildInfo(tx: Queryable, row: MemberRow, userId: string): Promise<GameInfo> {
+async function buildInfo(tx: Queryable, row: ListRow, userId: string): Promise<GameInfo> {
   const adapter = adapterFor(row.kind)
   return {
     gameId: row.id,
@@ -145,6 +159,77 @@ async function buildInfo(tx: Queryable, row: MemberRow, userId: string): Promise
     inviteCode: row.status === 'waiting' ? row.invite_code : null,
     players: await loadPlayers(tx, row.id, userId, adapter),
   }
+}
+
+const isClockRunning = (row: Pick<MemberRow, 'status' | 'state'>, adapter: EngineAdapter): boolean =>
+  row.status === 'active' && CLOCK_PHASES.has(adapter.phase(row.state))
+
+/** What the viewer's screen needs to draw the clock, as of this response. */
+function clockOf(row: MemberRow): ClockDto {
+  const adapter = adapterFor(row.kind)
+  const settings = clockSettings()
+  const running = isClockRunning(row, adapter)
+  return {
+    seat: running ? adapter.turn(row.state) : null,
+    elapsedMs: running ? Math.max(0, Math.round(row.elapsed_ms)) : 0,
+    warnAfterMs: settings.warnAfterMs,
+    forfeitAfterMs: settings.forfeitAfterMs,
+  }
+}
+
+/** Records that this player has the table open, at most every PRESENCE_TOUCH_SECONDS so polling is not a write per request. */
+async function touchPresence(q: Queryable, gameId: string, userId: string): Promise<void> {
+  await q.query(
+    `UPDATE seats SET last_seen_at = now()
+      WHERE game_id = $1 AND user_id = $2
+        AND (last_seen_at IS NULL OR last_seen_at < now() - interval '${PRESENCE_TOUCH_SECONDS} seconds')`,
+    [gameId, userId],
+  )
+}
+
+/**
+ * Applies the turn clock, if it has run out, on behalf of a player who is waiting for the mover.
+ *
+ * Only the waiting player's own requests can trigger it, and only when they were seen recently: so a
+ * forfeit always has a witness. If the waiting player has just come back after being away, the mover
+ * is not punished for it: their clock restarts instead. The mover's own requests never forfeit them.
+ * Returns true if anything changed (so the caller should re-read the game).
+ */
+async function settleClock(db: Db, row: MemberRow, userId: string): Promise<boolean> {
+  const adapter = adapterFor(row.kind)
+  const settings = clockSettings()
+  const mayBeDue = (r: MemberRow) =>
+    isClockRunning(r, adapter) && adapter.turn(r.state) !== r.seat_key && r.elapsed_ms >= settings.forfeitAfterMs
+  if (!mayBeDue(row)) return false
+
+  return db.transaction(async (tx) => {
+    const locked = await loadMember(tx, row.id, userId, true)
+    // Re-check under the lock: a move may have landed while we were deciding.
+    if (locked.version !== row.version || !mayBeDue(locked)) return false
+
+    const present = locked.seen_ago_ms !== null && locked.seen_ago_ms <= settings.presenceWindowMs
+    if (!present) {
+      await tx.query('UPDATE games SET turn_started_at = now() WHERE id = $1 AND version = $2', [locked.id, locked.version])
+      return true
+    }
+
+    const mover = adapter.turn(locked.state)
+    const next = adapter.forfeit(locked.state, mover)
+    const updated = await tx.query<{ version: number }>(
+      `UPDATE games SET state = $1::jsonb, status = 'finished', version = version + 1, updated_at = now(), turn_started_at = now()
+        WHERE id = $2 AND version = $3
+        RETURNING version`,
+      [JSON.stringify(next), locked.id, locked.version],
+    )
+    if (updated.rows.length === 0) return false
+    await tx.query('INSERT INTO move_log (game_id, seat_key, intent, version) VALUES ($1, $2, $3::jsonb, $4)', [
+      locked.id,
+      mover,
+      JSON.stringify({ type: 'forfeit', reason: 'timeout' }),
+      updated.rows[0]!.version,
+    ])
+    return true
+  })
 }
 
 export interface CreateOptions {
@@ -220,7 +305,10 @@ export async function joinGame(db: Db, userId: string, rawCode: unknown): Promis
         [game.id],
       )
       if (stillOpen.rows[0]!.n === 0) {
-        await tx.query("UPDATE games SET status = 'active', version = version + 1, updated_at = now() WHERE id = $1", [game.id])
+        await tx.query(
+          "UPDATE games SET status = 'active', version = version + 1, updated_at = now(), turn_started_at = now() WHERE id = $1",
+          [game.id],
+        )
       }
     }
     const row = await loadMember(tx, game.id, userId, false)
@@ -229,7 +317,7 @@ export async function joinGame(db: Db, userId: string, rawCode: unknown): Promis
 }
 
 export async function listMyGames(db: Db, userId: string): Promise<GameInfo[]> {
-  const res = await db.query<MemberRow>(
+  const res = await db.query<ListRow>(
     `SELECT g.id, g.kind, g.status, g.version, g.state, g.invite_code, s.seat_key
        FROM games g
        JOIN seats s ON s.game_id = g.id AND s.user_id = $1
@@ -255,9 +343,12 @@ export async function getGame(
   since?: number,
 ): Promise<GameSnapshot | GameUnchanged> {
   assertGameId(gameId)
-  const row = await loadMember(db, gameId, userId, false)
+  let row = await loadMember(db, gameId, userId, false)
+  if (await settleClock(db, row, userId)) row = await loadMember(db, gameId, userId, false)
+  await touchPresence(db, row.id, userId)
   if (since !== undefined && since === row.version) {
-    return { changed: false, gameId: row.id, version: row.version, status: row.status }
+    // Even "nothing new" carries the clock: a restart changes no move, but the movers' screens must hear of it.
+    return { changed: false, gameId: row.id, version: row.version, status: row.status, clock: clockOf(row) }
   }
 
   const adapter = adapterFor(row.kind)
@@ -276,6 +367,7 @@ export async function getGame(
     ...(await buildInfo(db, row, userId)),
     view: adapter.viewFor(row.state, row.seat_key),
     moves,
+    clock: clockOf(row),
   }
 }
 
@@ -323,7 +415,7 @@ async function mutateGame(
 
     const status: GameStatus = adapter.isMatchOver(result.next) ? 'finished' : 'active'
     const updated = await tx.query<{ version: number }>(
-      `UPDATE games SET state = $1::jsonb, status = $2, version = version + 1, updated_at = now()
+      `UPDATE games SET state = $1::jsonb, status = $2, version = version + 1, updated_at = now(), turn_started_at = now()
         WHERE id = $3 AND version = $4
         RETURNING version`,
       [JSON.stringify(result.next), status, game.id, game.version],
@@ -340,7 +432,22 @@ async function mutateGame(
       JSON.stringify(result.logged),
       version,
     ])
-    return { gameId: game.id, version, status, seat: game.seat_key, view: adapter.viewFor(result.next, game.seat_key) }
+    await touchPresence(tx, game.id, userId)
+    const settings = clockSettings()
+    const nowRunning = status === 'active' && CLOCK_PHASES.has(adapter.phase(result.next))
+    return {
+      gameId: game.id,
+      version,
+      status,
+      seat: game.seat_key,
+      view: adapter.viewFor(result.next, game.seat_key),
+      clock: {
+        seat: nowRunning ? adapter.turn(result.next) : null,
+        elapsedMs: 0,
+        warnAfterMs: settings.warnAfterMs,
+        forfeitAfterMs: settings.forfeitAfterMs,
+      },
+    }
   })
 }
 

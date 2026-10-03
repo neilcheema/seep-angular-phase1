@@ -147,6 +147,17 @@ export function dealNextFourPlayerHand(state: FourPlayerGameState, seed?: number
   return dealFourPlayerHand(nextDealer, state.matchScores, seed)
 }
 
+/**
+ * Ends the match because `loser` ran out of time: the loser's whole team
+ * forfeits and the other team wins. Not a rule of play; see forfeitMatch in
+ * gameEngine.ts.
+ */
+export function forfeitFourPlayerMatch(state: FourPlayerGameState, loser: SeatId): FourPlayerGameState {
+  if (state.phase === 'match-over') throw new Error('The match is already over.')
+  const winner = ALL_TEAMS.find((team) => team !== teamOf(loser))!
+  return pushLog({ ...state, phase: 'match-over', winner }, `${loser} ran out of time and forfeited the match.`)
+}
+
 export function legalFourPlayerBids(state: FourPlayerGameState): number[] {
   if (state.phase !== 'bidding') return []
   return legalHouseBids(state.hands[state.bidder])

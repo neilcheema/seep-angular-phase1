@@ -9,6 +9,8 @@ import {
   applyMove,
   dealNextFourPlayerHand,
   dealNextHand,
+  forfeitFourPlayerMatch,
+  forfeitMatch,
   startFourPlayerMatch,
   startMatch,
   viewFor,
@@ -37,6 +39,10 @@ export interface EngineAdapter {
   dealNext(state: unknown): unknown
   viewFor(state: unknown, seat: string): unknown
   phase(state: unknown): string
+  /** The seat that has to act next. */
+  turn(state: unknown): string
+  /** Ends the match because `loserSeat` ran out of time. */
+  forfeit(state: unknown, loserSeat: string): unknown
   isMatchOver(state: unknown): boolean
 }
 
@@ -83,6 +89,12 @@ const twoPlayer: EngineAdapter = {
   phase(state) {
     return (state as GameState).phase
   },
+  turn(state) {
+    return (state as GameState).turn
+  },
+  forfeit(state, loserSeat) {
+    return forfeitMatch(state as GameState, loserSeat as PlayerId)
+  },
   isMatchOver(state) {
     return (state as GameState).phase === 'match-over'
   },
@@ -107,6 +119,12 @@ const fourPlayer: EngineAdapter = {
   },
   phase(state) {
     return (state as FourPlayerGameState).phase
+  },
+  turn(state) {
+    return (state as FourPlayerGameState).turn
+  },
+  forfeit(state, loserSeat) {
+    return forfeitFourPlayerMatch(state as FourPlayerGameState, loserSeat as SeatId)
   },
   isMatchOver(state) {
     return (state as FourPlayerGameState).phase === 'match-over'

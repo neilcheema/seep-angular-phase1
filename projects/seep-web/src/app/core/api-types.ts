@@ -8,6 +8,16 @@
 export type GameKind = 'two_player' | 'four_player'
 export type GameStatus = 'waiting' | 'active' | 'finished' | 'abandoned'
 
+/** The turn clock, as the server measured it. Optional because an older server does not send it yet. */
+export interface ClockDto {
+  /** The seat that is on the clock, or null when no clock is running (between hands, or before the game starts). */
+  readonly seat: string | null
+  /** How long that seat has been on the clock, as of this response. */
+  readonly elapsedMs: number
+  readonly warnAfterMs: number
+  readonly forfeitAfterMs: number
+}
+
 export interface PlayerInfoDto {
   readonly seat: string
   readonly displayName: string | null
@@ -41,6 +51,7 @@ export interface GameSnapshotDto<TView> extends GameInfoDto {
   readonly view: TView
   /** Moves made after the `since` version the caller supplied. */
   readonly moves: MoveRecordDto[]
+  readonly clock?: ClockDto
 }
 
 export interface GameUnchangedDto {
@@ -48,6 +59,7 @@ export interface GameUnchangedDto {
   readonly gameId: string
   readonly version: number
   readonly status: GameStatus
+  readonly clock?: ClockDto
 }
 
 export interface MutationDto<TView> {
@@ -56,6 +68,7 @@ export interface MutationDto<TView> {
   readonly status: GameStatus
   readonly seat: string
   readonly view: TView
+  readonly clock?: ClockDto
 }
 
 export interface ProfileDto {

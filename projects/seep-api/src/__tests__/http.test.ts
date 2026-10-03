@@ -132,12 +132,9 @@ describe('the game endpoints, end to end', () => {
     expect(poll.body['moves']).toEqual([{ version: 2, seat: state.turn, intent: { type: 'bid', value: legalBids(state)[0] } }])
 
     // ...and once they're caught up, polling is the cheap "nothing new".
-    expect((await call(getGameHandler, { as: watcher, params: { id: gameId }, query: 'since=2' })).body).toEqual({
-      changed: false,
-      gameId,
-      version: 2,
-      status: 'active',
-    })
+    const quiet = (await call(getGameHandler, { as: watcher, params: { id: gameId }, query: 'since=2' })).body
+    expect(quiet).toMatchObject({ changed: false, gameId, version: 2, status: 'active' })
+    expect(quiet['clock']).toMatchObject({ warnAfterMs: 60_000, forfeitAfterMs: 120_000 })
   })
 
   it('tells a stale client the current version so it can recover', async () => {
