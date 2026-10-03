@@ -24,6 +24,9 @@ const IDENTITY = (process.env.IDENTITY_TOOLKIT_URL || 'https://identitytoolkit.g
 const PASSWORD = process.env.TEST_PASSWORD || 'TestPassword123!' // lives in code, not on a command line: a "!" in a bash command line is history expansion
 const EMAIL_A = process.env.EMAIL_A || 'phase3-test@seep.quest'
 const EMAIL_B = process.env.EMAIL_B || 'phase4-test-b@seep.quest'
+// Two more accounts, used only for the four-player section.
+const EMAIL_C = process.env.EMAIL_C || 'phase4-test-c@seep.quest'
+const EMAIL_D = process.env.EMAIL_D || 'phase4-test-d@seep.quest'
 
 const usage = () => {
   console.error('Usage:\n  FIREBASE_API_KEY=<apiKey> node scripts/live-smoke.mjs <base url>\n  TOKEN_A=<id token> TOKEN_B=<id token> node scripts/live-smoke.mjs <base url>')
@@ -63,17 +66,24 @@ async function tokenFor(email) {
 // environment: a reused terminal session can easily still hold stale or junk values from an earlier attempt.
 let TOKEN_A = API_KEY ? undefined : process.env.TOKEN_A
 let TOKEN_B = API_KEY ? undefined : process.env.TOKEN_B
+// Optional: with these (or with an API key) the four-player section runs too.
+let TOKEN_C = API_KEY ? undefined : process.env.TOKEN_C
+let TOKEN_D = API_KEY ? undefined : process.env.TOKEN_D
 if (API_KEY && (process.env.TOKEN_A || process.env.TOKEN_B)) {
   console.log('Note: ignoring TOKEN_A / TOKEN_B from the environment because FIREBASE_API_KEY is set; fetching fresh tokens.\n')
 }
 try {
   TOKEN_A ||= await tokenFor(EMAIL_A)
   TOKEN_B ||= await tokenFor(EMAIL_B)
+  if (API_KEY) {
+    TOKEN_C ||= await tokenFor(EMAIL_C)
+    TOKEN_D ||= await tokenFor(EMAIL_D)
+  }
 } catch (err) {
   console.error(err.message)
   process.exit(2)
 }
-for (const [name, token] of [['TOKEN_A', TOKEN_A], ['TOKEN_B', TOKEN_B]]) {
+for (const [name, token] of [['TOKEN_A', TOKEN_A], ['TOKEN_B', TOKEN_B], ...(TOKEN_C || TOKEN_D ? [['TOKEN_C', TOKEN_C], ['TOKEN_D', TOKEN_D]] : [])]) {
   if (!looksLikeJwt(token)) {
     console.error(`${name} is not a Firebase ID token (got ${JSON.stringify(String(token).slice(0, 40))}). Check FIREBASE_API_KEY, or how the token was copied.`)
     process.exit(2)
@@ -106,6 +116,8 @@ function check(label, ok, detail) {
 }
 
 const cards = (view) => JSON.stringify(view)
+/** True if any card in `hand` appears anywhere in `view`. */
+const viewShows = (view, hand) => hand.some((c) => cards(view).includes(`"face":"${c.face}","suit":"${c.suit}"`) || cards(view).includes(`"suit":"${c.suit}","face":"${c.face}"`))
 const cardKey = (c) => `"face":"${c.face}"`
 
 async function main() {
@@ -165,6 +177,51 @@ async function main() {
 
   const list = await api(TOKEN_A, 'GET', '/v1/games')
   check('the game appears in A\'s list', list.status === 200 && list.json?.games?.some((g) => g.gameId === gameId))
+
+  if (TOKEN_C && TOKEN_D) await fourPlayerSection()
+  else console.log('\n(four-player section skipped: it needs FIREBASE_API_KEY, or TOKEN_C and TOKEN_D as well)')
+}
+
+/**
+ * A four-player table, end to end: four people take the four seats one at a time, the creator's screen has to
+ * be told about each arrival (a waiting screen shows the seats filling), the game starts when the fourth sits
+ * down, nobody can see anyone else's cards, the turn clock is reported, and the first bid reaches the others.
+ */
+async function fourPlayerSection() {
+  console.log('\nfour-player table:')
+  const tokens = { p1: TOKEN_A, p2: TOKEN_B, p3: TOKEN_C, p4: TOKEN_D }
+  const created = await api(TOKEN_A, 'POST', '/v1/games', { kind: 'four_player' })
+  if (!check('A creates a four-player table (201, seat p1, waiting)', created.status === 201 && created.json?.seat === 'p1' && created.json?.status === 'waiting', `${created.status} ${created.text.slice(0, 160)}`)) return
+  const { gameId, inviteCode } = created.json
+
+  let seen = 0
+  for (const [seat, status, joined] of [['p2', 'waiting', 2], ['p3', 'waiting', 3], ['p4', 'active', 4]]) {
+    const joinedRes = await api(tokens[seat], 'POST', '/v1/join', { code: inviteCode })
+    check(`${seat} joins and takes seat ${seat} (${status})`, joinedRes.status === 200 && joinedRes.json?.seat === seat && joinedRes.json?.status === status, `${joinedRes.status} ${joinedRes.text.slice(0, 160)}`)
+    const poll = await api(TOKEN_A, 'GET', `/v1/games/${gameId}?since=${seen}`)
+    check(`the creator is told about that arrival (${joined} of 4 seats filled), even before the game starts`, poll.json?.changed === true && poll.json?.players?.filter((pl) => pl.joined).length === joined, `${poll.status} ${poll.text.slice(0, 160)}`)
+    seen = poll.json?.version ?? seen
+  }
+  check('the game started when the fourth seat was taken (version 3)', seen === 3)
+
+  const views = {}
+  for (const seat of ['p1', 'p2', 'p3', 'p4']) views[seat] = (await api(tokens[seat], 'GET', `/v1/games/${gameId}`)).json
+  check('each of the four sees themselves in their own seat', ['p1', 'p2', 'p3', 'p4'].every((seat) => views[seat]?.view?.viewer === seat && views[seat]?.seat === seat))
+  const bidderSeat = views.p1.view.turn
+  const bidderHand = views[bidderSeat].view.myHand
+  check('only the bidder holds cards at this point (staged dealing)', ['p1', 'p2', 'p3', 'p4'].every((seat) => (views[seat].view.myHand.length > 0) === (seat === bidderSeat)))
+  check("nobody else's view contains the bidder's cards", ['p1', 'p2', 'p3', 'p4'].filter((seat) => seat !== bidderSeat).every((seat) => !viewShows(views[seat].view, bidderHand)))
+  const clock = views[bidderSeat].clock
+  check('the turn clock is on the bidder', clock?.seat === bidderSeat && clock?.forfeitAfterMs > clock?.warnAfterMs, JSON.stringify(clock))
+
+  const houseValues = bidderHand.map((c) => FACE_VALUE[c.face]).filter((v) => v >= 9 && v <= 13).sort((x, y) => x - y)
+  if (!check('the bidder has a house value to bid', houseValues.length > 0)) return
+  const moved = await api(tokens[bidderSeat], 'POST', `/v1/games/${gameId}/moves`, { intent: { type: 'bid', value: houseValues[0] }, expectedVersion: 3 })
+  check('the bidder bids (version 3 -> 4)', moved.status === 200 && moved.json?.version === 4, `${moved.status} ${moved.text.slice(0, 160)}`)
+  for (const seat of ['p1', 'p2', 'p3', 'p4'].filter((x) => x !== bidderSeat)) {
+    const poll = await api(tokens[seat], 'GET', `/v1/games/${gameId}?since=3`)
+    check(`${seat} sees exactly that bid on their next poll`, poll.json?.moves?.length === 1 && poll.json.moves[0].seat === bidderSeat && poll.json.moves[0].intent?.type === 'bid', `${poll.status} ${poll.text.slice(0, 160)}`)
+  }
 }
 
 main()

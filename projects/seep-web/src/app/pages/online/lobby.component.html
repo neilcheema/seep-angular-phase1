@@ -21,8 +21,12 @@
 
       <section class="flex flex-col items-center gap-3" style="width: 100%; max-width: 360px;">
         <h2 class="text-xl font-bold" style="color: var(--gold-lt);">Start a table</h2>
-        <button type="button" class="btn-gold" [disabled]="working()" (click)="createTable()">Start a 2-player table</button>
+        <button type="button" class="btn-gold" [disabled]="working()" (click)="createTable('two_player')">Start a 2-player table</button>
         <p style="color: rgba(255,255,255,0.55); font-size: 13px;">You will get a link to send to your opponent.</p>
+        <button type="button" class="btn-gold" [disabled]="working()" (click)="createTable('four_player')">Start a 4-player table</button>
+        <p style="color: rgba(255,255,255,0.55); font-size: 13px;">
+          Needs four people. Partners sit across the table: you play with the third person to join.
+        </p>
       </section>
 
       <section class="flex flex-col items-center gap-3" style="width: 100%; max-width: 360px;">

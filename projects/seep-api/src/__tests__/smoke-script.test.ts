@@ -114,7 +114,7 @@ function runScript(env: Record<string, string>): Promise<{ code: number | null; 
     // Start from the caller's environment minus every setting the script reads, so a developer's
     // leftover TOKEN_A or exported FIREBASE_API_KEY can never change what these tests mean.
     const clean: Record<string, string | undefined> = { ...process.env }
-    for (const name of ['TOKEN_A', 'TOKEN_B', 'FIREBASE_API_KEY', 'IDENTITY_TOOLKIT_URL', 'EMAIL_A', 'EMAIL_B', 'TEST_PASSWORD', 'APP_VERSION']) {
+    for (const name of ['TOKEN_A', 'TOKEN_B', 'TOKEN_C', 'TOKEN_D', 'FIREBASE_API_KEY', 'IDENTITY_TOOLKIT_URL', 'EMAIL_A', 'EMAIL_B', 'EMAIL_C', 'EMAIL_D', 'TEST_PASSWORD', 'APP_VERSION']) {
       delete clean[name]
     }
     const child = spawn('node', [join(__dirname, '..', '..', 'scripts', 'live-smoke.mjs'), baseUrl], { env: { ...clean, ...env } })
@@ -127,13 +127,33 @@ function runScript(env: Record<string, string>): Promise<{ code: number | null; 
 
 const ALICE = 'header.alice.signature'
 const BOB = 'header.bob.signature'
+const CAROL = 'header.carol.signature'
+const DAVE = 'header.dave.signature'
 
 describe('scripts/live-smoke.mjs', () => {
   it('passes every check against the real handlers over HTTP, given two tokens', async () => {
     const { code, out } = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB })
     expect(out).toMatch(/PASS: \d+ of \d+ checks passed/)
     expect(out).not.toMatch(/FAIL/)
+    expect(out).toMatch(/four-player section skipped/) // two tokens cannot fill a four-player table
     expect(code).toBe(0)
+  })
+
+  it('also plays a four-player table when given four tokens, including the creator being told about each arrival', async () => {
+    const { code, out } = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB, TOKEN_C: CAROL, TOKEN_D: DAVE })
+    expect(out).toMatch(/four-player table:/)
+    expect(out).toMatch(/the creator is told about that arrival \(2 of 4 seats filled\)/)
+    expect(out).toMatch(/the creator is told about that arrival \(3 of 4 seats filled\)/)
+    expect(out).toMatch(/the game started when the fourth seat was taken/)
+    expect(out).toMatch(/PASS: \d+ of \d+ checks passed/)
+    expect(out).not.toMatch(/FAIL/)
+    expect(code).toBe(0)
+  })
+
+  it('fails the four-player section when two of the four tokens are secretly the same person', async () => {
+    const { code, out } = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB, TOKEN_C: ALICE, TOKEN_D: DAVE })
+    expect(out).toMatch(/FAIL/)
+    expect(code).toBe(1)
   })
 
   it('actually fails, with a non-zero exit code, when the API misbehaves (it is not a rubber stamp)', async () => {
@@ -147,12 +167,12 @@ describe('scripts/live-smoke.mjs', () => {
     const viaFirebase = (extra: Record<string, string> = {}) =>
       runScript({ TOKEN_A: '', TOKEN_B: '', FIREBASE_API_KEY: VALID_API_KEY, IDENTITY_TOOLKIT_URL: `${baseUrl}/identity`, ...extra })
 
-    it('creates the two test accounts on the first run and passes', async () => {
+    it('creates the four test accounts on the first run and passes', async () => {
       fakeFirebaseAccounts.clear()
       const { code, out } = await viaFirebase()
       expect(out).toMatch(/PASS/)
       expect(code).toBe(0)
-      expect([...fakeFirebaseAccounts.keys()].sort()).toEqual(['phase3-test@seep.quest', 'phase4-test-b@seep.quest'])
+      expect([...fakeFirebaseAccounts.keys()].sort()).toEqual(['phase3-test@seep.quest', 'phase4-test-b@seep.quest', 'phase4-test-c@seep.quest', 'phase4-test-d@seep.quest'])
     })
 
     it('signs in to the accounts that already exist on later runs, creating nothing new', async () => {

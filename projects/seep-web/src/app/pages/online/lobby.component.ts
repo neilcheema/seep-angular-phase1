@@ -1,6 +1,6 @@
 import { Component, effect, inject, signal, untracked } from '@angular/core'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
-import type { GameInfoDto } from '../../core/api-types'
+import type { GameInfoDto, GameKind } from '../../core/api-types'
 import { ApiError } from '../../core/game-api'
 import { AUTH, ONLINE_API } from '../../core/online'
 
@@ -72,9 +72,9 @@ export class LobbyComponent {
     void this.auth.signOut()
   }
 
-  async createTable(): Promise<void> {
+  async createTable(kind: GameKind): Promise<void> {
     await this.work(async () => {
-      const game = await this.api.createGame('two_player')
+      const game = await this.api.createGame(kind)
       await this.router.navigate(['/online/game', game.gameId])
     })
   }

@@ -1,22 +1,28 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core'
 import { ActivatedRoute, RouterLink } from '@angular/router'
-import type { GameView, Intent, PlayerId } from 'seep-engine'
+import type { FourPlayerGameView, FourPlayerIntent, GameView, Intent, PlayerId, SeatId } from 'seep-engine'
+import { partnerOf, teamOf } from 'seep-engine'
 import { ApiError } from '../../core/game-api'
 import { AUTH, ONLINE_API } from '../../core/online'
-import { twoPlayerPerspective } from '../../core/perspective'
+import { fourPlayerPerspective, twoPlayerPerspective } from '../../core/perspective'
 import { RemoteSession } from '../../core/remote-session'
-import { describeClock } from '../../core/turn-clock-text'
+import { type ClockNames, describeClock } from '../../core/turn-clock-text'
+import { FourPlayerComponent } from '../four-player/four-player.component'
 import { TwoPlayerComponent } from '../two-player/two-player.component'
 
+type TwoPlayerSession = RemoteSession<GameView, Intent, PlayerId>
+type FourPlayerSession = RemoteSession<FourPlayerGameView, FourPlayerIntent, SeatId>
+
 /**
- * One table of an online game. Opens the game, shows a "waiting for your
- * opponent" panel (with the invite link) until the seat is taken, and then
- * hands the live session to the same two-player page used against the bots.
+ * One table of an online game. Opens the game, shows a "waiting" panel (with
+ * the invite link and who has arrived) until every seat is taken, and then
+ * hands the live session to the same page used against the bots: the
+ * two-player page or the four-player page, whichever kind of table this is.
  */
 @Component({
   selector: 'app-online-game',
   standalone: true,
-  imports: [RouterLink, TwoPlayerComponent],
+  imports: [RouterLink, TwoPlayerComponent, FourPlayerComponent],
   templateUrl: './online-game.component.html',
 })
 export class OnlineGameComponent {
@@ -25,7 +31,12 @@ export class OnlineGameComponent {
   private readonly api = inject(ONLINE_API)
   private readonly destroyRef = inject(DestroyRef)
 
-  readonly session = signal<RemoteSession<GameView, Intent, PlayerId> | null>(null)
+  /** Exactly one of these is set once the table has opened, according to its kind. */
+  readonly two = signal<TwoPlayerSession | null>(null)
+  readonly four = signal<FourPlayerSession | null>(null)
+  /** Whichever it is, for the parts of the screen that don't care (waiting panel, banners, clock). */
+  readonly session = computed<TwoPlayerSession | FourPlayerSession | null>(() => this.two() ?? this.four())
+
   readonly error = signal<string | null>(null)
   readonly copied = signal(false)
   readonly canShare = typeof navigator !== 'undefined' && 'share' in navigator
@@ -35,13 +46,32 @@ export class OnlineGameComponent {
     return code ? `${window.location.origin}/join/${code}` : null
   })
 
+  // --- the waiting panel, for a table that needs several people ---
+  readonly seatsFilled = computed(() => this.session()?.players().filter((p) => p.joined).length ?? 0)
+  readonly seatsTotal = computed(() => this.session()?.players().length ?? 0)
+  /** "p3" -> 3 (the viewer's seat number at a four-player table). */
+  readonly mySeatNumber = computed(() => Number((this.session()?.seat() ?? 'p1').slice(1)))
+  readonly myTeamLetter = computed(() => (this.mySeatNumber() % 2 === 1 ? 'A' : 'B'))
+
   /** Once a second, so the countdown moves. */
   private readonly now = signal(Date.now())
   private readonly ticker = setInterval(() => this.now.set(Date.now()), 1000)
 
+  /** At a four-player table the clock line must say WHO is on the clock; at a two-player table "their" is enough. */
+  private readonly clockNames = computed<ClockNames | undefined>(() => {
+    const four = this.four()
+    const seat = four?.seat()
+    if (!four || !seat) return undefined
+    const mine = seat as SeatId
+    return {
+      nameOf: (s) => (s === mine ? 'You' : s === partnerOf(mine) ? 'Your partner' : `Player ${s.slice(1)}`),
+      sameTeam: (s) => teamOf(s as SeatId) === teamOf(mine),
+    }
+  })
+
   readonly clockLine = computed(() => {
     const session = this.session()
-    return session ? describeClock(session.clock(), session.seat(), this.now()) : null
+    return session ? describeClock(session.clock(), session.seat(), this.now(), this.clockNames()) : null
   })
 
   private disposed = false
@@ -95,21 +125,26 @@ export class OnlineGameComponent {
       return
     }
     try {
-      const session = await RemoteSession.open<GameView, Intent, PlayerId>({
-        api: this.api,
-        gameId: id,
-        perspective: twoPlayerPerspective,
-      })
-      if (this.disposed) {
-        session.dispose()
-        return
+      // Which kind of table is this? Ask once, then open the matching kind of session.
+      const probe = await this.api.getGame<unknown>(id)
+      if (!probe.changed) throw new Error('unexpected reply')
+      if (probe.kind === 'four_player') {
+        const session = await RemoteSession.open<FourPlayerGameView, FourPlayerIntent, SeatId>({
+          api: this.api,
+          gameId: id,
+          perspective: fourPlayerPerspective,
+        })
+        if (this.disposed) return session.dispose()
+        this.four.set(session)
+      } else {
+        const session = await RemoteSession.open<GameView, Intent, PlayerId>({
+          api: this.api,
+          gameId: id,
+          perspective: twoPlayerPerspective,
+        })
+        if (this.disposed) return session.dispose()
+        this.two.set(session)
       }
-      if (session.kind() !== 'two_player') {
-        session.dispose()
-        this.error.set("Four-player tables can't be played online yet.")
-        return
-      }
-      this.session.set(session)
     } catch (err) {
       this.error.set(this.messageFor(err))
     }

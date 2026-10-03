@@ -172,11 +172,27 @@ describe('joinGame', () => {
 
     const j2 = await joinGame(t.db, users[1]!.id, created.inviteCode)
     const j3 = await joinGame(t.db, users[2]!.id, created.inviteCode)
-    expect([j2.seat, j2.status, j2.version]).toEqual(['p2', 'waiting', 0])
-    expect([j3.seat, j3.status, j3.version]).toEqual(['p3', 'waiting', 0])
+    expect([j2.seat, j2.status, j2.version]).toEqual(['p2', 'waiting', 1])
+    expect([j3.seat, j3.status, j3.version]).toEqual(['p3', 'waiting', 2])
 
     const j4 = await joinGame(t.db, users[3]!.id, created.inviteCode)
-    expect([j4.seat, j4.status, j4.version]).toEqual(['p4', 'active', 1])
+    expect([j4.seat, j4.status, j4.version]).toEqual(['p4', 'active', 3])
+  })
+
+  it('makes every arrival visible to those already waiting, so a waiting screen can show the seats filling', async () => {
+    const users = await Promise.all(['u1', 'u2', 'u3', 'u4'].map((n) => makeUser(t.db, n)))
+    const created = await createGame(t.db, users[0]!.id, 'four_player')
+    const joinedSeats = async (since: number) => {
+      const snap = (await getGame(t.db, users[0]!.id, created.gameId, since)) as GameSnapshot
+      return { changed: snap.changed, version: snap.version, joined: snap.changed ? snap.players.filter((p) => p.joined).length : null }
+    }
+    expect(await joinedSeats(0)).toMatchObject({ changed: false })
+    await joinGame(t.db, users[1]!.id, created.inviteCode)
+    expect(await joinedSeats(0)).toEqual({ changed: true, version: 1, joined: 2 }) // the creator is told, though the game has not started
+    await joinGame(t.db, users[2]!.id, created.inviteCode)
+    expect(await joinedSeats(1)).toEqual({ changed: true, version: 2, joined: 3 })
+    await joinGame(t.db, users[3]!.id, created.inviteCode)
+    expect(await joinedSeats(2)).toEqual({ changed: true, version: 3, joined: 4 })
   })
 
   it('cannot be joined after the game has finished or been abandoned', async () => {

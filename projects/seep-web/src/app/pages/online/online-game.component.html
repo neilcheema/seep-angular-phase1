@@ -7,45 +7,61 @@
   </div>
 } @else {
   @if (session(); as s) {
-  @if (s.connection() === 'offline') {
-    <div role="alert" style="position: fixed; top: 0; left: 0; right: 0; z-index: 50; padding: 6px 12px; text-align: center; font-size: 13px; background: #7a4b00; color: #fff;">
-      Connection lost. Retrying…
-      <button type="button" class="btn-outline" style="padding: 2px 10px; margin-left: 8px;" (click)="retry()">Retry now</button>
-    </div>
-  }
-  @if (s.connection() === 'unauthorized') {
-    <div role="alert" style="position: fixed; top: 0; left: 0; right: 0; z-index: 50; padding: 6px 12px; text-align: center; font-size: 13px; background: #7a1f1f; color: #fff;">
-      Your sign-in has expired. <a routerLink="/online" style="text-decoration: underline;">Sign in again</a>
-    </div>
-  }
+    @if (s.connection() === 'offline') {
+      <div role="alert" style="position: fixed; top: 0; left: 0; right: 0; z-index: 50; padding: 6px 12px; text-align: center; font-size: 13px; background: #7a4b00; color: #fff;">
+        Connection lost. Retrying…
+        <button type="button" class="btn-outline" style="padding: 2px 10px; margin-left: 8px;" (click)="retry()">Retry now</button>
+      </div>
+    }
+    @if (s.connection() === 'unauthorized') {
+      <div role="alert" style="position: fixed; top: 0; left: 0; right: 0; z-index: 50; padding: 6px 12px; text-align: center; font-size: 13px; background: #7a1f1f; color: #fff;">
+        Your sign-in has expired. <a routerLink="/online" style="text-decoration: underline;">Sign in again</a>
+      </div>
+    }
 
-  @if (s.status() === 'waiting') {
+    @if (s.status() === 'waiting') {
+      <div class="game-root">
+        <div class="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+          @if (s.kind() === 'four_player') {
+            <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">Waiting for the other players</h1>
+            <p style="color: rgba(255,255,255,0.7); max-width: 440px;">
+              Send the link to three people. The game starts as soon as all four seats are filled, and you can leave this
+              page and come back from Play online. Partners sit across the table: you play with the third person to join.
+            </p>
+            <div id="seats-filled" style="font-size: 18px; font-weight: 700; color: var(--gold-lt);">{{ seatsFilled() }} of {{ seatsTotal() }} seats filled</div>
+            <p id="my-seat" style="color: rgba(255,255,255,0.75);">You are Player {{ mySeatNumber() }}, on Team {{ myTeamLetter() }}.</p>
+          } @else {
+            <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">Waiting for your opponent</h1>
+            <p style="color: rgba(255,255,255,0.7); max-width: 440px;">
+              Send them this link, or give them the code. The game starts the moment they join, and you can leave this page
+              and come back from Play online.
+            </p>
+          }
+          <div id="invite-code" style="font-size: 40px; letter-spacing: 0.2em; font-weight: 800; color: var(--gold-lt);">{{ s.inviteCode() }}</div>
+          <code id="invite-link" style="word-break: break-all; color: rgba(255,255,255,0.8); max-width: 420px;">{{ inviteLink() }}</code>
+          <div class="flex gap-3">
+            <button type="button" class="btn-gold" (click)="copyLink()">{{ copied() ? 'Copied!' : 'Copy link' }}</button>
+            @if (canShare) {
+              <button type="button" class="btn-outline" (click)="share()">Share…</button>
+            }
+          </div>
+          <a routerLink="/online" style="color: rgba(255,255,255,0.6); font-size: 13px;">Back to Play online</a>
+        </div>
+      </div>
+    } @else {
+      @if (two(); as t) {
+        <app-two-player [remote]="t" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" />
+      } @else {
+        @if (four(); as f) {
+          <app-four-player [remote]="f" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" />
+        }
+      }
+    }
+  } @else {
     <div class="game-root">
       <div class="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">Waiting for your opponent</h1>
-        <p style="color: rgba(255,255,255,0.7); max-width: 440px;">
-          Send them this link, or give them the code. The game starts the moment they join, and you can leave this page
-          and come back from Play online.
-        </p>
-        <div id="invite-code" style="font-size: 40px; letter-spacing: 0.2em; font-weight: 800; color: var(--gold-lt);">{{ s.inviteCode() }}</div>
-        <code id="invite-link" style="word-break: break-all; color: rgba(255,255,255,0.8); max-width: 420px;">{{ inviteLink() }}</code>
-        <div class="flex gap-3">
-          <button type="button" class="btn-gold" (click)="copyLink()">{{ copied() ? 'Copied!' : 'Copy link' }}</button>
-          @if (canShare) {
-            <button type="button" class="btn-outline" (click)="share()">Share…</button>
-          }
-        </div>
-        <a routerLink="/online" style="color: rgba(255,255,255,0.6); font-size: 13px;">Back to Play online</a>
+        <p style="color: rgba(255,255,255,0.7);">Opening your table…</p>
       </div>
     </div>
-  } @else {
-    <app-two-player [remote]="s" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" />
   }
-} @else {
-  <div class="game-root">
-    <div class="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-      <p style="color: rgba(255,255,255,0.7);">Opening your table…</p>
-    </div>
-  </div>
-}
 }

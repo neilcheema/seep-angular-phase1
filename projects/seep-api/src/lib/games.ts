@@ -304,12 +304,16 @@ export async function joinGame(db: Db, userId: string, rawCode: unknown): Promis
         'SELECT count(*)::int AS n FROM seats WHERE game_id = $1 AND user_id IS NULL AND NOT is_bot',
         [game.id],
       )
-      if (stillOpen.rows[0]!.n === 0) {
-        await tx.query(
-          "UPDATE games SET status = 'active', version = version + 1, updated_at = now(), turn_started_at = now() WHERE id = $1",
-          [game.id],
-        )
-      }
+      // EVERY arrival is a change somebody already at the table must be able to see (the seats filling up on a
+      // waiting screen), so every arrival moves the version. Only the last one also starts the game and its clock.
+      const full = stillOpen.rows[0]!.n === 0
+      await tx.query(
+        `UPDATE games SET version = version + 1, updated_at = now(),
+                status = CASE WHEN $2::boolean THEN 'active' ELSE status END,
+                turn_started_at = CASE WHEN $2::boolean THEN now() ELSE turn_started_at END
+          WHERE id = $1`,
+        [game.id, full],
+      )
     }
     const row = await loadMember(tx, game.id, userId, false)
     return buildInfo(tx, row, userId)

@@ -1,5 +1,5 @@
-import { Component, input } from '@angular/core'
-import { type FourPlayerGameView, SeatId, partnerOf } from 'seep-engine'
+import { Component, computed, input } from '@angular/core'
+import { type FourPlayerGameView, SeatId, partnerOf, teamOf } from 'seep-engine'
 
 const PHASE_LABEL: Record<FourPlayerGameView['phase'], string> = {
   bidding: 'Bidding',
@@ -30,6 +30,8 @@ const SEAT_LABEL: Record<SeatId, string> = {
 export class FourPlayerStatusPanelComponent {
   readonly state = input.required<FourPlayerGameView>()
   readonly mySeat = input<SeatId>(SeatId.P1)
+  /** Which team the viewer is on, so their own team can be marked "(You & Partner)" whichever it is. */
+  readonly myTeam = computed(() => teamOf(this.mySeat()))
 
   get phaseLabel(): string {
     return PHASE_LABEL[this.state().phase]

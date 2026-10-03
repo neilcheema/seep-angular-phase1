@@ -1,6 +1,6 @@
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core'
+import { Component, DestroyRef, type OnInit, computed, effect, inject, input, signal } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
-import { ActivatedRoute } from '@angular/router'
+import { ActivatedRoute, RouterLink } from '@angular/router'
 import { APP_VERSION, FEEDBACK_EMAIL } from '../../version'
 import {
   type Card as CardModel,
@@ -34,7 +34,7 @@ import { FourPlayerFloorItemComponent } from '../../components/four-player-floor
 import { PlayerHandComponent } from '../../components/player-hand/player-hand.component'
 import { CardComponent } from '../../components/card/card.component'
 import { LocalFourPlayerSession } from '../../core/local-four-player-session'
-import type { MoveEvent } from '../../core/game-session'
+import type { GameSession, MoveEvent } from '../../core/game-session'
 
 type RevealKind = 'capture' | 'build' | 'cement' | 'break' | 'throw' | 'bid'
 
@@ -106,23 +106,28 @@ const SEAT_LABEL: Record<SeatId, string> = {
   standalone: true,
   imports: [
     FourPlayerStatusPanelComponent, OpponentHandComponent, FourPlayerFloorItemComponent,
-    PlayerHandComponent, CardComponent,
+    PlayerHandComponent, CardComponent, RouterLink,
   ],
   templateUrl: './four-player.component.html',
 })
-export class FourPlayerComponent {
+export class FourPlayerComponent implements OnInit {
   private readonly route = inject(ActivatedRoute)
   private readonly destroyRef = inject(DestroyRef)
 
   readonly appVersion = APP_VERSION
 
   /**
-   * The viewer's own seat. Fixed to P1 for now (see the class doc
-   * comment) — but every reference to "which seat is mine" in this file
-   * goes through this signal, not a literal, so that's a one-line change
-   * whenever there's a real seat assignment to read it from.
+   * The viewer's own seat: whatever seat the session's view is for. Against
+   * the bots that is always P1; at an online table it is the seat the person
+   * was dealt (join order: the creator is P1, then P2, P3, P4). Every
+   * reference to "which seat is mine" in this file goes through this, so the
+   * table rotation, the "You / Your partner" labels and the turn checks all
+   * follow it.
    */
-  readonly mySeat = signal<SeatId>(SeatId.P1)
+  readonly mySeat = computed<SeatId>(() => this.state()?.viewer ?? SeatId.P1)
+  readonly myTeam = computed(() => teamOf(this.mySeat()))
+  readonly myTeamLetter = computed(() => (this.myTeam() === 'teamA' ? 'A' : 'B'))
+  readonly otherTeamLetter = computed(() => (this.myTeam() === 'teamA' ? 'B' : 'A'))
   /** The seat rendered at the top of the table — always the viewer's partner, two seats away in either direction. */
   readonly partnerSeat = computed(() => partnerOf(this.mySeat()))
   /** The seat rendered on the left — the next seat after the viewer in turn order. */
@@ -130,7 +135,16 @@ export class FourPlayerComponent {
   /** The seat rendered on the right — the partner of whoever is on the left. */
   readonly rightSeat = computed(() => partnerOf(this.leftSeat()))
 
-  readonly session = signal<LocalFourPlayerSession | null>(null)
+  /**
+   * A game already in progress against other people, supplied by the online
+   * table screen. When absent this page plays the bots, exactly as it always has.
+   */
+  readonly remote = input<GameSession<FourPlayerGameView, FourPlayerIntent, SeatId> | null>(null)
+  /** A line of text about the turn clock, supplied by the online table screen (never set against the bots). */
+  readonly clockLine = input<string | null>(null)
+  readonly clockUrgent = input(false)
+  readonly session = signal<GameSession<FourPlayerGameView, FourPlayerIntent, SeatId> | null>(null)
+  readonly opponentPossessive = computed(() => (this.remote() ? "the other players'" : "the computer's"))
   readonly state = computed<FourPlayerGameView | null>(() => this.session()?.view() ?? null)
   readonly selectedCard = signal<CardModel | null>(null)
   readonly selectedFloorIds = signal<string[]>([])
@@ -246,6 +260,17 @@ export class FourPlayerComponent {
     () => !!(this.state() && this.selectedCard() && this.selectedHouses().length === 1 && !this.isOpening()),
   )
 
+  /** Adopts a supplied online session before the first render, so there is no flash of the "Deal" screen. */
+  ngOnInit(): void {
+    const remote = this.remote()
+    if (remote) this.session.set(remote)
+  }
+
+  /** "p3" -> 3, for running text like "Player 3". */
+  seatNumber(seat: SeatId): number {
+    return Number(seat.slice(1))
+  }
+
   constructor() {
     this.destroyRef.onDestroy(() => this.session()?.dispose())
 
@@ -268,9 +293,9 @@ export class FourPlayerComponent {
 
   startNewGame(): void {
     const existing = this.session()
-    if (existing) {
+    if (existing instanceof LocalFourPlayerSession) {
       existing.startNewMatch()
-    } else {
+    } else if (!existing) {
       // Explicit dealer, not the session's own default: nextSeat(dealer)
       // is who bids first, and a fresh game should always start with the
       // viewer bidding — the same "you always bid first on Deal" the
@@ -280,7 +305,7 @@ export class FourPlayerComponent {
       // would only coincidentally make P1 the bidder; for any other
       // mySeat it would leave the viewer bidder-less on a fresh hand.
       this.session.set(new LocalFourPlayerSession(this.mySeat(), this.rightSeat()))
-    }
+    } // an online game is never restarted from here: a new table is a new game
     this.clearSelection()
     this.message.set(null)
     this.log.set([])
@@ -507,6 +532,7 @@ export class FourPlayerComponent {
     const teams = new Set(owners.map(teamOf))
     if (teams.size > 1) return 'Shared'
     const [onlyTeam] = teams
+    if (this.remote()) return onlyTeam === teamOf(this.mySeat()) ? 'Your team' : 'Their team'
     return onlyTeam === teamOf(this.mySeat()) ? 'Human team' : 'AI team'
   }
 

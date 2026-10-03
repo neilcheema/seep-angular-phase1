@@ -152,13 +152,13 @@ describe.each([
     expect(leakChecks).toBeGreaterThan(5)
 
     // The version counter and the append-only log account for every single change, with no gaps or repeats.
-    expect(final.version).toBe(1 + moves + deals) // 1 = the join that started the game
+    expect(final.version).toBe(seats - 1 + moves + deals) // every arrival after the creator moved the version once
     const log = await t.db.query<{ version: number; intent: { type: string } }>(
       'SELECT version, intent FROM move_log WHERE game_id = $1 ORDER BY version',
       [gameId],
     )
     expect(log.rows).toHaveLength(moves + deals)
-    expect(log.rows.map((r) => r.version)).toEqual(Array.from({ length: moves + deals }, (_, i) => i + 2))
+    expect(log.rows.map((r) => r.version)).toEqual(Array.from({ length: moves + deals }, (_, i) => i + seats))
     expect(log.rows.filter((r) => r.intent.type === 'deal-next')).toHaveLength(deals)
 
     // A finished game is closed to further moves.
