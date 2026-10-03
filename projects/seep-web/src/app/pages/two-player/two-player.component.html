@@ -43,19 +43,19 @@
       <div class="action-bar">
         <span style="color: rgba(255,255,255,0.75);">Choose your bid:</span>
         @for (v of legalBidsFor(s); track v) {
-          <button class="btn-gold" (click)="onBid(v)">{{ v }}</button>
+          <button class="btn-gold" [disabled]="busy()" (click)="onBid(v)">{{ v }}</button>
         }
       </div>
     }
 
     @if (isPlayerTurn()) {
       <div class="action-bar">
-        <button class="btn-gold" [disabled]="!canCapture()" (click)="onCapture()">Capture</button>
-        <button class="btn-gold" [disabled]="!canBuild()" (click)="onBuild()">
+        <button class="btn-gold" [disabled]="busy() || !canCapture()" (click)="onCapture()">Capture</button>
+        <button class="btn-gold" [disabled]="busy() || !canBuild()" (click)="onBuild()">
           Build house{{ canBuild() ? ' (' + buildTargetValue() + ')' : '' }}
         </button>
-        <button class="btn-gold" [disabled]="!canModify()" (click)="onModify()">Add / break house</button>
-        <button class="btn-outline" [disabled]="!canThrow()" (click)="onThrow()">Throw</button>
+        <button class="btn-gold" [disabled]="busy() || !canModify()" (click)="onModify()">Add / break house</button>
+        <button class="btn-outline" [disabled]="busy() || !canThrow()" (click)="onThrow()">Throw</button>
       </div>
     }
 
@@ -64,7 +64,7 @@
         <p style="color: var(--gold-lt); font-weight: 700;">
           Hand complete — you {{ s.lastHandTotals!.player.total }} · opponent {{ s.lastHandTotals!.opponent.total }}
         </p>
-        <button class="btn-gold" (click)="onDealNext()">Deal next hand</button>
+        <button class="btn-gold" [disabled]="busy()" (click)="onDealNext()">Deal next hand</button>
       </div>
     }
 

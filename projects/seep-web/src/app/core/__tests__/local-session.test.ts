@@ -18,12 +18,12 @@ describe('LocalSession', () => {
     session.dispose()
   })
 
-  it('submitting a legal move updates the view and records lastMove with before/after', () => {
+  it('submitting a legal move updates the view and records lastMove with before/after', async () => {
     const session = new LocalSession('player', 'player')
     const before = session.view()!
     const value = legalBidsFromView(before.myHand)[0]!
 
-    session.submit({ type: 'bid', value })
+    await session.submit({ type: 'bid', value })
 
     const move = session.lastMove()
     expect(move).not.toBeNull()
@@ -36,9 +36,9 @@ describe('LocalSession', () => {
     session.dispose()
   })
 
-  it('submitting an illegal move throws, the same validation the engine has always had', () => {
+  it('submitting an illegal move throws, the same validation the engine has always had', async () => {
     const session = new LocalSession('player', 'player')
-    expect(() => session.submit({ type: 'bid', value: 4 })).toThrow()
+    await expect(session.submit({ type: 'bid', value: 4 })).rejects.toThrow()
     session.dispose()
   })
 
@@ -62,12 +62,12 @@ describe('LocalSession', () => {
     vi.useFakeTimers()
     const session = new LocalSession('player', 'player') // human is the bidder, and so plays the opening move too
     const before = session.view()!
-    session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
+    await session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
     // Same bidder plays the opening move next \u2014 turn does not switch to the
     // opponent until this resolves, so throw the bid-matching card.
     const afterBid = session.view()!
     const bidCard = afterBid.myHand.find((c) => captureValue(c) === afterBid.bidValue)!
-    session.submit({ type: 'throw', card: bidCard })
+    await session.submit({ type: 'throw', card: bidCard })
     const ownMove = session.lastMove()
     expect(session.view()!.turn).toBe('opponent') // confirms the scenario: it is now genuinely the bot's turn
 
@@ -97,10 +97,10 @@ describe('LocalSession', () => {
     vi.useRealTimers()
   })
 
-  it('startNewMatch resets lastMove and deals a fresh hand', () => {
+  it('startNewMatch resets lastMove and deals a fresh hand', async () => {
     const session = new LocalSession('player', 'player')
     const before = session.view()!
-    session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
+    await session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
     expect(session.lastMove()).not.toBeNull()
 
     session.startNewMatch()

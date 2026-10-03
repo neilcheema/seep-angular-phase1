@@ -90,6 +90,8 @@ export class TwoPlayerComponent {
   readonly selectedCard = signal<CardModel | null>(null)
   readonly selectedFloorIds = signal<string[]>([])
   readonly message = signal<string | null>(null)
+  /** True while a move (or a deal) is being applied. */
+  readonly busy = signal(false)
   readonly pendingReveal = signal<MoveReveal | null>(null)
   readonly log = signal<LogEntry[]>([])
   readonly humanHasMoved = signal(false)
@@ -297,7 +299,7 @@ export class TwoPlayerComponent {
   }
 
   onBid(value: number): void {
-    this.runPlayerAction(() => this.session()!.submit({ type: 'bid', value }))
+    void this.runPlayerAction(() => this.session()!.submit({ type: 'bid', value }))
   }
 
   onFloorClick(item: FloorItem): void {
@@ -317,7 +319,7 @@ export class TwoPlayerComponent {
     const c = this.selectedCard()
     if (!c) return
     const targetItemIds = this.selectedFloorIds()
-    this.runPlayerAction(() => this.session()!.submit({ type: 'capture', card: c, targetItemIds }))
+    void this.runPlayerAction(() => this.session()!.submit({ type: 'capture', card: c, targetItemIds }))
   }
 
   onBuild(): void {
@@ -325,7 +327,7 @@ export class TwoPlayerComponent {
     if (!c) return
     const looseItemIds = this.selectedLoose().map((i) => i.id)
     const targetValue = this.buildTargetValue()
-    this.runPlayerAction(() => this.session()!.submit({ type: 'build', card: c, looseItemIds, targetValue }))
+    void this.runPlayerAction(() => this.session()!.submit({ type: 'build', card: c, looseItemIds, targetValue }))
   }
 
   onModify(): void {
@@ -334,19 +336,28 @@ export class TwoPlayerComponent {
     if (!c || houses.length !== 1) return
     const houseId = houses[0]!.id
     const extraLooseItemIds = this.selectedLoose().map((i) => i.id)
-    this.runPlayerAction(() => this.session()!.submit({ type: 'modify', card: c, houseId, extraLooseItemIds }))
+    void this.runPlayerAction(() => this.session()!.submit({ type: 'modify', card: c, houseId, extraLooseItemIds }))
   }
 
   onThrow(): void {
     const c = this.selectedCard()
     if (!c) return
-    this.runPlayerAction(() => this.session()!.submit({ type: 'throw', card: c }))
+    void this.runPlayerAction(() => this.session()!.submit({ type: 'throw', card: c }))
   }
 
-  onDealNext(): void {
-    this.session()?.dealNext()
-    this.log.set([])
-    this.pendingReveal.set(null)
+  async onDealNext(): Promise<void> {
+    if (this.busy()) return
+    this.busy.set(true)
+    try {
+      await this.session()?.dealNext()
+      this.log.set([])
+      this.pendingReveal.set(null)
+      this.message.set(null)
+    } catch (err) {
+      this.message.set(err instanceof Error ? err.message : 'Could not deal the next hand.')
+    } finally {
+      this.busy.set(false)
+    }
   }
 
   onPlayAgain(): void {
@@ -452,13 +463,21 @@ export class TwoPlayerComponent {
     return r.reason ? `${base} (${r.reason})` : base
   }
 
-  private runPlayerAction(fn: () => void): void {
+  /**
+   * Runs a move, ignoring any second click while one is still in flight (a
+   * real network round trip in an online game; instantaneous against bots).
+   */
+  private async runPlayerAction(fn: () => Promise<void>): Promise<void> {
+    if (this.busy()) return
+    this.busy.set(true)
     try {
-      fn()
+      await fn()
       this.clearSelection()
       this.message.set(null)
     } catch (err) {
       this.message.set(err instanceof Error ? err.message : 'Invalid move.')
+    } finally {
+      this.busy.set(false)
     }
   }
 

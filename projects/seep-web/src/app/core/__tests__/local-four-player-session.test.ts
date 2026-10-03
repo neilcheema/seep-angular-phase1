@@ -20,12 +20,12 @@ describe('LocalFourPlayerSession', () => {
     session.dispose()
   })
 
-  it('submitting a legal move updates the view and records lastMove with before/after', () => {
+  it('submitting a legal move updates the view and records lastMove with before/after', async () => {
     const session = new LocalFourPlayerSession(SeatId.P1, SeatId.P4)
     const before = session.view()!
     const value = legalBidsFromView(before.myHand)[0]!
 
-    session.submit({ type: 'bid', value })
+    await session.submit({ type: 'bid', value })
 
     const move = session.lastMove()
     expect(move).not.toBeNull()
@@ -36,9 +36,9 @@ describe('LocalFourPlayerSession', () => {
     session.dispose()
   })
 
-  it('submitting an illegal move throws, the same validation the engine has always had', () => {
+  it('submitting an illegal move throws, the same validation the engine has always had', async () => {
     const session = new LocalFourPlayerSession(SeatId.P1, SeatId.P4)
-    expect(() => session.submit({ type: 'bid', value: 4 })).toThrow()
+    await expect(session.submit({ type: 'bid', value: 4 })).rejects.toThrow()
     session.dispose()
   })
 
@@ -63,10 +63,10 @@ describe('LocalFourPlayerSession', () => {
     vi.useFakeTimers()
     const session = new LocalFourPlayerSession(SeatId.P1, SeatId.P4) // P1 is the bidder
     const before = session.view()!
-    session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
+    await session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
     const afterBid = session.view()!
     const bidCard = afterBid.myHand.find((c) => captureValue(c as never) === afterBid.bidValue)!
-    session.submit({ type: 'throw', card: bidCard })
+    await session.submit({ type: 'throw', card: bidCard })
     const ownMove = session.lastMove()
     expect(session.view()!.turn).not.toBe(SeatId.P1) // confirms the scenario: it's now a bot's turn
 
@@ -90,10 +90,10 @@ describe('LocalFourPlayerSession', () => {
     vi.useFakeTimers()
     const session = new LocalFourPlayerSession(SeatId.P1, SeatId.P4)
     const before = session.view()!
-    session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
+    await session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
     const afterBid = session.view()!
     const bidCard = afterBid.myHand.find((c) => captureValue(c as never) === afterBid.bidValue)!
-    session.submit({ type: 'throw', card: bidCard })
+    await session.submit({ type: 'throw', card: bidCard })
 
     // Walk through bot turns one at a time, each requiring its own
     // acknowledge() — stop once it's the human's turn again or after a
@@ -121,10 +121,10 @@ describe('LocalFourPlayerSession', () => {
     vi.useRealTimers()
   })
 
-  it('startNewMatch resets lastMove and deals a fresh hand', () => {
+  it('startNewMatch resets lastMove and deals a fresh hand', async () => {
     const session = new LocalFourPlayerSession(SeatId.P1, SeatId.P4)
     const before = session.view()!
-    session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
+    await session.submit({ type: 'bid', value: legalBidsFromView(before.myHand)[0]! })
     expect(session.lastMove()).not.toBeNull()
 
     session.startNewMatch()

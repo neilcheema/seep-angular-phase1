@@ -39,7 +39,7 @@ export class LocalFourPlayerSession implements GameSession<FourPlayerGameView, F
   }
 
   /** Submits a move on the viewer's own behalf. Throws the same validation errors the engine always has. Does not itself schedule a bot move — see acknowledge(). */
-  submit(intent: FourPlayerIntent): void {
+  async submit(intent: FourPlayerIntent): Promise<void> {
     const before = viewForSeat(this.state, this.myId);
     const next = applyFourPlayerMove(this.state, this.myId, intent);
     this.state = next;
@@ -78,7 +78,7 @@ export class LocalFourPlayerSession implements GameSession<FourPlayerGameView, F
     this.scheduleBotMoveIfNeeded(this.state); // fresh match, nothing pending to acknowledge yet
   }
 
-  dealNext(): void {
+  async dealNext(): Promise<void> {
     this.lastMove.set(null);
     this.state = dealNextFourPlayerHand(this.state);
     this.publish(this.state);

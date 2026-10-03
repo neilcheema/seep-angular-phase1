@@ -35,7 +35,7 @@ export class LocalSession implements GameSession<GameView, Intent, PlayerId> {
   }
 
   /** Submits a move on the viewer's own behalf. Throws the same validation errors the engine always has — the caller catches these exactly as it did calling the engine directly before. Does not itself schedule a bot move — see acknowledge(). */
-  submit(intent: Intent): void {
+  async submit(intent: Intent): Promise<void> {
     const before = viewFor(this.state, this.myId);
     const next = applyMove(this.state, this.myId, intent);
     this.state = next;
@@ -55,7 +55,7 @@ export class LocalSession implements GameSession<GameView, Intent, PlayerId> {
     this.scheduleBotMoveIfNeeded(this.state); // fresh match, nothing pending to acknowledge yet
   }
 
-  dealNext(): void {
+  async dealNext(): Promise<void> {
     this.lastMove.set(null);
     this.state = dealNextHand(this.state);
     this.publish(this.state);

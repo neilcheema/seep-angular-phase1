@@ -18,7 +18,8 @@ export interface MoveEvent<TView, TIntent, TActor> {
 
 /**
  * What a game page actually needs, regardless of whether the game is
- * being played locally against bots (LocalSession — today's behaviour)
+ * being played locally against bots (LocalSession — today's behaviour; it also has startNewMatch(), which only
+ * makes sense against bots, so that one isn't part of this interface)
  * or against another logged-in player over the network (RemoteSession,
  * arriving in a later phase). A page written against this interface
  * alone doesn't need to know or care which one it's actually talking to.
@@ -36,7 +37,15 @@ export interface MoveEvent<TView, TIntent, TActor> {
 export interface GameSession<TView, TIntent, TActor> {
   readonly view: Signal<TView | null>;
   readonly lastMove: Signal<MoveEvent<TView, TIntent, TActor> | null>;
-  submit(intent: TIntent): void;
+  /**
+   * Applies a move on the viewer's behalf. Resolves once it has been
+   * applied; rejects with an Error whose message is the rules' own
+   * explanation if it was refused (the page shows it as-is). It is a
+   * Promise because an online game must go over the network to find out;
+   * a local game settles instantly, and its state changes at the very
+   * moment of the call, exactly as before this was asynchronous.
+   */
+  submit(intent: TIntent): Promise<void>;
   /**
    * Tells the session the page has finished showing whatever it wanted
    * to show about the last move (e.g. the move-reveal overlay was
@@ -49,8 +58,8 @@ export interface GameSession<TView, TIntent, TActor> {
    * real players' moves isn't something a session needs to gate.
    */
   acknowledge(): void;
-  startNewMatch(): void;
-  dealNext(): void;
+  /** Deals the next hand once one has finished. Rejects if the hand isn't over. */
+  dealNext(): Promise<void>;
   /** Cancels any pending bot-move timer. Call from the page's DestroyRef. */
   dispose(): void;
 }
