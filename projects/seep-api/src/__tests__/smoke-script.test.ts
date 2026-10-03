@@ -15,11 +15,13 @@ vi.mock('../lib/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/auth')>()
   return {
     ...actual,
-    // Stands in for Firebase: the "token" is just the person's name.
-    verifyFirebaseToken: (header: string | null) =>
-      header?.startsWith('Bearer ')
-        ? Promise.resolve({ uid: `firebase-${header.slice(7)}`, email: `${header.slice(7)}@example.test`, emailVerified: true })
-        : Promise.reject(new actual.AuthError('Missing or malformed Authorization header')),
+    // Stands in for Firebase: a JWT-shaped token whose middle segment is the person's name.
+    verifyFirebaseToken: (header: string | null) => {
+      const person = header?.startsWith('Bearer ') ? header.slice(7).split('.')[1] : undefined
+      return person
+        ? Promise.resolve({ uid: `firebase-${person}`, email: `${person}@example.test`, emailVerified: true })
+        : Promise.reject(new actual.AuthError('Missing or malformed Authorization header'))
+    },
   }
 })
 
@@ -48,6 +50,27 @@ function matchRoute(method: string, path: string): { route: Registered; params: 
   return null
 }
 
+/** Accounts known to the fake Firebase: email -> password. Persists across a test file, like the real thing. */
+const fakeFirebaseAccounts = new Map<string, string>()
+const VALID_API_KEY = 'valid-key'
+const fakeToken = (email: string) => `header.${email.split('@')[0]}.signature`
+
+function fakeIdentityToolkit(url: URL, body: string, res: ServerResponse): void {
+  const reply = (status: number, json: unknown): void => {
+    res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(json))
+  }
+  if (url.searchParams.get('key') !== VALID_API_KEY) return reply(400, { error: { message: 'API key not valid. Please pass a valid API key.' } })
+  const { email, password } = JSON.parse(body) as { email: string; password: string }
+  if (url.pathname.endsWith(':signInWithPassword')) {
+    if (!fakeFirebaseAccounts.has(email)) return reply(400, { error: { message: 'INVALID_LOGIN_CREDENTIALS' } })
+    if (fakeFirebaseAccounts.get(email) !== password) return reply(400, { error: { message: 'INVALID_LOGIN_CREDENTIALS' } })
+    return reply(200, { idToken: fakeToken(email) })
+  }
+  if (fakeFirebaseAccounts.has(email)) return reply(400, { error: { message: 'EMAIL_EXISTS' } })
+  fakeFirebaseAccounts.set(email, password)
+  return reply(200, { idToken: fakeToken(email) })
+}
+
 async function serve(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const body = await new Promise<string>((resolve) => {
@@ -55,6 +78,7 @@ async function serve(req: IncomingMessage, res: ServerResponse) {
     req.on('data', (chunk: Buffer) => (data += chunk.toString()))
     req.on('end', () => resolve(data))
   })
+  if (url.pathname.startsWith('/identity/')) return fakeIdentityToolkit(new URL(url.href.replace('/identity', '')), body, res)
   const hit = matchRoute(req.method ?? 'GET', url.pathname.replace(/^\/api\//, ''))
   if (!hit) {
     res.writeHead(404).end()
@@ -95,9 +119,12 @@ function runScript(env: Record<string, string>): Promise<{ code: number | null; 
   })
 }
 
+const ALICE = 'header.alice.signature'
+const BOB = 'header.bob.signature'
+
 describe('scripts/live-smoke.mjs', () => {
-  it('passes every check against the real handlers over HTTP', async () => {
-    const { code, out } = await runScript({ TOKEN_A: 'alice', TOKEN_B: 'bob' })
+  it('passes every check against the real handlers over HTTP, given two tokens', async () => {
+    const { code, out } = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB })
     expect(out).toMatch(/PASS: \d+ of \d+ checks passed/)
     expect(out).not.toMatch(/FAIL/)
     expect(code).toBe(0)
@@ -105,14 +132,62 @@ describe('scripts/live-smoke.mjs', () => {
 
   it('actually fails, with a non-zero exit code, when the API misbehaves (it is not a rubber stamp)', async () => {
     // Two tokens that resolve to the SAME person: B can't "join" as a second player.
-    const { code, out } = await runScript({ TOKEN_A: 'alice', TOKEN_B: 'alice' })
+    const { code, out } = await runScript({ TOKEN_A: ALICE, TOKEN_B: ALICE })
     expect(out).toMatch(/FAIL/)
     expect(code).toBe(1)
   })
 
-  it('explains its usage and exits 2 when given no tokens', async () => {
-    const { code, out } = await runScript({ TOKEN_A: '', TOKEN_B: '' })
+  describe('fetching its own tokens from just an API key', () => {
+    const viaFirebase = (extra: Record<string, string> = {}) =>
+      runScript({ TOKEN_A: '', TOKEN_B: '', FIREBASE_API_KEY: VALID_API_KEY, IDENTITY_TOOLKIT_URL: `${baseUrl}/identity`, ...extra })
+
+    it('creates the two test accounts on the first run and passes', async () => {
+      fakeFirebaseAccounts.clear()
+      const { code, out } = await viaFirebase()
+      expect(out).toMatch(/PASS/)
+      expect(code).toBe(0)
+      expect([...fakeFirebaseAccounts.keys()].sort()).toEqual(['phase3-test@seep.quest', 'phase4-test-b@seep.quest'])
+    })
+
+    it('signs in to the accounts that already exist on later runs, creating nothing new', async () => {
+      const before = [...fakeFirebaseAccounts.entries()]
+      const { code, out } = await viaFirebase()
+      expect(out).toMatch(/PASS/)
+      expect(code).toBe(0)
+      expect([...fakeFirebaseAccounts.entries()]).toEqual(before)
+    })
+
+    it('says plainly what is wrong when an existing test account has a different password (exit 2)', async () => {
+      const { code, out } = await viaFirebase({ TEST_PASSWORD: 'SomethingElse9' })
+      expect(code).toBe(2)
+      expect(out).toMatch(/already exists with a different password/)
+      expect(out).toMatch(/TEST_PASSWORD/)
+    })
+
+    it("surfaces Firebase's own message when the API key is wrong (exit 2)", async () => {
+      const { code, out } = await viaFirebase({ FIREBASE_API_KEY: 'not-the-key' })
+      expect(code).toBe(2)
+      expect(out).toMatch(/API key not valid/)
+    })
+
+    it('can use its own email addresses', async () => {
+      const { code } = await viaFirebase({ EMAIL_A: 'zoe@example.test', EMAIL_B: 'yan@example.test' })
+      expect(code).toBe(0)
+      expect(fakeFirebaseAccounts.has('zoe@example.test')).toBe(true)
+    })
+  })
+
+  it("catches the mistake of passing something that isn't a token — the literal text 'undefined' — before bothering the API (exit 2)", async () => {
+    const { code, out } = await runScript({ TOKEN_A: 'undefined', TOKEN_B: BOB })
+    expect(code).toBe(2)
+    expect(out).toMatch(/TOKEN_A is not a Firebase ID token/)
+    expect(out).toMatch(/"undefined"/)
+  })
+
+  it('explains its usage and exits 2 when given neither tokens nor an API key', async () => {
+    const { code, out } = await runScript({ TOKEN_A: '', TOKEN_B: '', FIREBASE_API_KEY: '' })
     expect(code).toBe(2)
     expect(out).toMatch(/Usage/)
+    expect(out).toMatch(/FIREBASE_API_KEY/)
   })
 })

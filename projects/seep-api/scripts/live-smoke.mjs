@@ -4,17 +4,75 @@
  * two people sign in, one creates a game, the other joins with the code, they
  * look at their (different) views, one bids, and the other sees it.
  *
- *   TOKEN_A=<firebase id token> TOKEN_B=<a different person's token> \
- *     node scripts/live-smoke.mjs https://<your-function-app>.azurewebsites.net
+ * Simplest use: give it your Firebase web apiKey and it signs in (or creates)
+ * two test accounts itself, so there is no shell juggling of tokens:
  *
- * Exits 0 if every check passed. Creates one real game in whatever database
- * the API points at; it is a normal game and can simply be left or abandoned.
+ *   FIREBASE_API_KEY=<apiKey> node scripts/live-smoke.mjs https://<app>.azurewebsites.net
+ *
+ * Or supply tokens you already have:
+ *
+ *   TOKEN_A=<id token> TOKEN_B=<a different person's id token> node scripts/live-smoke.mjs <url>
+ *
+ * Optional: EMAIL_A, EMAIL_B, TEST_PASSWORD (defaults below), APP_VERSION.
+ * Exits 0 if every check passed, 1 if any failed, 2 if it couldn't get started.
+ * Creates one real game in whatever database the API points at; it is a
+ * normal game and can simply be left or abandoned.
  */
 const base = (process.argv[2] ?? '').replace(/\/+$/, '')
-const { TOKEN_A, TOKEN_B } = process.env
-if (!base || !TOKEN_A || !TOKEN_B) {
-  console.error('Usage: TOKEN_A=... TOKEN_B=... node scripts/live-smoke.mjs <base url>')
+const API_KEY = process.env.FIREBASE_API_KEY
+const IDENTITY = (process.env.IDENTITY_TOOLKIT_URL ?? 'https://identitytoolkit.googleapis.com').replace(/\/+$/, '')
+const PASSWORD = process.env.TEST_PASSWORD ?? 'TestPassword123!' // lives in code, not on a command line: a "!" in a bash command line is history expansion
+const EMAIL_A = process.env.EMAIL_A ?? 'phase3-test@seep.quest'
+const EMAIL_B = process.env.EMAIL_B ?? 'phase4-test-b@seep.quest'
+
+const usage = () => {
+  console.error('Usage:\n  FIREBASE_API_KEY=<apiKey> node scripts/live-smoke.mjs <base url>\n  TOKEN_A=<id token> TOKEN_B=<id token> node scripts/live-smoke.mjs <base url>')
   process.exit(2)
+}
+if (!base) usage()
+if ((!process.env.TOKEN_A || !process.env.TOKEN_B) && !API_KEY) usage()
+
+const looksLikeJwt = (t) => /^[\w-]+\.[\w-]+\.[\w-]+$/.test(t ?? '')
+
+/** Signs in with email + password, creating the account the first time. Throws a readable error. */
+async function tokenFor(email) {
+  const call = async (action) => {
+    const res = await fetch(`${IDENTITY}/v1/accounts:${action}?key=${encodeURIComponent(API_KEY)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: PASSWORD, returnSecureToken: true }),
+    })
+    const json = await res.json().catch(() => ({}))
+    return { token: json.idToken, message: json.error?.message ?? `HTTP ${res.status}` }
+  }
+  const signedIn = await call('signInWithPassword')
+  if (signedIn.token) return signedIn.token
+  // A brand-new account reports either of these (which one depends on the project's settings).
+  if (signedIn.message !== 'EMAIL_NOT_FOUND' && signedIn.message !== 'INVALID_LOGIN_CREDENTIALS') {
+    throw new Error(`Firebase sign-in for ${email} failed: ${signedIn.message}`)
+  }
+  const created = await call('signUp')
+  if (created.token) return created.token
+  if (created.message === 'EMAIL_EXISTS') {
+    throw new Error(`${email} already exists with a different password. Set TEST_PASSWORD to its password, or use EMAIL_A / EMAIL_B for other test accounts.`)
+  }
+  throw new Error(`Firebase could not create ${email}: ${created.message}`)
+}
+
+let TOKEN_A = process.env.TOKEN_A
+let TOKEN_B = process.env.TOKEN_B
+try {
+  TOKEN_A ||= await tokenFor(EMAIL_A)
+  TOKEN_B ||= await tokenFor(EMAIL_B)
+} catch (err) {
+  console.error(err.message)
+  process.exit(2)
+}
+for (const [name, token] of [['TOKEN_A', TOKEN_A], ['TOKEN_B', TOKEN_B]]) {
+  if (!looksLikeJwt(token)) {
+    console.error(`${name} is not a Firebase ID token (got ${JSON.stringify(String(token).slice(0, 40))}). Check FIREBASE_API_KEY, or how the token was copied.`)
+    process.exit(2)
+  }
 }
 
 const FACE_VALUE = { Ace: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9, Ten: 10, Jack: 11, Queen: 12, King: 13 }

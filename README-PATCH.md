@@ -26,22 +26,23 @@ unaffected.
 
 ## Prove it live: one command
 
-Get a token for two different test accounts (tokens last an hour; keep them out
-of chat). `FIREBASE_API_KEY` is the `apiKey` from your Firebase web config.
+You only need your Firebase web `apiKey` (from the `firebaseConfig` you pasted
+in phase 3; it is a public client key, not a secret). The script signs in to two
+test accounts itself, creating them the first time (`phase3-test@seep.quest`
+with the phase-3 password, and `phase4-test-b@seep.quest`):
 
-    export FIREBASE_API_KEY=<your apiKey>
-    tok() { curl -s -X POST "https://identitytoolkit.googleapis.com/v1/accounts:$1?key=$FIREBASE_API_KEY" \
-      -H 'Content-Type: application/json' \
-      -d "{\"email\":\"$2\",\"password\":\"TestPassword123!\",\"returnSecureToken\":true}" \
-      | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).idToken))"; }
-    export TOKEN_A=$(tok signInWithPassword phase3-test@seep.quest)   # the account from phase 3
-    export TOKEN_B=$(tok signUp phase4-test-b@seep.quest)             # a second one (use signInWithPassword next time)
-    node projects/seep-api/scripts/live-smoke.mjs https://<your-function-app>.azurewebsites.net
+    FIREBASE_API_KEY=<your apiKey> node projects/seep-api/scripts/live-smoke.mjs https://<your-function-app>.azurewebsites.net
 
 It signs both people in, creates a game, joins it by code, checks each sees only
 their own cards, makes a bid, polls, and checks that a stale move, an out-of-turn
-move and a malformed move are each refused. It prints one line per check and
-exits non-zero on any failure. It leaves one ordinary game in the database.
+move and a malformed move are each refused. One line per check; exit code 0 only
+if all passed. If it cannot get started it says why in plain words (wrong API key,
+an account whose password differs, a "token" that is not a token) instead of
+failing obscurely inside the API. It leaves one ordinary game in the database.
+
+(Tokens can still be supplied directly with `TOKEN_A=... TOKEN_B=...` instead.
+Do not build them with a shell helper: a `!` inside double quotes is history
+expansion in bash, which is how an earlier version of these instructions broke.)
 
 ## API (all under `/api`)
 
