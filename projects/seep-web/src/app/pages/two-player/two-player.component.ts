@@ -15,6 +15,7 @@ import {
   cardLabel,
   faceLabel,
   findHouseByValue,
+  findMaximalExactGroups,
   findItem,
   hasAnyLegalCapture,
   hasCaptureValue,
@@ -137,14 +138,29 @@ export class TwoPlayerComponent {
     )
   })
 
+  /**
+   * Mirrors the engine's own playCapture validation exactly
+   * (findHouseByValue + findMaximalExactGroups, the same "required
+   * selection" computation) rather than a simplified, independent check.
+   * The two had drifted: the old version only allowed a house captured
+   * alone, or loose cards captured alone, never a house together with a
+   * disjoint loose group at the same value — a combination the engine
+   * has always required when both exist on the floor together. That
+   * drift made a fully legal capture impossible to even select: the
+   * button stayed disabled no matter what, since no selection could
+   * satisfy either of the old branches.
+   */
   readonly canCapture = computed(() => {
     const s = this.state()
     const c = this.selectedCard()
     if (!(s && c && this.selectedFloorIds().length > 0 && this.bidMatches())) return false
-    const houses = this.selectedHouses()
-    const loose = this.selectedLoose()
-    if (houses.length === 1 && loose.length === 0) return itemValue(houses[0]!) === captureValue(c)
-    return houses.length === 0 && this.looseSum() === captureValue(c)
+    const target = captureValue(c)
+    const house = findHouseByValue(s.floor, target)
+    const maxGroups = findMaximalExactGroups(s.floor, target)
+    const requiredIds = new Set(house ? [house.id, ...maxGroups.flat()] : maxGroups.flat())
+    if (requiredIds.size === 0) return false
+    const selected = new Set(this.selectedFloorIds())
+    return requiredIds.size === selected.size && [...requiredIds].every((id) => selected.has(id))
   })
 
   readonly buildTargetValue = computed(() => {
