@@ -3,8 +3,8 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
-
     "FIREBASE_PROJECT_ID": "seep-quest",
-    "DATABASE_URL": "<Neon pooled connection string for this environment \u2014 dev or production, never both in the same file>"
+    "DATABASE_URL": "<Neon pooled connection string for this environment \u2014 dev or production, never both in the same file>",
+    "MIN_CLIENT_VERSION": "<optional \u2014 omit entirely to enforce nothing. When set, e.g. 1.0.0, any request declaring an older X-App-Version header gets a 426>"
   }
 }

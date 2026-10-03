@@ -1,6 +1,7 @@
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from '@azure/functions'
 import { AuthError, verifyFirebaseToken } from '../lib/auth'
 import { getPool } from '../lib/db'
+import { checkMinVersion } from '../lib/version-check'
 
 /**
  * POST /api/v1/me — the whole functional surface phase 3 needs, per the
@@ -10,6 +11,17 @@ import { getPool } from '../lib/db'
  * last_seen_at, refreshing email) on every call after.
  */
 export async function me(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const versionCheck = checkMinVersion(request.headers.get('x-app-version'))
+  if (!versionCheck.ok) {
+    context.log(`Rejected app version ${versionCheck.clientVersion} (minimum ${versionCheck.minVersion})`)
+    return {
+      status: 426,
+      jsonBody: {
+        error: `This app version (${versionCheck.clientVersion}) is no longer supported. Minimum required: ${versionCheck.minVersion}.`,
+      },
+    }
+  }
+
   let user: Awaited<ReturnType<typeof verifyFirebaseToken>>
   try {
     user = await verifyFirebaseToken(request.headers.get('authorization'))
