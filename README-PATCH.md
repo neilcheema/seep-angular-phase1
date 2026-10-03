@@ -1,51 +1,70 @@
-# Minimum app-version check (closing the last Phase 3 gap)
+# Bug fix: a legal house + loose-group capture was impossible to select
 
-Section 6 of the plan, item 3: "Add a minimum-app-version check so old
-apps can be told to update." Not implemented until now \u2014 added before
-closing out Phase 3, not retrofitted later.
+## What was actually happening
+The floor had a cemented house of 13 (10+3+8+5) alongside three loose
+cards (8, 5, 4). Playing a King, the only complete, correct capture is
+the house PLUS the loose 8+5 together \u2014 the engine has always required
+capturing every matching house and loose group as one move, never just
+part of what's available (the loose 4 correctly stays behind, since no
+combination including it sums to 13).
 
-## How it works
-- New file: src/lib/version-check.ts. Compares a client-declared
-  X-App-Version header against MIN_CLIENT_VERSION (an environment
-  variable), numerically per version segment \u2014 "1.10.0" correctly
-  sorts above "1.9.0", not just lexicographically.
-- MIN_CLIENT_VERSION is unset by default: until you explicitly set it
-  as an Application Setting, nothing is rejected. Safe default \u2014 no
-  risk of an accidental lockout from a forgotten config value.
-- A request with no X-App-Version header at all is always let through,
-  regardless of MIN_CLIENT_VERSION. The point is telling a client that
-  HAS declared an old version to update \u2014 not rejecting every request
-  that lacks the header, which would also break the manual curl testing
-  used to verify phase 3 end-to-end, and any client written before this
-  header existed.
-- Wired into me.ts as the first check, before token verification \u2014 a
-  client that needs to update should find that out regardless of
-  whether its auth token happens to be valid.
-- Response on a rejected version: 426 Upgrade Required (the HTTP status
-  built for exactly this case), with a message naming both the client's
-  version and the minimum required.
+The engine itself has always enforced this correctly. The bug was
+entirely in the two page components: canCapture() only recognized two
+shapes of selection \u2014 a house captured completely alone, or loose cards
+captured completely alone \u2014 never a house together with a disjoint
+loose group. Selecting the actually-correct combination (house + 8 + 5)
+satisfied neither old branch, so the Capture button stayed disabled no
+matter what \u2014 a fully legal move was impossible to even attempt.
 
-## Verified
-- 7 new tests for the comparison logic itself (unset minimum, missing
-  header, below/equal/above, and the numeric-vs-lexicographic case
-  specifically) plus 2 new tests for the me.ts wiring (426 returned and
-  logged without touching auth or the database; a set minimum with no
-  header still proceeds normally).
-- Deliberately poisoned twice, in two different places \u2014 the
-  comparison logic itself, and separately the wiring that calls it in
-  me.ts \u2014 and confirmed each poisoning was caught by a different,
-  correct subset of tests before trusting either, then restored both.
-- Full suite: 22 tests now (was 13), strict typecheck, and the esbuild
-  deployment bundle all re-verified clean.
+Separately, the old logic had the opposite problem too: selecting just
+the loose 8 + 5 (without the house) WAS accepted by the old client
+check (loose sum matched 13), enabling the button \u2014 but the engine
+correctly rejects that as incomplete, producing exactly the "bigger
+combined capture is available" error. That's almost certainly what
+happened in the screenshots: unable to select the actually-correct
+combination, selecting just the loose pair was the only thing that
+lit up the button \u2014 and the engine, correctly, said no.
+
+## The fix
+canCapture() in both pages now mirrors the engine's own validation
+exactly \u2014 the same findHouseByValue + findMaximalExactGroups
+computation the engine itself uses to decide what's required \u2014 instead
+of a simplified, independent check that had drifted out of sync with
+it. The button is now enabled if and only if the current selection is
+exactly what the engine will accept.
+
+## Verified precisely, not just reasoned about
+- Reproduced the exact floor from both screenshots (the same house
+  composition, the same three loose cards, a King as the only card
+  left) directly against the real engine code in this session's
+  sandbox:
+  - Confirmed the OLD canCapture logic returns false for the correct,
+    complete selection (house+8+5) \u2014 the bug, reproduced precisely.
+  - Confirmed the OLD logic WRONGLY returns true for the incomplete
+    selection (just 8+5) \u2014 explaining exactly how the button could
+    ever become clickable in the first place, right before the engine
+    rejected it.
+  - Confirmed the NEW logic gets both of those exactly right.
+  - Confirmed directly against playFourPlayerCapture itself: the
+    complete selection is accepted: the incomplete one is rejected
+    with the identical message from the screenshots.
+- Compiled both fixed components with the real Angular AOT compiler,
+  strict templates \u2014 clean.
+- Ran the actual compiled four-player component in a headless browser,
+  with the exact scenario injected directly into a real session (not a
+  simulation): confirmed the Capture button is genuinely disabled in
+  the OLD code and genuinely enabled in the FIXED code for the same
+  selection, then clicked it in the fixed version and confirmed the
+  capture actually completes \u2014 the King played, the house's four
+  cards and both loose cards all correctly captured together, zero
+  page errors.
+- The two-player fix is the identical code pattern against the
+  identical engine functions; verified by AOT compilation. Not
+  separately re-run through the full headless-browser scenario, since
+  the underlying logic is exactly what was already proven correct for
+  four-player \u2014 noted plainly rather than claimed as directly observed.
 
 ## Apply
-Three files replace existing ones (me.ts, me.test.ts,
-local.settings.json.example), one is new (version-check.ts, plus its
-test file). Then from projects/seep-api/: npm test, npm run typecheck,
-npm run build \u2014 same three checks as every patch this project.
-
-Nothing to configure on the live Function App unless you actually want
-to start enforcing a minimum \u2014 MIN_CLIENT_VERSION stays unset (and
-therefore inert) until you deliberately add it as an Application
-Setting, which makes sense once there's an actual versioned client
-(the Angular app, eventually the Android app) sending this header.
+Replace these two files, then npm test && npm run lint && npm run build.
+No engine changes, no schema changes, no test suite changes \u2014 the bug
+and the fix are both entirely in these two files.
