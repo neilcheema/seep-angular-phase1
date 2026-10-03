@@ -4,10 +4,6 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      // Mirrors the "seep-engine" path mapping in tsconfig.json. Vitest
-      // (unlike the Angular CLI/tsc) doesn't read tsconfig paths on its
-      // own, so without this, any test importing from 'seep-engine'
-      // resolves fine under `ng build`/`ng serve` but fails here.
       'seep-engine': fileURLToPath(new URL('./projects/seep-engine/src/public-api.ts', import.meta.url)),
     },
   },
@@ -18,5 +14,9 @@ export default defineConfig({
       'projects/seep-api/src/**/*.test.ts',
     ],
     environment: 'node',
+    // seep-api's tests start a real (WASM) Postgres, and the root run executes every
+    // project's test files in parallel; the 5s default is too tight for that.
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });

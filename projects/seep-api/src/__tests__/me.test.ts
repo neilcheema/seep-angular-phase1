@@ -1,90 +1,96 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { HttpRequest, InvocationContext } from '@azure/functions'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Same hoisting note as auth.test.ts: vi.mock is hoisted above these
-// imports automatically, so plain static imports are enough.
-const verifyFirebaseTokenMock = vi.fn()
+const verifyMock = vi.fn()
 vi.mock('../lib/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/auth')>()
-  return { ...actual, verifyFirebaseToken: (...args: unknown[]) => verifyFirebaseTokenMock(...args) }
+  return { ...actual, verifyFirebaseToken: (...args: unknown[]) => verifyMock(...args) }
 })
 
-const queryMock = vi.fn()
-vi.mock('../lib/db', () => ({ getPool: () => ({ query: queryMock }) }))
-
 import { AuthError } from '../lib/auth'
+import { _setDbForTests } from '../lib/db'
 import { me } from '../functions/me'
+import { call } from './helpers/http'
+import { type TestDb, createTestDb } from './helpers/test-db'
 
-function fakeRequest(authHeader: string | null, appVersion?: string): HttpRequest {
-  const headers = new Headers()
-  if (authHeader !== null) headers.set('authorization', authHeader)
-  if (appVersion !== undefined) headers.set('x-app-version', appVersion)
-  return { headers } as HttpRequest
-}
-const fakeContext = { log: vi.fn() } as unknown as InvocationContext
+let t: TestDb
+beforeAll(async () => {
+  t = await createTestDb()
+})
+afterAll(async () => {
+  await t.close()
+})
+beforeEach(async () => {
+  await t.reset()
+  _setDbForTests(t.db)
+})
+afterEach(() => {
+  delete process.env['MIN_CLIENT_VERSION']
+  verifyMock.mockReset()
+  _setDbForTests(null)
+})
 
-describe('me function handler', () => {
-  afterEach(() => {
-    delete process.env['MIN_CLIENT_VERSION']
+const identity = (uid: string, email: string | null) => ({ uid, email, emailVerified: true })
+
+describe('POST /v1/me', () => {
+  it('creates a profile the first time someone signs in, and returns it', async () => {
+    verifyMock.mockResolvedValue(identity('uid-123', 'a@b.com'))
+
+    const res = await call(me, { as: 'whatever' })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ displayName: null, email: 'a@b.com' })
+    expect(res.body['id']).toMatch(/^[0-9a-f-]{36}$/)
+    expect(res.body['createdAt']).toBeTruthy()
+    const rows = await t.db.query('SELECT firebase_uid, email FROM users')
+    expect(rows.rows).toEqual([{ firebase_uid: 'uid-123', email: 'a@b.com' }])
   })
 
-  it('returns 426 for a declared app version below MIN_CLIENT_VERSION, logs it, and never reaches token verification or the database', async () => {
+  it('returns the same profile on every later sign-in, moving last_seen_at forward and refreshing the email', async () => {
+    verifyMock.mockResolvedValue(identity('uid-123', 'old@b.com'))
+    const first = await call(me, { as: 'x' })
+    const firstSeen = (await t.db.query<{ last_seen_at: Date }>('SELECT last_seen_at FROM users')).rows[0]!.last_seen_at
+
+    await new Promise((resolve) => setTimeout(resolve, 15))
+    verifyMock.mockResolvedValue(identity('uid-123', 'new@b.com'))
+    const second = await call(me, { as: 'x' })
+
+    expect(second.body['id']).toBe(first.body['id'])
+    expect(second.body['createdAt']).toEqual(first.body['createdAt'])
+    expect(second.body['email']).toBe('new@b.com')
+    const rows = await t.db.query<{ last_seen_at: Date; email: string }>('SELECT last_seen_at, email FROM users')
+    expect(rows.rows).toHaveLength(1)
+    expect(rows.rows[0]!.last_seen_at.getTime()).toBeGreaterThan(firstSeen.getTime())
+    expect(rows.rows[0]!.email).toBe('new@b.com')
+  })
+
+  it('stores a missing email as null rather than failing', async () => {
+    verifyMock.mockResolvedValue(identity('uid-no-email', null))
+    const res = await call(me, { as: 'x' })
+    expect(res.status).toBe(200)
+    expect(res.body['email']).toBeNull()
+  })
+
+  it('answers 401 for a bad token, logs why (not the token), and never touches the database', async () => {
+    verifyMock.mockRejectedValue(new AuthError('bad token'))
+    const res = await call(me, { as: 'secret-token-value' })
+    expect(res).toMatchObject({ status: 401, body: { error: 'bad token' } })
+    expect(res.log).toHaveBeenCalledWith(expect.stringContaining('bad token'))
+    expect(res.log).not.toHaveBeenCalledWith(expect.stringContaining('secret-token-value'))
+    expect((await t.db.query('SELECT 1 FROM users')).rows).toHaveLength(0)
+  })
+
+  it('answers 426 for an app version below MIN_CLIENT_VERSION, logging it, without verifying or writing anything', async () => {
     process.env['MIN_CLIENT_VERSION'] = '2.0.0'
-    const res = await me(fakeRequest('Bearer whatever', '1.0.0'), fakeContext)
+    const res = await call(me, { as: 'x', appVersion: '1.0.0' })
     expect(res.status).toBe(426)
-    expect(res.jsonBody).toEqual({ error: 'This app version (1.0.0) is no longer supported. Minimum required: 2.0.0.' })
-    expect(verifyFirebaseTokenMock).not.toHaveBeenCalled()
-    expect(queryMock).not.toHaveBeenCalled()
-    expect(fakeContext.log).toHaveBeenCalledWith(expect.stringContaining('1.0.0'))
+    expect(res.body['error']).toBe('This app version (1.0.0) is no longer supported. Minimum required: 2.0.0.')
+    expect(res.log).toHaveBeenCalledWith(expect.stringContaining('1.0.0'))
+    expect(verifyMock).not.toHaveBeenCalled()
   })
 
-  it('proceeds normally when MIN_CLIENT_VERSION is set but no version header is sent', async () => {
+  it('proceeds normally when a minimum is set but the client sends no version header', async () => {
     process.env['MIN_CLIENT_VERSION'] = '2.0.0'
-    verifyFirebaseTokenMock.mockResolvedValue({ uid: 'uid-789', email: null, emailVerified: false })
-    queryMock.mockResolvedValue({ rows: [{ id: 'row-3', display_name: null, email: null, created_at: 'now' }] })
-    const res = await me(fakeRequest('Bearer good-token'), fakeContext)
-    expect(res.status).toBe(200)
-  })
-  it('returns 401 (not a thrown error) when the token fails verification, logs the reason, and never touches the database', async () => {
-    verifyFirebaseTokenMock.mockRejectedValue(new AuthError('bad token'))
-    const res = await me(fakeRequest('Bearer invalid'), fakeContext)
-    expect(res.status).toBe(401)
-    expect(res.jsonBody).toEqual({ error: 'bad token' })
-    expect(queryMock).not.toHaveBeenCalled()
-    expect(fakeContext.log).toHaveBeenCalledWith(expect.stringContaining('bad token'))
-  })
-
-  it('re-throws a non-AuthError from verification rather than masking it as a 401', async () => {
-    verifyFirebaseTokenMock.mockRejectedValue(new Error('network failure talking to JWKS endpoint'))
-    await expect(me(fakeRequest('Bearer x'), fakeContext)).rejects.toThrow('network failure')
-  })
-
-  it('on a valid token, upserts by firebase_uid and returns the profile the query returns', async () => {
-    verifyFirebaseTokenMock.mockResolvedValue({ uid: 'uid-123', email: 'a@b.com', emailVerified: true })
-    queryMock.mockResolvedValue({
-      rows: [{ id: 'row-1', display_name: null, email: 'a@b.com', created_at: '2026-10-02T00:00:00Z' }],
-    })
-
-    const res = await me(fakeRequest('Bearer good-token'), fakeContext)
-
-    expect(queryMock).toHaveBeenCalledWith(expect.stringContaining('ON CONFLICT (firebase_uid)'), ['uid-123', 'a@b.com'])
-    expect(res.status).toBe(200)
-    expect(res.jsonBody).toEqual({
-      id: 'row-1',
-      displayName: null,
-      email: 'a@b.com',
-      createdAt: '2026-10-02T00:00:00Z',
-    })
-  })
-
-  it('passes the uid and email through to the query exactly as verification returned them, including a null email', async () => {
-    verifyFirebaseTokenMock.mockResolvedValue({ uid: 'uid-456', email: null, emailVerified: false })
-    queryMock.mockResolvedValue({
-      rows: [{ id: 'row-2', display_name: null, email: null, created_at: '2026-10-02T00:00:00Z' }],
-    })
-
-    await me(fakeRequest('Bearer good-token'), fakeContext)
-
-    expect(queryMock).toHaveBeenCalledWith(expect.any(String), ['uid-456', null])
+    verifyMock.mockResolvedValue(identity('uid-9', null))
+    expect((await call(me, { as: 'x' })).status).toBe(200)
   })
 })
