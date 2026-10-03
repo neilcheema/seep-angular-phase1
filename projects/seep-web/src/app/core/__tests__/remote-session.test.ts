@@ -74,6 +74,11 @@ describe('RemoteSession: loading', () => {
     session.dispose()
   })
 
+  it('reports which kind of game it is, so a screen can decline kinds it cannot show', async () => {
+    const { api, getGame } = makeApi()
+    expect((await (async () => { getGame.mockResolvedValueOnce(snapshot(s0, 'player', 1)); const s = await open(api); s.dispose(); return s })()).kind()).toBe('two_player')
+  })
+
   it('rejects, and starts no polling, when the game cannot be loaded', async () => {
     const { api, getGame } = makeApi()
     getGame.mockRejectedValueOnce(new ApiError(404, 'Game not found.'))

@@ -39,6 +39,10 @@
       <div class="text-center text-sm" style="color: #ff8a8a; padding: 0 12px 6px;">{{ m }}</div>
     }
 
+    @if (remote() && s.turn !== 'player' && (s.phase === 'bidding' || s.phase === 'opening-move' || s.phase === 'playing') && !pendingReveal()) {
+      <div class="text-center text-sm" style="color: rgba(255,255,255,0.6); padding: 0 12px 6px;">Waiting for the other player…</div>
+    }
+
     @if (s.phase === 'bidding' && s.turn === 'player' && !pendingReveal()) {
       <div class="action-bar">
         <span style="color: rgba(255,255,255,0.75);">Choose your bid:</span>
@@ -73,7 +77,11 @@
         <p style="color: var(--gold-lt); font-size: 22px; font-weight: 800;">
           {{ s.winner === 'player' ? 'You won the bazzi!' : 'Opponent won the bazzi.' }}
         </p>
-        <button class="btn-gold" (click)="onPlayAgain()">Play again</button>
+        @if (remote()) {
+          <a class="btn-gold" routerLink="/online">Back to Play online</a>
+        } @else {
+          <button class="btn-gold" (click)="onPlayAgain()">Play again</button>
+        }
       </div>
     }
 
@@ -112,7 +120,7 @@
         <li>Clearing the whole floor is a sweep: 50 points normally, 25 if it happens on the very first move of the hand, 0 if it's the very last card played in the hand.</li>
         <li>Spades score their face value, other-suit aces score 1 point, and the Ten of Diamonds scores 6 — everything else is worth 0. Under 9 points in a hand scores 0.</li>
         <li>First player to lead by 100 points wins the match.</li>
-        <li>Every move — yours and the computer's — pauses so you can check it before play continues.</li>
+        <li>Every move — yours and {{ opponentPossessive() }} — pauses so you can check it before play continues.</li>
       </ul>
     </details>
   </div>

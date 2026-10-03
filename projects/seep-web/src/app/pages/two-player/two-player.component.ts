@@ -1,6 +1,6 @@
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core'
+import { Component, DestroyRef, type OnInit, computed, effect, inject, input, signal } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
-import { ActivatedRoute } from '@angular/router'
+import { ActivatedRoute, RouterLink } from '@angular/router'
 import { APP_VERSION, FEEDBACK_EMAIL } from '../../version'
 import {
   type Card as CardModel,
@@ -31,7 +31,7 @@ import { FloorItemComponent } from '../../components/floor-item/floor-item.compo
 import { PlayerHandComponent } from '../../components/player-hand/player-hand.component'
 import { CardComponent } from '../../components/card/card.component'
 import { LocalSession } from '../../core/local-session'
-import type { MoveEvent } from '../../core/game-session'
+import type { GameSession, MoveEvent } from '../../core/game-session'
 
 type RevealKind = 'capture' | 'build' | 'cement' | 'break' | 'throw' | 'bid'
 
@@ -76,16 +76,22 @@ const SUIT_SYMBOL: Record<Suit, string> = {
 @Component({
   selector: 'app-two-player',
   standalone: true,
-  imports: [StatusPanelComponent, OpponentHandComponent, FloorItemComponent, PlayerHandComponent, CardComponent],
+  imports: [StatusPanelComponent, OpponentHandComponent, FloorItemComponent, PlayerHandComponent, CardComponent, RouterLink],
   templateUrl: './two-player.component.html',
 })
-export class TwoPlayerComponent {
+export class TwoPlayerComponent implements OnInit {
   private readonly route = inject(ActivatedRoute)
   private readonly destroyRef = inject(DestroyRef)
 
   readonly appVersion = APP_VERSION
 
-  readonly session = signal<LocalSession | null>(null)
+  /**
+   * A game already in progress against another person, supplied by the online
+   * table screen. When absent this page plays the bots, exactly as it always has.
+   */
+  readonly remote = input<GameSession<GameView, Intent, PlayerId> | null>(null)
+  readonly session = signal<GameSession<GameView, Intent, PlayerId> | null>(null)
+  readonly opponentPossessive = computed(() => (this.remote() ? "the other player's" : "the computer's"))
   readonly state = computed<GameView | null>(() => this.session()?.view() ?? null)
   readonly selectedCard = signal<CardModel | null>(null)
   readonly selectedFloorIds = signal<string[]>([])
@@ -200,6 +206,12 @@ export class TwoPlayerComponent {
     () => !!(this.state() && this.selectedCard() && this.selectedHouses().length === 1 && !this.isOpening()),
   )
 
+  /** Adopts a supplied online session before the first render, so there is no flash of the "Deal" screen. */
+  ngOnInit(): void {
+    const remote = this.remote()
+    if (remote) this.session.set(remote)
+  }
+
   constructor() {
     this.destroyRef.onDestroy(() => this.session()?.dispose())
 
@@ -222,11 +234,11 @@ export class TwoPlayerComponent {
 
   startNewGame(): void {
     const existing = this.session()
-    if (existing) {
+    if (existing instanceof LocalSession) {
       existing.startNewMatch()
-    } else {
+    } else if (!existing) {
       this.session.set(new LocalSession('player', 'player'))
-    }
+    } // an online game is never restarted from here: a new table is a new game
     this.clearSelection()
     this.message.set(null)
     this.log.set([])

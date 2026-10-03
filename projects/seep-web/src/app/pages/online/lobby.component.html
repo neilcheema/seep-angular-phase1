@@ -1,0 +1,104 @@
+<div class="game-root">
+  <div class="flex flex-1 flex-col items-center gap-5 px-6 py-8 text-center" style="overflow-y: auto;">
+    <a routerLink="/" style="align-self: flex-start; color: rgba(255,255,255,0.6); font-size: 13px;">← Home</a>
+    <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">Play online</h1>
+
+    @if (!ready()) {
+      <p style="color: rgba(255,255,255,0.7);">Loading…</p>
+    } @else {
+    @if (identity(); as who) {
+      <div class="flex items-center gap-3" style="color: rgba(255,255,255,0.7); font-size: 13px;">
+        <span>Signed in as {{ who.email ?? who.displayName ?? 'you' }}</span>
+        <button type="button" class="btn-outline" style="padding: 4px 10px;" (click)="signOut()">Sign out</button>
+      </div>
+
+      @if (error(); as e) {
+        <p role="alert" style="color: #ff8a8a; max-width: 420px;">{{ e }}</p>
+      }
+      @if (linkCode() && working()) {
+        <p style="color: rgba(255,255,255,0.75);">Taking your seat at table {{ linkCode() }}…</p>
+      }
+
+      <section class="flex flex-col items-center gap-3" style="width: 100%; max-width: 360px;">
+        <h2 class="text-xl font-bold" style="color: var(--gold-lt);">Start a table</h2>
+        <button type="button" class="btn-gold" [disabled]="working()" (click)="createTable()">Start a 2-player table</button>
+        <p style="color: rgba(255,255,255,0.55); font-size: 13px;">You will get a link to send to your opponent.</p>
+      </section>
+
+      <section class="flex flex-col items-center gap-3" style="width: 100%; max-width: 360px;">
+        <h2 class="text-xl font-bold" style="color: var(--gold-lt);">Join a table</h2>
+        <form class="flex items-end gap-2" (submit)="joinWithCode($event, code.value)">
+          <div class="flex flex-col items-start gap-1">
+            <label for="code" style="color: rgba(255,255,255,0.7); font-size: 13px;">Table code</label>
+            <input
+              #code
+              id="code"
+              type="text"
+              maxlength="6"
+              autocomplete="off"
+              autocapitalize="characters"
+              style="width: 9em; padding: 8px 10px; border-radius: 8px; letter-spacing: 0.2em; text-transform: uppercase; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); color: #fff;"
+            />
+          </div>
+          <button type="submit" class="btn-gold" [disabled]="working()">Join</button>
+        </form>
+      </section>
+
+      @if (games().length > 0) {
+        <section class="flex flex-col gap-2" style="width: 100%; max-width: 360px;">
+          <h2 class="text-xl font-bold" style="color: var(--gold-lt);">Your tables</h2>
+          @for (g of games(); track g.gameId) {
+            <div class="flex items-center justify-between gap-3" style="padding: 8px 10px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;">
+              <span style="color: rgba(255,255,255,0.8); font-size: 14px; text-align: left;">
+                {{ g.kind === 'two_player' ? '2-player' : '4-player' }} · {{ statusText(g) }}
+              </span>
+              <button type="button" class="btn-outline" style="padding: 4px 12px;" (click)="open(g)">Open</button>
+            </div>
+          }
+        </section>
+      }
+    } @else {
+      <section class="flex flex-col items-center gap-3" style="width: 100%; max-width: 340px;">
+        @if (linkCode(); as invited) {
+          <p style="color: rgba(255,255,255,0.85);">You have been invited to table <strong>{{ invited }}</strong>. Sign in to take your seat.</p>
+        } @else {
+          <p style="color: rgba(255,255,255,0.75);">Sign in to play against a friend. It is free.</p>
+        }
+
+        <button type="button" class="btn-gold" [disabled]="authBusy()" (click)="signInWithGoogle()">Continue with Google</button>
+        <p style="color: rgba(255,255,255,0.5); font-size: 13px;">or use an email address</p>
+
+        <form class="flex flex-col items-stretch gap-2" style="width: 100%;" (submit)="submitCredentials($event, email.value, password.value)">
+          <label for="email" style="color: rgba(255,255,255,0.7); font-size: 13px; text-align: left;">Email</label>
+          <input
+            #email
+            id="email"
+            type="email"
+            autocomplete="email"
+            required
+            style="padding: 8px 10px; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); color: #fff;"
+          />
+          <label for="password" style="color: rgba(255,255,255,0.7); font-size: 13px; text-align: left;">Password</label>
+          <input
+            #password
+            id="password"
+            type="password"
+            [attr.autocomplete]="mode() === 'signup' ? 'new-password' : 'current-password'"
+            required
+            minlength="6"
+            style="padding: 8px 10px; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); color: #fff;"
+          />
+          <button type="submit" class="btn-gold" [disabled]="authBusy()">{{ mode() === 'signup' ? 'Create account' : 'Sign in' }}</button>
+        </form>
+        <button type="button" class="btn-outline" (click)="toggleMode()">
+          {{ mode() === 'signup' ? 'I already have an account' : 'Create an account instead' }}
+        </button>
+
+        @if (authError(); as e) {
+          <p role="alert" style="color: #ff8a8a;">{{ e }}</p>
+        }
+      </section>
+    }
+    }
+  </div>
+</div>

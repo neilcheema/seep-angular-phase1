@@ -1,5 +1,5 @@
 import { signal } from '@angular/core'
-import type { GameStatus, GameSnapshotDto, MutationDto, PlayerInfoDto } from './api-types'
+import type { GameKind, GameStatus, GameSnapshotDto, MutationDto, PlayerInfoDto } from './api-types'
 import { ApiError, type GameApi } from './game-api'
 import type { GameSession, MoveEvent } from './game-session'
 import type { Perspective } from './perspective'
@@ -39,6 +39,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
   readonly view = signal<TView | null>(null)
   readonly lastMove = signal<MoveEvent<TView, TIntent, TActor> | null>(null)
   readonly status = signal<GameStatus>('waiting')
+  /** Which game this is (set once loaded), so a screen can decline kinds it can't show. */
+  readonly kind = signal<GameKind | null>(null)
   readonly players = signal<PlayerInfoDto[]>([])
   readonly inviteCode = signal<string | null>(null)
   /** The viewer's own seat, in the server's absolute names. */
@@ -149,6 +151,7 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
     const after = this.options.perspective.view(res.view, res.seat)
     this.version = res.version
     this.seat.set(res.seat)
+    this.kind.set(res.kind)
     this.status.set(res.status)
     this.players.set(res.players)
     this.inviteCode.set(res.inviteCode)
