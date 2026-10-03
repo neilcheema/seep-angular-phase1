@@ -20,10 +20,10 @@
  */
 const base = (process.argv[2] ?? '').replace(/\/+$/, '')
 const API_KEY = process.env.FIREBASE_API_KEY
-const IDENTITY = (process.env.IDENTITY_TOOLKIT_URL ?? 'https://identitytoolkit.googleapis.com').replace(/\/+$/, '')
-const PASSWORD = process.env.TEST_PASSWORD ?? 'TestPassword123!' // lives in code, not on a command line: a "!" in a bash command line is history expansion
-const EMAIL_A = process.env.EMAIL_A ?? 'phase3-test@seep.quest'
-const EMAIL_B = process.env.EMAIL_B ?? 'phase4-test-b@seep.quest'
+const IDENTITY = (process.env.IDENTITY_TOOLKIT_URL || 'https://identitytoolkit.googleapis.com').replace(/\/+$/, '')
+const PASSWORD = process.env.TEST_PASSWORD || 'TestPassword123!' // lives in code, not on a command line: a "!" in a bash command line is history expansion
+const EMAIL_A = process.env.EMAIL_A || 'phase3-test@seep.quest'
+const EMAIL_B = process.env.EMAIL_B || 'phase4-test-b@seep.quest'
 
 const usage = () => {
   console.error('Usage:\n  FIREBASE_API_KEY=<apiKey> node scripts/live-smoke.mjs <base url>\n  TOKEN_A=<id token> TOKEN_B=<id token> node scripts/live-smoke.mjs <base url>')
@@ -59,8 +59,13 @@ async function tokenFor(email) {
   throw new Error(`Firebase could not create ${email}: ${created.message}`)
 }
 
-let TOKEN_A = process.env.TOKEN_A
-let TOKEN_B = process.env.TOKEN_B
+// With an API key the script fetches fresh tokens itself and ignores any TOKEN_A / TOKEN_B left in the
+// environment: a reused terminal session can easily still hold stale or junk values from an earlier attempt.
+let TOKEN_A = API_KEY ? undefined : process.env.TOKEN_A
+let TOKEN_B = API_KEY ? undefined : process.env.TOKEN_B
+if (API_KEY && (process.env.TOKEN_A || process.env.TOKEN_B)) {
+  console.log('Note: ignoring TOKEN_A / TOKEN_B from the environment because FIREBASE_API_KEY is set; fetching fresh tokens.\n')
+}
 try {
   TOKEN_A ||= await tokenFor(EMAIL_A)
   TOKEN_B ||= await tokenFor(EMAIL_B)
@@ -80,7 +85,7 @@ let checks = 0
 let failures = 0
 
 async function api(token, method, path, body) {
-  const headers = { 'content-type': 'application/json', 'x-app-version': process.env.APP_VERSION ?? '1.4.0' }
+  const headers = { 'content-type': 'application/json', 'x-app-version': process.env.APP_VERSION || '1.4.0' }
   if (token) headers.authorization = `Bearer ${token}`
   const res = await fetch(`${base}/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   const text = await res.text()

@@ -111,7 +111,13 @@ afterAll(async () => {
 
 function runScript(env: Record<string, string>): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
-    const child = spawn('node', [join(__dirname, '..', '..', 'scripts', 'live-smoke.mjs'), baseUrl], { env: { ...process.env, ...env } })
+    // Start from the caller's environment minus every setting the script reads, so a developer's
+    // leftover TOKEN_A or exported FIREBASE_API_KEY can never change what these tests mean.
+    const clean: Record<string, string | undefined> = { ...process.env }
+    for (const name of ['TOKEN_A', 'TOKEN_B', 'FIREBASE_API_KEY', 'IDENTITY_TOOLKIT_URL', 'EMAIL_A', 'EMAIL_B', 'TEST_PASSWORD', 'APP_VERSION']) {
+      delete clean[name]
+    }
+    const child = spawn('node', [join(__dirname, '..', '..', 'scripts', 'live-smoke.mjs'), baseUrl], { env: { ...clean, ...env } })
     let out = ''
     child.stdout.on('data', (d: Buffer) => (out += d.toString()))
     child.stderr.on('data', (d: Buffer) => (out += d.toString()))
@@ -168,6 +174,13 @@ describe('scripts/live-smoke.mjs', () => {
       const { code, out } = await viaFirebase({ FIREBASE_API_KEY: 'not-the-key' })
       expect(code).toBe(2)
       expect(out).toMatch(/API key not valid/)
+    })
+
+    it('ignores stale TOKEN_A / TOKEN_B left in the environment, and says so (the reused-terminal trap)', async () => {
+      const { code, out } = await viaFirebase({ TOKEN_A: 'undefined', TOKEN_B: 'undefined' })
+      expect(out).toMatch(/ignoring TOKEN_A \/ TOKEN_B/)
+      expect(out).toMatch(/PASS/)
+      expect(code).toBe(0)
     })
 
     it('can use its own email addresses', async () => {

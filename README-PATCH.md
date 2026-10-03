@@ -40,7 +40,10 @@ if all passed. If it cannot get started it says why in plain words (wrong API ke
 an account whose password differs, a "token" that is not a token) instead of
 failing obscurely inside the API. It leaves one ordinary game in the database.
 
-(Tokens can still be supplied directly with `TOKEN_A=... TOKEN_B=...` instead.
+(Tokens can still be supplied directly with `TOKEN_A=... TOKEN_B=...` instead,
+but only when `FIREBASE_API_KEY` is not set: with a key present the script always
+fetches fresh tokens and ignores any `TOKEN_A` / `TOKEN_B` left over in the
+environment, because a reused terminal session can hold stale or junk values.
 Do not build them with a shell helper: a `!` inside double quotes is history
 expansion in bash, which is how an earlier version of these instructions broke.)
 
