@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HttpRequest, InvocationContext } from '@azure/functions'
 
 // Same hoisting note as auth.test.ts: vi.mock is hoisted above these
@@ -15,14 +15,36 @@ vi.mock('../lib/db', () => ({ getPool: () => ({ query: queryMock }) }))
 import { AuthError } from '../lib/auth'
 import { me } from '../functions/me'
 
-function fakeRequest(authHeader: string | null): HttpRequest {
+function fakeRequest(authHeader: string | null, appVersion?: string): HttpRequest {
   const headers = new Headers()
   if (authHeader !== null) headers.set('authorization', authHeader)
+  if (appVersion !== undefined) headers.set('x-app-version', appVersion)
   return { headers } as HttpRequest
 }
 const fakeContext = { log: vi.fn() } as unknown as InvocationContext
 
 describe('me function handler', () => {
+  afterEach(() => {
+    delete process.env['MIN_CLIENT_VERSION']
+  })
+
+  it('returns 426 for a declared app version below MIN_CLIENT_VERSION, logs it, and never reaches token verification or the database', async () => {
+    process.env['MIN_CLIENT_VERSION'] = '2.0.0'
+    const res = await me(fakeRequest('Bearer whatever', '1.0.0'), fakeContext)
+    expect(res.status).toBe(426)
+    expect(res.jsonBody).toEqual({ error: 'This app version (1.0.0) is no longer supported. Minimum required: 2.0.0.' })
+    expect(verifyFirebaseTokenMock).not.toHaveBeenCalled()
+    expect(queryMock).not.toHaveBeenCalled()
+    expect(fakeContext.log).toHaveBeenCalledWith(expect.stringContaining('1.0.0'))
+  })
+
+  it('proceeds normally when MIN_CLIENT_VERSION is set but no version header is sent', async () => {
+    process.env['MIN_CLIENT_VERSION'] = '2.0.0'
+    verifyFirebaseTokenMock.mockResolvedValue({ uid: 'uid-789', email: null, emailVerified: false })
+    queryMock.mockResolvedValue({ rows: [{ id: 'row-3', display_name: null, email: null, created_at: 'now' }] })
+    const res = await me(fakeRequest('Bearer good-token'), fakeContext)
+    expect(res.status).toBe(200)
+  })
   it('returns 401 (not a thrown error) when the token fails verification, logs the reason, and never touches the database', async () => {
     verifyFirebaseTokenMock.mockRejectedValue(new AuthError('bad token'))
     const res = await me(fakeRequest('Bearer invalid'), fakeContext)
