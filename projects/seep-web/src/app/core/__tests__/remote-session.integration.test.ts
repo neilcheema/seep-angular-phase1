@@ -262,7 +262,10 @@ describe('the turn clock, through the real server', () => {
     expect((mover.view() as { log: string[] }).log.at(-1)).toBe('You ran out of time and forfeited the match.')
     expect(waiter.lastMove()).toBeNull()
     expect(mover.lastMove()).toBeNull()
-    expect(vi.getTimerCount()).toBe(2) // no fast polling: just each screen's slow listen for a rematch
+    // No fast polling: just each screen's own slow listen for a rematch. Asked of the sessions themselves, because the global
+    // fake-timer count also includes timers belonging to the database driver, which can still be draining a last query.
+    const holdingATimer = sessions.filter((x) => (x as unknown as { timer: unknown }).timer !== null)
+    expect(holdingATimer).toHaveLength(2)
     await expect(mover.submit({ type: 'bid', value: 9 })).rejects.toThrow(/over/i)
     sessions.forEach((s) => s.dispose())
   })

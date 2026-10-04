@@ -14,7 +14,7 @@
 }
 @if (state(); as s) {
   <div class="game-root">
-    <app-four-player-status-panel [state]="s" [mySeat]="mySeat()" />
+    <app-four-player-status-panel [state]="s" [mySeat]="mySeat()" [seatNames]="seatNames()" />
     <div class="gold-line"></div>
 
     <div class="partner-row">

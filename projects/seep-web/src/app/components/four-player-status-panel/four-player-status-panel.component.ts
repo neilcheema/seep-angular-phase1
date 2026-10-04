@@ -1,5 +1,6 @@
 import { Component, computed, input } from '@angular/core'
-import { type FourPlayerGameView, SeatId, partnerOf, teamOf } from 'seep-engine'
+import { type FourPlayerGameView, SeatId, teamOf } from 'seep-engine'
+import { type SeatNames, fourPlayerSeatLabel, relabelFourPlayerLine } from '../../core/board-names'
 
 const PHASE_LABEL: Record<FourPlayerGameView['phase'], string> = {
   bidding: 'Bidding',
@@ -7,13 +8,6 @@ const PHASE_LABEL: Record<FourPlayerGameView['phase'], string> = {
   playing: 'In play',
   'hand-over': 'Hand over',
   'match-over': 'Match over',
-}
-
-const SEAT_LABEL: Record<SeatId, string> = {
-  p1: 'Player 1',
-  p2: 'Player 2',
-  p3: 'Player 3',
-  p4: 'Player 4',
 }
 
 /**
@@ -30,6 +24,8 @@ const SEAT_LABEL: Record<SeatId, string> = {
 export class FourPlayerStatusPanelComponent {
   readonly state = input.required<FourPlayerGameView>()
   readonly mySeat = input<SeatId>(SeatId.P1)
+  /** The names people chose, by seat (never set against the computer). */
+  readonly seatNames = input<SeatNames>({})
   /** Which team the viewer is on, so their own team can be marked "(You & Partner)" whichever it is. */
   readonly myTeam = computed(() => teamOf(this.mySeat()))
 
@@ -39,13 +35,12 @@ export class FourPlayerStatusPanelComponent {
 
   get bidderLabel(): string {
     const bidder = this.state().bidder
-    if (bidder === this.mySeat()) return 'You'
-    if (bidder === partnerOf(this.mySeat())) return 'Your partner'
-    return SEAT_LABEL[bidder]
+    return fourPlayerSeatLabel(bidder, this.mySeat(), this.seatNames())
   }
 
   get lastLog(): string | undefined {
     const log = this.state().log
-    return log[log.length - 1]
+    const last = log[log.length - 1]
+    return last === undefined ? undefined : relabelFourPlayerLine(last, (seat) => fourPlayerSeatLabel(seat, this.mySeat(), this.seatNames()))
   }
 }

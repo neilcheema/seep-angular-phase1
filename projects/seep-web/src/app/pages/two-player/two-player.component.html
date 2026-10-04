@@ -12,10 +12,13 @@
 }
 @if (state(); as s) {
   <div class="game-root">
-    <app-status-panel [state]="s" />
+    <app-status-panel [state]="s" [opponentName]="opponentName()" />
     <div class="gold-line"></div>
 
     <div class="flex flex-col items-center gap-1 py-2">
+      @if (opponentName(); as name) {
+        <span id="opponent-name" style="font-size: 12px; color: rgba(255,255,255,0.65);">{{ name }}</span>
+      }
       <app-opponent-hand [count]="s.opponentCardCount" />
     </div>
 
@@ -70,7 +73,7 @@
     @if (s.phase === 'hand-over' && !pendingReveal()) {
       <div class="flex flex-col items-center gap-3 py-4">
         <p style="color: var(--gold-lt); font-weight: 700;">
-          Hand complete — you {{ s.lastHandTotals!.player.total }} · opponent {{ s.lastHandTotals!.opponent.total }}
+          Hand complete — you {{ s.lastHandTotals!.player.total }} · {{ opponentName() ?? 'opponent' }} {{ s.lastHandTotals!.opponent.total }}
         </p>
         <button class="btn-gold" [disabled]="busy()" (click)="onDealNext()">Deal next hand</button>
       </div>
@@ -79,7 +82,7 @@
     @if (s.phase === 'match-over' && !pendingReveal()) {
       <div class="flex flex-col items-center gap-3 py-6">
         <p style="color: var(--gold-lt); font-size: 22px; font-weight: 800;">
-          {{ s.winner === 'player' ? 'You won the bazzi!' : 'Opponent won the bazzi.' }}
+          {{ s.winner === 'player' ? 'You won the bazzi!' : opponentLabel() + ' won the bazzi.' }}
         </p>
         @if (remote()) {
           @if (rematchOffered()) {

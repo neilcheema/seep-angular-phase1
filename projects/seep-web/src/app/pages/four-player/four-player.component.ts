@@ -1,4 +1,4 @@
-import { Component, DestroyRef, type OnInit, computed, effect, inject, input, signal } from '@angular/core'
+import { Component, DestroyRef, type OnInit, computed, effect, inject, input, signal, untracked } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, RouterLink } from '@angular/router'
 import { APP_VERSION, FEEDBACK_EMAIL } from '../../version'
@@ -34,6 +34,7 @@ import { FourPlayerFloorItemComponent } from '../../components/four-player-floor
 import { PlayerHandComponent } from '../../components/player-hand/player-hand.component'
 import { CardComponent } from '../../components/card/card.component'
 import { LocalFourPlayerSession } from '../../core/local-four-player-session'
+import { type SeatNames, fourPlayerSeatLabel } from '../../core/board-names'
 import type { GameSession, MoveEvent } from '../../core/game-session'
 
 type RevealKind = 'capture' | 'build' | 'cement' | 'break' | 'throw' | 'bid'
@@ -143,6 +144,8 @@ export class FourPlayerComponent implements OnInit {
   /** A line of text about the turn clock, supplied by the online table screen (never set against the bots). */
   readonly clockLine = input<string | null>(null)
   readonly clockUrgent = input(false)
+  /** The names people chose, by seat (supplied by the online table screen; never set against the computer). */
+  readonly seatNames = input<SeatNames>({})
   readonly session = signal<GameSession<FourPlayerGameView, FourPlayerIntent, SeatId> | null>(null)
   readonly opponentPossessive = computed(() => (this.remote() ? "the other players'" : "the computer's"))
   readonly state = computed<FourPlayerGameView | null>(() => this.session()?.view() ?? null)
@@ -287,7 +290,9 @@ export class FourPlayerComponent implements OnInit {
       if (!session) return
       const move = session.lastMove()
       if (!move) return
-      this.reveal(this.buildReveal(move), move.after.floor)
+      // Only the MOVE should trigger a reveal. Building it reads the viewer's seat, names and so on; if the effect tracked
+      // those, any change to them would re-show a move the player had already dismissed.
+      untracked(() => this.reveal(this.buildReveal(move), move.after.floor))
     })
   }
 
@@ -322,14 +327,13 @@ export class FourPlayerComponent implements OnInit {
 
   /** How to refer to a seat in running text (the move-reveal overlay, the move log) — relative to the viewer, not the seat's fixed identity. */
   seatTag(seat: SeatId): string {
-    if (seat === this.mySeat()) return 'You'
-    if (seat === this.partnerSeat()) return 'Your partner'
-    return SEAT_LABEL[seat]
+    return fourPlayerSeatLabel(seat, this.mySeat(), this.seatNames())
   }
 
   /** How to label a seat's hand around the table (the partner row, the two side hands) — always names the seat, adding the relationship only for the partner, matching how the page has always labeled that one specially. */
   seatHeaderLabel(seat: SeatId): string {
-    return seat === this.partnerSeat() ? `${SEAT_LABEL[seat]} \u00b7 Your partner` : SEAT_LABEL[seat]
+    const base = this.seatNames()[seat] ?? SEAT_LABEL[seat]
+    return seat === this.partnerSeat() ? `${base} \u00b7 Your partner` : base
   }
 
   dismissReveal(): void {

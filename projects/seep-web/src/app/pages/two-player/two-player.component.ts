@@ -1,4 +1,4 @@
-import { Component, DestroyRef, type OnInit, computed, effect, inject, input, output, signal } from '@angular/core'
+import { Component, DestroyRef, type OnInit, computed, effect, inject, input, output, signal, untracked } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, RouterLink } from '@angular/router'
 import { APP_VERSION, FEEDBACK_EMAIL } from '../../version'
@@ -99,6 +99,10 @@ export class TwoPlayerComponent implements OnInit {
   readonly rematchError = input<string | null>(null)
   /** The person pressed Rematch (or Join rematch). The online table screen makes the request. */
   readonly rematch = output<void>()
+  /** The other player's chosen name, when playing a person (supplied by the online table screen). */
+  readonly opponentName = input<string | null>(null)
+  /** How the opponent is referred to: their name if they chose one, else the generic word. */
+  readonly opponentLabel = computed(() => this.opponentName() ?? 'Opponent')
   readonly session = signal<GameSession<GameView, Intent, PlayerId> | null>(null)
   readonly opponentPossessive = computed(() => (this.remote() ? "the other player's" : "the computer's"))
   readonly state = computed<GameView | null>(() => this.session()?.view() ?? null)
@@ -237,7 +241,8 @@ export class TwoPlayerComponent implements OnInit {
       if (!session) return
       const move = session.lastMove()
       if (!move) return
-      this.reveal(this.buildReveal(move), move.after.floor)
+      // Only the MOVE should trigger a reveal; building it must not make this effect depend on anything else it reads.
+      untracked(() => this.reveal(this.buildReveal(move), move.after.floor))
     })
   }
 
@@ -263,7 +268,7 @@ export class TwoPlayerComponent implements OnInit {
   }
 
   whoTag(who: PlayerId): string {
-    return who === 'player' ? 'You' : 'Opponent'
+    return who === 'player' ? 'You' : this.opponentLabel()
   }
 
   dismissReveal(): void {
@@ -459,7 +464,7 @@ export class TwoPlayerComponent implements OnInit {
     const hasPlayer = owners.includes('player')
     const hasOpponent = owners.includes('opponent')
     if (hasPlayer && hasOpponent) return 'Shared'
-    return hasPlayer ? 'Yours' : "Opponent's"
+    return hasPlayer ? 'Yours' : `${this.opponentLabel()}'s`
   }
 
   private shortCard(c: CardModel): string {

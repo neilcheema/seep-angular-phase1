@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import type { FourPlayerGameView, FourPlayerIntent, GameView, Intent, PlayerId, SeatId } from 'seep-engine'
 import { partnerOf, teamOf } from 'seep-engine'
+import { opponentNameOf, sameNames, seatNamesOf } from '../../core/board-names'
 import { seatLine } from '../../core/display-names'
 import { ApiError } from '../../core/game-api'
 import { AUTH, ONLINE_API } from '../../core/online'
@@ -54,6 +55,11 @@ export class OnlineGameComponent {
     const code = this.session()?.inviteCode()
     return code ? `${window.location.origin}/join/${code}` : null
   })
+
+  // --- names on the boards ---
+  readonly opponentName = computed(() => opponentNameOf(this.two()?.players() ?? []))
+  /** Compared by content: the player list is a new array after every server update, but the names rarely change. */
+  readonly seatNames = computed(() => seatNamesOf(this.four()?.players() ?? []), { equal: sameNames })
 
   // --- the waiting panel, for a table that needs several people ---
   /** One line per seat for the list of who has arrived, e.g. "Player 2 — Bob". */

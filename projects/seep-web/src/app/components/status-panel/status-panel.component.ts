@@ -1,5 +1,6 @@
 import { Component, input } from '@angular/core';
 import type { GameView } from 'seep-engine';
+import { relabelTwoPlayerLine } from '../../core/board-names';
 
 const PHASE_LABEL: Record<GameView['phase'], string> = {
   bidding: 'Bidding',
@@ -17,6 +18,8 @@ const PHASE_LABEL: Record<GameView['phase'], string> = {
 })
 export class StatusPanelComponent {
   readonly state = input.required<GameView>();
+  /** The other player's chosen name, when playing a person (never set against the computer). */
+  readonly opponentName = input<string | null>(null);
 
   get phaseLabel(): string {
     return PHASE_LABEL[this.state().phase];
@@ -24,6 +27,7 @@ export class StatusPanelComponent {
 
   get lastLog(): string | undefined {
     const log = this.state().log;
-    return log[log.length - 1];
+    const last = log[log.length - 1];
+    return last === undefined ? undefined : relabelTwoPlayerLine(last, this.opponentName());
   }
 }
