@@ -1,6 +1,8 @@
 import { app } from '@azure/functions'
 import { getDb } from '../lib/db'
-import { authed } from '../lib/http'
+import { cleanDisplayName } from '../lib/display-name'
+import { BadRequestError } from '../lib/errors'
+import { authed, readJsonBody } from '../lib/http'
 
 /**
  * POST /api/v1/me — verifies the bearer token, then upserts a users row
@@ -8,20 +10,32 @@ import { authed } from '../lib/http'
  * last_seen_at, refreshing email) on every call after. A client calls this
  * once when it signs in. Version check, token verification and error
  * mapping all live in authed().
+ *
+ * The body is optional. If it carries a displayName, that is checked
+ * (lib/display-name.ts) and saved; if it does not, whatever name the person
+ * already chose is left alone, so the sign-in call can never erase it.
  */
-export const me = authed(async ({ identity }) => {
+export const me = authed(async ({ request, identity }) => {
+  const body = await readJsonBody(request, { optional: true })
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new BadRequestError('Request body must be a JSON object.')
+  }
+  const given = (body as Record<string, unknown>)['displayName']
+  const displayName = given === undefined ? null : cleanDisplayName(given)
+
   const result = await getDb().query<{
     id: string
     display_name: string | null
     email: string | null
     created_at: string
   }>(
-    `INSERT INTO users (firebase_uid, email, last_seen_at)
-     VALUES ($1, $2, now())
+    `INSERT INTO users (firebase_uid, email, display_name, last_seen_at)
+     VALUES ($1, $2, $3, now())
      ON CONFLICT (firebase_uid)
-     DO UPDATE SET last_seen_at = now(), email = EXCLUDED.email
+     DO UPDATE SET last_seen_at = now(), email = EXCLUDED.email,
+                   display_name = COALESCE(EXCLUDED.display_name, users.display_name)
      RETURNING id, display_name, email, created_at`,
-    [identity.uid, identity.email],
+    [identity.uid, identity.email, displayName],
   )
   const profile = result.rows[0]!
   return {

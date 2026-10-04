@@ -7,7 +7,8 @@ import type { ClockState } from './remote-session'
  */
 export interface ClockNames {
   readonly nameOf: (seat: string) => string
-  readonly sameTeam: (seat: string) => boolean
+  /** Only at a table with teams. Without it (two-player) the player on the clock forfeits alone. */
+  readonly sameTeam?: (seat: string) => boolean
 }
 
 export interface ClockLine {
@@ -43,11 +44,11 @@ export function describeClock(clock: ClockState | null, mySeat: string | null, n
 
   const left = clock.forfeitAfterMs - elapsed
   if (mine) {
-    const penalty = names ? 'your team forfeits' : 'you forfeit'
+    const penalty = names?.sameTeam ? 'your team forfeits' : 'you forfeit'
     return { text: left > 0 ? `Out of time! Move within ${mmss(left)} or ${penalty} the match` : 'Out of time!', urgent: true }
   }
   if (names) {
-    const penalty = names.sameTeam(clock.seat) ? 'Your team forfeits' : 'Their team forfeits'
+    const penalty = names.sameTeam === undefined ? 'They forfeit' : names.sameTeam(clock.seat) ? 'Your team forfeits' : 'Their team forfeits'
     return { text: left > 0 ? `${who} is out of time. ${penalty} the match in ${mmss(left)}` : `${who} ran out of time…`, urgent: true }
   }
   return { text: left > 0 ? `They are out of time. They forfeit the match in ${mmss(left)}` : 'They ran out of time…', urgent: true }

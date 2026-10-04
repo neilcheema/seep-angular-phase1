@@ -12,6 +12,47 @@
         <button type="button" class="btn-outline" style="padding: 4px 10px;" (click)="signOut()">Sign out</button>
       </div>
 
+      @if (profileName(); as name) {
+        @if (!needName()) {
+          <div style="color: rgba(255,255,255,0.85); font-size: 14px;">
+            Playing as <strong id="my-name">{{ name }}</strong>
+            <button type="button" id="change-name" class="btn-outline" style="padding: 2px 8px; margin-left: 6px;" (click)="changeName()">Change</button>
+          </div>
+        }
+      }
+
+      @if (needName()) {
+        <section id="name-step" class="flex flex-col items-center gap-3" style="width: 100%; max-width: 360px;">
+          <h2 class="text-xl font-bold" style="color: var(--gold-lt);">What should we call you?</h2>
+          <p style="color: rgba(255,255,255,0.65); font-size: 13px;">
+            This is the name the people you play with will see. Use 2 to 20 letters or numbers, in any language.
+            @if (linkCode()) {
+              Then you will take your seat at table {{ linkCode() }}.
+            }
+          </p>
+          <form class="flex items-end gap-2" (submit)="saveName($event, nameInput.value)">
+            <div class="flex flex-col items-start gap-1">
+              <label for="display-name" style="color: rgba(255,255,255,0.7); font-size: 13px;">Your name</label>
+              <input
+                #nameInput
+                id="display-name"
+                type="text"
+                maxlength="40"
+                autocomplete="nickname"
+                [value]="nameSuggestion()"
+                style="width: 12em; padding: 8px 10px; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); color: #fff;"
+              />
+            </div>
+            <button type="submit" class="btn-gold" [disabled]="nameSaving()">Save name</button>
+            @if (profileName()) {
+              <button type="button" class="btn-outline" (click)="cancelNameChange()">Cancel</button>
+            }
+          </form>
+          @if (nameError(); as e) {
+            <p id="name-error" role="alert" style="color: #ff8a8a; max-width: 360px;">{{ e }}</p>
+          }
+        </section>
+      } @else {
       @if (error(); as e) {
         <p role="alert" style="color: #ff8a8a; max-width: 420px;">{{ e }}</p>
       }
@@ -60,6 +101,7 @@
             </div>
           }
         </section>
+      }
       }
     } @else {
       <section class="flex flex-col items-center gap-3" style="width: 100%; max-width: 340px;">

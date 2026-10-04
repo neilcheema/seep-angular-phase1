@@ -127,6 +127,15 @@ async function main() {
     const me = await api(token, 'POST', '/v1/me')
     check(`${who} signs in (POST /v1/me)`, me.status === 200 && me.json?.id, `${me.status} ${me.text.slice(0, 120)}`)
   }
+  // A name is chosen through the same call, so this runs the real upsert on the real database: the name is saved, a bad one
+  // is refused without changing it, and the next plain sign-in (which sends no name) must not erase it.
+  const named = await api(TOKEN_A, 'POST', '/v1/me', { displayName: 'Smoke A' })
+  check('A chooses a display name', named.status === 200 && named.json?.displayName === 'Smoke A', `${named.status} ${named.text.slice(0, 120)}`)
+  const badName = await api(TOKEN_A, 'POST', '/v1/me', { displayName: '<b>x</b>' })
+  check('a display name with markup is refused (400)', badName.status === 400, `${badName.status} ${badName.text.slice(0, 120)}`)
+  const signedInAgain = await api(TOKEN_A, 'POST', '/v1/me')
+  check('signing in again, with no name sent, keeps the chosen name', signedInAgain.json?.displayName === 'Smoke A', `${signedInAgain.status} ${signedInAgain.text.slice(0, 120)}`)
+
   const nobody = await api(null, 'POST', '/v1/games', { kind: 'two_player' })
   check('a request with no token is refused (401)', nobody.status === 401, nobody.status)
 
@@ -145,6 +154,7 @@ async function main() {
   const a = viewA.json?.view
   const b = viewB.json?.view
   check('each sees their own seat as the viewer', a?.viewer === 'player' && b?.viewer === 'opponent')
+  check("the other player sees A's name in the table's player list", viewB.json?.players?.find((pl) => pl.seat === 'player')?.displayName === 'Smoke A', JSON.stringify(viewB.json?.players))
   // Staged dealing: before the opening move only the bidder holds cards (their first four); everyone else is dealt after.
   check('only the bidder holds cards at this point (staged dealing), so the two views differ', (a?.myHand?.length > 0) !== (b?.myHand?.length > 0) && cards(a) !== cards(b))
   const leak = (mine, theirs) => (theirs?.myHand ?? []).some((c) => cards(mine).includes(`${cardKey(c)},"suit":"${c.suit}"`) || cards(mine).includes(`"suit":"${c.suit}","face":"${c.face}"`))

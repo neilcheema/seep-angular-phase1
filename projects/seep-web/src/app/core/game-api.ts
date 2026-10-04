@@ -31,6 +31,8 @@ export interface GameApi {
 /** What the lobby needs from the server. */
 export interface LobbyApi {
   me(): Promise<ProfileDto>
+  /** Chooses the name the person's opponents see. The server checks it and says why if it refuses. */
+  setDisplayName(name: string): Promise<ProfileDto>
   createGame(kind: GameKind): Promise<GameInfoDto>
   joinGame(code: string): Promise<GameInfoDto>
   listGames(): Promise<GameInfoDto[]>
@@ -60,6 +62,10 @@ export class HttpApi implements GameApi, LobbyApi {
 
   me(): Promise<ProfileDto> {
     return this.request('POST', '/v1/me')
+  }
+
+  setDisplayName(name: string): Promise<ProfileDto> {
+    return this.request('POST', '/v1/me', { displayName: name })
   }
 
   createGame(kind: GameKind): Promise<GameInfoDto> {

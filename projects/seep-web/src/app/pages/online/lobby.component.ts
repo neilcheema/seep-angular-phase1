@@ -2,6 +2,7 @@ import { Component, effect, inject, signal, untracked } from '@angular/core'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import type { GameInfoDto, GameKind } from '../../core/api-types'
 import { ApiError } from '../../core/game-api'
+import { suggestName, tableStatusText } from '../../core/display-names'
 import { AUTH, ONLINE_API } from '../../core/online'
 
 /**
@@ -33,7 +34,17 @@ export class LobbyComponent {
   readonly working = signal(false)
   readonly error = signal<string | null>(null)
 
+  /** The name the person plays under, once they have one. */
+  readonly profileName = signal<string | null>(null)
+  /** True while the "What should we call you?" step is showing (first sign-in, or when changing the name). */
+  readonly needName = signal(false)
+  readonly nameSuggestion = signal('')
+  readonly nameError = signal<string | null>(null)
+  readonly nameSaving = signal(false)
+
   private handledUid: string | null = null
+  /** The invited seat is taken, and the tables listed, once only per sign-in: after the name step if there is one. */
+  private carriedOn = false
 
   constructor() {
     const code = this.route.snapshot.paramMap.get('code')
@@ -69,6 +80,9 @@ export class LobbyComponent {
   signOut(): void {
     this.games.set([])
     this.error.set(null)
+    this.profileName.set(null)
+    this.needName.set(false)
+    this.nameError.set(null)
     void this.auth.signOut()
   }
 
@@ -89,22 +103,62 @@ export class LobbyComponent {
   }
 
   statusText(game: GameInfoDto): string {
-    if (game.status === 'waiting') return `Waiting for an opponent, code ${game.inviteCode ?? ''}`.trim()
-    return game.status === 'active' ? 'In progress' : 'Finished'
+    return tableStatusText(game)
+  }
+
+  /** Saves the chosen name, then carries on to whatever the person came here to do. */
+  async saveName(event: Event, raw: string): Promise<void> {
+    event.preventDefault()
+    this.nameSaving.set(true)
+    this.nameError.set(null)
+    try {
+      const profile = await this.api.setDisplayName(raw)
+      this.profileName.set(profile.displayName)
+      this.needName.set(false)
+      await this.carryOn()
+    } catch (err) {
+      this.nameError.set(this.messageFor(err))
+    } finally {
+      this.nameSaving.set(false)
+    }
+  }
+
+  changeName(): void {
+    this.nameSuggestion.set(this.profileName() ?? '')
+    this.nameError.set(null)
+    this.needName.set(true)
+  }
+
+  cancelNameChange(): void {
+    if (this.profileName()) this.needName.set(false)
   }
 
   private async afterSignIn(): Promise<void> {
     this.error.set(null)
+    this.carriedOn = false
     try {
-      await this.api.me()
-      const code = this.linkCode()
-      if (code) {
-        await this.work(() => this.join(code))
+      const profile = await this.api.me()
+      this.profileName.set(profile.displayName)
+      if (!profile.displayName) {
+        // Nobody can sit at a table without a name the others will recognise, so this comes first. saveName() carries on from here.
+        this.nameSuggestion.set(suggestName(this.identity()?.displayName ?? null))
+        this.needName.set(true)
+        return
       }
-      await this.refreshGames()
+      await this.carryOn()
     } catch (err) {
       this.error.set(this.messageFor(err))
     }
+  }
+
+  /** Takes the invited seat (if they came by a link) and lists the person's tables. */
+  private async carryOn(): Promise<void> {
+    if (!this.carriedOn) {
+      this.carriedOn = true
+      const code = this.linkCode()
+      if (code) await this.work(() => this.join(code))
+    }
+    await this.refreshGames()
   }
 
   private async join(raw: string): Promise<void> {

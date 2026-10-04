@@ -136,3 +136,32 @@ describe('describeClock at a four-player table (names the player, and says a who
     expect(describeClock(clk, 'player', clk.receivedAt)?.text).toBe('Out of time! Move within 0:45 or you forfeit the match')
   })
 })
+
+describe('describeClock at a two-player table, naming the opponent', () => {
+  const names: ClockNames = { nameOf: (seat) => (seat === 'player' ? 'You' : 'Bob') }
+  const at = (seat: string, elapsedMs: number, mySeat = 'player') => {
+    const clk = clock({ seat, elapsedMs })
+    return describeClock(clk, mySeat, clk.receivedAt, names)
+  }
+
+  it('uses the opponent’s name in the first minute', () => {
+    expect(at('opponent', 18_000)).toEqual({ text: 'Bob’s move · 0:42 left', urgent: false })
+    expect(at('player', 18_000)).toEqual({ text: 'Your move · 0:42 left', urgent: false })
+  })
+
+  it('says the opponent forfeits alone, not a team, and tells the mover they forfeit', () => {
+    expect(at('opponent', 75_000)).toEqual({ text: 'Bob is out of time. They forfeit the match in 0:45', urgent: true })
+    expect(at('player', 75_000)).toEqual({ text: 'Out of time! Move within 0:45 or you forfeit the match', urgent: true })
+  })
+
+  it('says it plainly once time is up', () => {
+    expect(at('opponent', 120_000)?.text).toBe('Bob ran out of time…')
+  })
+
+  it('still reads correctly for an opponent who has not chosen a name', () => {
+    const unnamed: ClockNames = { nameOf: (seat) => (seat === 'player' ? 'You' : 'Your opponent') }
+    const clk = clock({ seat: 'opponent', elapsedMs: 18_000 })
+    expect(describeClock(clk, 'player', clk.receivedAt, unnamed)?.text).toBe('Your opponent’s move · 0:42 left')
+  })
+})
+

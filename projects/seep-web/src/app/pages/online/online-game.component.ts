@@ -2,6 +2,7 @@ import { Component, DestroyRef, computed, inject, signal } from '@angular/core'
 import { ActivatedRoute, RouterLink } from '@angular/router'
 import type { FourPlayerGameView, FourPlayerIntent, GameView, Intent, PlayerId, SeatId } from 'seep-engine'
 import { partnerOf, teamOf } from 'seep-engine'
+import { seatLine } from '../../core/display-names'
 import { ApiError } from '../../core/game-api'
 import { AUTH, ONLINE_API } from '../../core/online'
 import { fourPlayerPerspective, twoPlayerPerspective } from '../../core/perspective'
@@ -47,6 +48,8 @@ export class OnlineGameComponent {
   })
 
   // --- the waiting panel, for a table that needs several people ---
+  /** One line per seat for the list of who has arrived, e.g. "Player 2 — Bob". */
+  readonly seatLine = seatLine
   readonly seatsFilled = computed(() => this.session()?.players().filter((p) => p.joined).length ?? 0)
   readonly seatsTotal = computed(() => this.session()?.players().length ?? 0)
   /** "p3" -> 3 (the viewer's seat number at a four-player table). */
@@ -57,16 +60,20 @@ export class OnlineGameComponent {
   private readonly now = signal(Date.now())
   private readonly ticker = setInterval(() => this.now.set(Date.now()), 1000)
 
-  /** At a four-player table the clock line must say WHO is on the clock; at a two-player table "their" is enough. */
+  /** The clock line says WHO is on the clock, by the name they chose (or "Your opponent" / "Player N" if they have none). */
   private readonly clockNames = computed<ClockNames | undefined>(() => {
-    const four = this.four()
-    const seat = four?.seat()
-    if (!four || !seat) return undefined
-    const mine = seat as SeatId
-    return {
-      nameOf: (s) => (s === mine ? 'You' : s === partnerOf(mine) ? 'Your partner' : `Player ${s.slice(1)}`),
-      sameTeam: (s) => teamOf(s as SeatId) === teamOf(mine),
+    const session = this.session()
+    const seat = session?.seat()
+    if (!session || !seat) return undefined
+    const nameOfSeat = (s: string): string | null => session.players().find((p) => p.seat === s)?.displayName ?? null
+    if (this.four()) {
+      const mine = seat as SeatId
+      return {
+        nameOf: (s) => (s === mine ? 'You' : s === partnerOf(mine) ? 'Your partner' : (nameOfSeat(s) ?? `Player ${s.slice(1)}`)),
+        sameTeam: (s) => teamOf(s as SeatId) === teamOf(mine),
+      }
     }
+    return { nameOf: (s) => (s === seat ? 'You' : (nameOfSeat(s) ?? 'Your opponent')) }
   })
 
   readonly clockLine = computed(() => {

@@ -40,6 +40,11 @@
             </p>
             <div id="seats-filled" style="font-size: 18px; font-weight: 700; color: var(--gold-lt);">{{ seatsFilled() }} of {{ seatsTotal() }} seats filled</div>
             <p id="my-seat" style="color: rgba(255,255,255,0.75);">You are Player {{ mySeatNumber() }}, on Team {{ myTeamLetter() }}.</p>
+            <ul id="seat-list" style="list-style: none; padding: 0; margin: 0; color: rgba(255,255,255,0.8); font-size: 15px;">
+              @for (p of s.players(); track p.seat) {
+                <li>{{ seatLine(p) }}</li>
+              }
+            </ul>
           } @else {
             <h1 class="text-3xl font-bold" style="color: var(--gold-lt);">Waiting for your opponent</h1>
             <p style="color: rgba(255,255,255,0.7); max-width: 440px;">

@@ -41,6 +41,19 @@ describe('HttpApi', () => {
     })
   })
 
+  it('sends a chosen name as the body of the profile call, and returns the saved profile', async () => {
+    const { http, sent } = api([{ status: 200, body: { id: 'u1', displayName: 'Alice' } }])
+    const profile = await http.setDisplayName('Alice')
+    expect(sent[0]).toMatchObject({ url: 'https://api.test/api/v1/me', method: 'POST' })
+    expect(sent[0]!.body).toEqual({ displayName: 'Alice' })
+    expect(profile.displayName).toBe('Alice')
+  })
+
+  it('passes the server’s reason for refusing a name through, so the person can fix it', async () => {
+    const { http } = api([{ status: 400, body: { error: 'Your name needs at least 2 characters.' } }])
+    await expect(http.setDisplayName('A')).rejects.toMatchObject({ status: 400, message: 'Your name needs at least 2 characters.' })
+  })
+
   it('only declares a JSON content type when it actually sends a body', async () => {
     const { http, sent } = api([{ status: 200, body: { id: 'u1' } }, { status: 200, body: { games: [] } }])
     await http.me()
