@@ -9,7 +9,16 @@ export interface PollContext {
   readonly hidden: boolean
   /** How many polls in a row found nothing new. */
   readonly unchangedPolls: number
+  /** How long ago this screen first saw the game was over. Absent when it is not over, or not known. */
+  readonly finishedForMs?: number
+  /** A rematch can still be asked for here (a two-player match, and nobody has yet), so the other player's ask is worth hearing. */
+  readonly watchForRematch?: boolean
 }
+
+/** After a two-player match ends, keep listening this long for the other player to ask for a rematch. */
+export const FINISHED_WATCH_MS = 5 * 60_000
+/** ...and listen this often. Slow on purpose: nothing happens in a finished game except this. */
+export const FINISHED_POLL_MS = 8_000
 
 /**
  * How long to wait before the next poll, or null to stop polling for good.
@@ -22,10 +31,15 @@ export interface PollContext {
  *   - someone else is about to act  -> fast, backing off as nothing happens
  *   - it is my move                 -> slow (I'm the one holding things up)
  *   - the tab is hidden             -> slow regardless
- *   - the game is over              -> stop
+ *   - the game is over              -> stop (after a short, slow listen for a rematch, in two-player)
  */
 export function nextPollDelay(ctx: PollContext): number | null {
-  if (ctx.status === 'finished' || ctx.status === 'abandoned') return null
+  if (ctx.status === 'abandoned') return null
+  if (ctx.status === 'finished') {
+    // Stop for good, unless a rematch could still be asked for and we have not been listening for long.
+    if (!ctx.watchForRematch || (ctx.finishedForMs ?? Number.POSITIVE_INFINITY) >= FINISHED_WATCH_MS) return null
+    return ctx.hidden ? Math.max(FINISHED_POLL_MS, 15_000) : FINISHED_POLL_MS
+  }
 
   let delay: number
   if (ctx.status === 'waiting') {

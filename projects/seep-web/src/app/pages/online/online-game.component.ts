@@ -1,5 +1,6 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core'
-import { ActivatedRoute, RouterLink } from '@angular/router'
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
+import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import type { FourPlayerGameView, FourPlayerIntent, GameView, Intent, PlayerId, SeatId } from 'seep-engine'
 import { partnerOf, teamOf } from 'seep-engine'
 import { seatLine } from '../../core/display-names'
@@ -28,6 +29,7 @@ type FourPlayerSession = RemoteSession<FourPlayerGameView, FourPlayerIntent, Sea
 })
 export class OnlineGameComponent {
   private readonly route = inject(ActivatedRoute)
+  private readonly router = inject(Router)
   private readonly auth = inject(AUTH)
   private readonly api = inject(ONLINE_API)
   private readonly destroyRef = inject(DestroyRef)
@@ -39,6 +41,12 @@ export class OnlineGameComponent {
   readonly session = computed<TwoPlayerSession | FourPlayerSession | null>(() => this.two() ?? this.four())
 
   readonly error = signal<string | null>(null)
+
+  // --- rematch (two-player) ---
+  readonly rematchBusy = signal(false)
+  readonly rematchError = signal<string | null>(null)
+  /** The other player has already asked for a rematch, so the button becomes "Join rematch". */
+  readonly rematchOffered = computed(() => this.two()?.rematchGameId() != null)
   readonly copied = signal(false)
   readonly canShare = typeof navigator !== 'undefined' && 'share' in navigator
 
@@ -82,6 +90,9 @@ export class OnlineGameComponent {
   })
 
   private disposed = false
+  /** Which table is open, and a counter so a slow open for a table we have since left cannot win. */
+  private gameId = ''
+  private openSeq = 0
   private readonly onVisibilityChange = (): void => {
     if (document.visibilityState === 'visible') void this.session()?.refreshNow()
   }
@@ -95,7 +106,35 @@ export class OnlineGameComponent {
       document.removeEventListener('visibilitychange', this.onVisibilityChange)
       this.session()?.dispose()
     })
-    void this.open()
+    // The same screen is reused when only the table in the address changes (old match -> its rematch), so it must
+    // reopen whenever the id changes, not just once.
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => void this.reopen(params.get('id') ?? ''))
+  }
+
+  /** Asks for a rematch of this match: makes the table if first, joins it if the other player already did. */
+  async rematch(): Promise<void> {
+    if (!this.gameId || this.rematchBusy()) return
+    this.rematchBusy.set(true)
+    this.rematchError.set(null)
+    try {
+      const result = await this.api.requestRematch(this.gameId)
+      await this.router.navigate(['/online/game', result.gameId])
+    } catch (err) {
+      this.rematchError.set(err instanceof ApiError ? err.message : "Couldn't reach the server. Check your connection and try again.")
+    } finally {
+      this.rematchBusy.set(false)
+    }
+  }
+
+  private async reopen(id: string): Promise<void> {
+    const seq = ++this.openSeq
+    this.session()?.dispose()
+    this.two.set(null)
+    this.four.set(null)
+    this.error.set(null)
+    this.rematchError.set(null)
+    this.gameId = id
+    await this.open(id, seq)
   }
 
   retry(): void {
@@ -124,8 +163,7 @@ export class OnlineGameComponent {
     }
   }
 
-  private async open(): Promise<void> {
-    const id = this.route.snapshot.paramMap.get('id') ?? ''
+  private async open(id: string, seq: number): Promise<void> {
     await this.auth.start()
     if (!this.auth.identity()) {
       this.error.set('Please sign in to open this table.')
@@ -141,7 +179,7 @@ export class OnlineGameComponent {
           gameId: id,
           perspective: fourPlayerPerspective,
         })
-        if (this.disposed) return session.dispose()
+        if (this.disposed || seq !== this.openSeq) return session.dispose()
         this.four.set(session)
       } else {
         const session = await RemoteSession.open<GameView, Intent, PlayerId>({
@@ -149,11 +187,11 @@ export class OnlineGameComponent {
           gameId: id,
           perspective: twoPlayerPerspective,
         })
-        if (this.disposed) return session.dispose()
+        if (this.disposed || seq !== this.openSeq) return session.dispose()
         this.two.set(session)
       }
     } catch (err) {
-      this.error.set(this.messageFor(err))
+      if (seq === this.openSeq) this.error.set(this.messageFor(err))
     }
   }
 

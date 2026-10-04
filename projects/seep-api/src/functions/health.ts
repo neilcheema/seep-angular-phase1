@@ -18,7 +18,7 @@ import { getDb } from '../lib/db'
 /** The tables and columns the code needs. If a migration was skipped, one of these is missing. */
 export const REQUIRED_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   users: ['display_name'],
-  games: ['version', 'invite_code', 'created_by', 'turn_started_at'],
+  games: ['version', 'invite_code', 'created_by', 'turn_started_at', 'rematch_game_id'],
   seats: ['is_bot', 'last_seen_at'],
   move_log: ['version'],
   deleted_accounts: ['firebase_uid'],

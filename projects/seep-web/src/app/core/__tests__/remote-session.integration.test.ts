@@ -155,10 +155,11 @@ describe.each([
       expect(s.status()).toBe('finished')
       expect(s.connection()).toBe('online')
     }
-    // Nothing is left polling a finished game. Asked of the sessions themselves: the global fake-timer
-    // count also includes timers belonging to the database driver, which can still be draining a last query.
+    // Nothing is polling a finished game quickly. A four-player session holds no timer at all; a two-player one holds
+    // exactly one, the slow listen for a rematch. Asked of the sessions themselves: the global fake-timer count also
+    // includes timers belonging to the database driver, which can still be draining a last query.
     const holdingATimer = sessions.filter((s) => (s as unknown as { timer: unknown }).timer !== null)
-    expect(holdingATimer.map((s) => s.seat())).toEqual([])
+    expect(holdingATimer.map((s) => s.seat())).toEqual(kind === 'two_player' ? sessions.map((s) => s.seat()) : [])
     sessions.forEach((s) => s.dispose())
   })
 })
@@ -261,7 +262,7 @@ describe('the turn clock, through the real server', () => {
     expect((mover.view() as { log: string[] }).log.at(-1)).toBe('You ran out of time and forfeited the match.')
     expect(waiter.lastMove()).toBeNull()
     expect(mover.lastMove()).toBeNull()
-    expect(vi.getTimerCount()).toBe(0)
+    expect(vi.getTimerCount()).toBe(2) // no fast polling: just each screen's slow listen for a rematch
     await expect(mover.submit({ type: 'bid', value: 9 })).rejects.toThrow(/over/i)
     sessions.forEach((s) => s.dispose())
   })

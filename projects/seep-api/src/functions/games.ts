@@ -2,9 +2,9 @@ import { app } from '@azure/functions'
 import { getDb } from '../lib/db'
 import { isGameKind } from '../lib/engines'
 import { BadRequestError } from '../lib/errors'
-import { createGame, dealNext, getGame, joinGame, leaveWaitingTable, listMyGames, parseVersion, submitMove } from '../lib/games'
+import { createGame, dealNext, getGame, joinGame, leaveWaitingTable, listMyGames, parseVersion, requestRematch, submitMove } from '../lib/games'
 import { authed, readJsonBody } from '../lib/http'
-import { guardCreate, guardJoin, guardMove, limitSettings } from '../lib/limits'
+import { assertTableCaps, guardCreate, guardJoin, guardMove, limitSettings } from '../lib/limits'
 import { resolveUserId } from '../lib/users'
 
 /**
@@ -51,6 +51,23 @@ export const getGameHandler = authed(async ({ request, identity }) => {
   return { status: 200, jsonBody: await getGame(db, userId, request.params['id'] ?? '', since) }
 })
 
+/**
+ * POST /api/v1/games/{id}/rematch — ask for a rematch of a finished two-player match. 201 for the first player to ask
+ * (a new table was made), 200 for the second (they joined it) or for asking again. The limits apply: whoever makes the
+ * new table counts as starting one, and whoever joins counts against the matches-in-play cap.
+ */
+export const rematchHandler = authed(async ({ request, context, identity }) => {
+  const db = getDb()
+  const userId = await resolveUserId(db, identity)
+  const settings = limitSettings()
+  const log = (m: string) => context.warn(m)
+  const result = await requestRematch(db, userId, request.params['id'] ?? '', {
+    beforeCreate: (tx) => guardCreate(tx, userId, settings, log),
+    beforeJoin: (tx) => (settings.enabled ? assertTableCaps(tx, userId, settings, 'join') : Promise.resolve()),
+  })
+  return { status: result.created ? 201 : 200, jsonBody: result }
+})
+
 export const leaveGameHandler = authed(async ({ request, identity }) => {
   const db = getDb()
   const userId = await resolveUserId(db, identity)
@@ -82,6 +99,7 @@ app.http('games-create', { methods: ['POST'], authLevel: 'anonymous', route: 'v1
 app.http('games-list', { methods: ['GET'], authLevel: 'anonymous', route: 'v1/games', handler: listGamesHandler })
 app.http('games-join', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/join', handler: joinGameHandler })
 app.http('games-get', { methods: ['GET'], authLevel: 'anonymous', route: 'v1/games/{id}', handler: getGameHandler })
+app.http('games-rematch', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/games/{id}/rematch', handler: rematchHandler })
 app.http('games-leave', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/games/{id}/leave', handler: leaveGameHandler })
 app.http('games-move', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/games/{id}/moves', handler: submitMoveHandler })
 app.http('games-deal-next', {

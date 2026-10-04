@@ -47,6 +47,8 @@ export interface MoveRecordDto {
 }
 
 export interface GameSnapshotDto<TView> extends GameInfoDto {
+  /** The table made for a rematch of this (finished) game, once either player has asked for one. Absent from an older server. */
+  readonly rematchGameId?: string | null
   readonly changed: true
   readonly view: TView
   /** Moves made after the `since` version the caller supplied. */
@@ -82,6 +84,12 @@ export interface DeleteAccountDto {
   readonly forfeited: number
   readonly closed: number
   readonly released: number
+}
+
+/** The table made for a rematch: the same shape as any table, plus whether this call made it or joined it. */
+export interface RematchDto extends GameInfoDto {
+  /** True for the first player to ask (a new table was made); false for the second (they joined it). */
+  readonly created: boolean
 }
 
 export interface ProfileDto {

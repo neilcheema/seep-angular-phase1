@@ -82,7 +82,16 @@
           {{ s.winner === 'player' ? 'You won the bazzi!' : 'Opponent won the bazzi.' }}
         </p>
         @if (remote()) {
-          <a class="btn-gold" routerLink="/online">Back to Play online</a>
+          @if (rematchOffered()) {
+            <p id="rematch-offered" style="color: rgba(255,255,255,0.85);">Your opponent wants a rematch.</p>
+          }
+          <button type="button" id="rematch-button" class="btn-gold" [disabled]="rematchBusy()" (click)="rematch.emit()">
+            {{ rematchOffered() ? 'Join rematch' : 'Rematch' }}
+          </button>
+          @if (rematchError(); as err) {
+            <p id="rematch-error" role="alert" style="color: #ff8a8a; max-width: 320px;">{{ err }}</p>
+          }
+          <a class="btn-outline" routerLink="/online">Back to Play online</a>
         } @else {
           <button class="btn-gold" (click)="onPlayAgain()">Play again</button>
         }

@@ -62,6 +62,18 @@ describe('HttpApi', () => {
     expect(result).toEqual({ deleted: true, forfeited: 1, closed: 0, released: 2 })
   })
 
+  it('asks for a rematch with a POST to that match’s rematch address, and returns the table', async () => {
+    const { http, sent } = api([{ status: 201, body: { gameId: 'g2', created: true, status: 'waiting' } }])
+    const result = await http.requestRematch('3f2b8c1e-0000-4000-8000-000000000001')
+    expect(sent[0]).toMatchObject({ url: 'https://api.test/api/v1/games/3f2b8c1e-0000-4000-8000-000000000001/rematch', method: 'POST', headers: { authorization: 'Bearer tok-1' } })
+    expect(result).toMatchObject({ gameId: 'g2', created: true })
+  })
+
+  it('passes the server’s reason through when a rematch cannot be had', async () => {
+    const { http } = api([{ status: 409, body: { error: 'You can only ask for a rematch once the match is over.' } }])
+    await expect(http.requestRematch('abc')).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/once the match is over/) })
+  })
+
   it('leaves a waiting table with a POST to that table’s leave address, signed like every other call', async () => {
     const { http, sent } = api([{ status: 200, body: { result: 'closed' } }])
     const result = await http.leaveGame('3f2b8c1e-0000-4000-8000-000000000001')

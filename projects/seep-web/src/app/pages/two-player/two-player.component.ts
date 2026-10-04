@@ -1,4 +1,4 @@
-import { Component, DestroyRef, type OnInit, computed, effect, inject, input, signal } from '@angular/core'
+import { Component, DestroyRef, type OnInit, computed, effect, inject, input, output, signal } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, RouterLink } from '@angular/router'
 import { APP_VERSION, FEEDBACK_EMAIL } from '../../version'
@@ -93,6 +93,12 @@ export class TwoPlayerComponent implements OnInit {
   /** A line of text about the turn clock, supplied by the online table screen (never set against the bots). */
   readonly clockLine = input<string | null>(null)
   readonly clockUrgent = input(false)
+  /** The other player has asked for a rematch (supplied by the online table screen). */
+  readonly rematchOffered = input(false)
+  readonly rematchBusy = input(false)
+  readonly rematchError = input<string | null>(null)
+  /** The person pressed Rematch (or Join rematch). The online table screen makes the request. */
+  readonly rematch = output<void>()
   readonly session = signal<GameSession<GameView, Intent, PlayerId> | null>(null)
   readonly opponentPossessive = computed(() => (this.remote() ? "the other player's" : "the computer's"))
   readonly state = computed<GameView | null>(() => this.session()?.view() ?? null)

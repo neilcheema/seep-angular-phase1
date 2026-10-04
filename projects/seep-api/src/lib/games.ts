@@ -54,6 +54,8 @@ export interface GameSnapshot extends GameInfo {
   /** Moves after the `since` version the caller supplied (none if it supplied none). */
   readonly moves: MoveRecord[]
   readonly clock: ClockDto
+  /** The table made for a rematch of this (finished) game, once either player has asked for one. */
+  readonly rematchGameId: string | null
 }
 
 export interface GameUnchanged {
@@ -89,6 +91,8 @@ interface MemberRow extends ListRow {
   elapsed_ms: number
   /** How long ago this player was last seen at the table; null if never. */
   seen_ago_ms: number | null
+  /** The table made for a rematch of this game, if one has been asked for. */
+  rematch_game_id: string | null
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -116,7 +120,7 @@ function isUniqueViolation(err: unknown): boolean {
 /** Loads a game only if `userId` has a seat in it. Anyone else gets "not found". */
 async function loadMember(tx: Queryable, gameId: string, userId: string, lock: boolean): Promise<MemberRow> {
   const res = await tx.query<MemberRow>(
-    `SELECT g.id, g.kind, g.status, g.version, g.state, g.invite_code, s.seat_key,
+    `SELECT g.id, g.kind, g.status, g.version, g.state, g.invite_code, g.rematch_game_id, s.seat_key,
             (EXTRACT(EPOCH FROM (now() - g.turn_started_at)) * 1000)::float8 AS elapsed_ms,
             (EXTRACT(EPOCH FROM (now() - s.last_seen_at)) * 1000)::float8 AS seen_ago_ms
        FROM games g
@@ -238,6 +242,53 @@ export interface CreateOptions {
   readonly generateCode?: () => string
 }
 
+/** Inserts a table waiting for players, with the creator in the first seat and the rest open. Returns its id. */
+async function insertWaitingGame(tx: Queryable, userId: string, kind: GameKind, state: unknown, code: string): Promise<string> {
+  const adapter = adapterFor(kind)
+  const game = await tx.query<{ id: string }>(
+    `INSERT INTO games (kind, state, engine_version, status, invite_code, created_by, version)
+     VALUES ($1, $2::jsonb, $3, 'waiting', $4, $5, 0)
+     RETURNING id`,
+    [kind, JSON.stringify(state), ENGINE_VERSION, code, userId],
+  )
+  const gameId = game.rows[0]!.id
+  for (const [i, seatKey] of adapter.seatKeys.entries()) {
+    await tx.query('INSERT INTO seats (game_id, seat_key, user_id) VALUES ($1, $2, $3)', [gameId, seatKey, i === 0 ? userId : null])
+  }
+  return gameId
+}
+
+/**
+ * Gives the person the first open seat at a waiting table. EVERY arrival is a change somebody already at the table
+ * must be able to see (the seats filling up on a waiting screen), so every arrival moves the version. Only the last
+ * one also starts the game and its clock.
+ */
+async function claimSeat(tx: Queryable, gameId: string, userId: string): Promise<void> {
+  const claimed = await tx.query<{ seat_key: string }>(
+    `UPDATE seats SET user_id = $1
+      WHERE id = (SELECT id FROM seats
+                   WHERE game_id = $2 AND user_id IS NULL AND NOT is_bot
+                   ORDER BY seat_key LIMIT 1)
+        AND user_id IS NULL
+      RETURNING seat_key`,
+    [userId, gameId],
+  )
+  if (claimed.rows.length === 0) throw new ConflictError('That game is full.')
+
+  const stillOpen = await tx.query<{ n: number }>(
+    'SELECT count(*)::int AS n FROM seats WHERE game_id = $1 AND user_id IS NULL AND NOT is_bot',
+    [gameId],
+  )
+  const full = stillOpen.rows[0]!.n === 0
+  await tx.query(
+    `UPDATE games SET version = version + 1, updated_at = now(),
+            status = CASE WHEN $2::boolean THEN 'active' ELSE status END,
+            turn_started_at = CASE WHEN $2::boolean THEN now() ELSE turn_started_at END
+      WHERE id = $1`,
+    [gameId, full],
+  )
+}
+
 export async function createGame(db: Db, userId: string, kind: GameKind, options: CreateOptions = {}): Promise<GameInfo> {
   const adapter = adapterFor(kind)
   const generateCode = options.generateCode ?? generateInviteCode
@@ -247,21 +298,7 @@ export async function createGame(db: Db, userId: string, kind: GameKind, options
     const code = generateCode()
     try {
       return await db.transaction(async (tx) => {
-        const game = await tx.query<{ id: string }>(
-          `INSERT INTO games (kind, state, engine_version, status, invite_code, created_by, version)
-           VALUES ($1, $2::jsonb, $3, 'waiting', $4, $5, 0)
-           RETURNING id`,
-          [kind, JSON.stringify(state), ENGINE_VERSION, code, userId],
-        )
-        const gameId = game.rows[0]!.id
-        // The creator takes the first seat; the rest start open.
-        for (const [i, seatKey] of adapter.seatKeys.entries()) {
-          await tx.query('INSERT INTO seats (game_id, seat_key, user_id) VALUES ($1, $2, $3)', [
-            gameId,
-            seatKey,
-            i === 0 ? userId : null,
-          ])
-        }
+        const gameId = await insertWaitingGame(tx, userId, kind, state, code)
         const row = await loadMember(tx, gameId, userId, false)
         return buildInfo(tx, row, userId)
       })
@@ -290,31 +327,7 @@ export async function joinGame(db: Db, userId: string, rawCode: unknown): Promis
     ])
     if (mine.rows.length === 0) {
       if (game.status !== 'waiting') throw new ConflictError('That game is no longer open.')
-      const claimed = await tx.query<{ seat_key: string }>(
-        `UPDATE seats SET user_id = $1
-          WHERE id = (SELECT id FROM seats
-                       WHERE game_id = $2 AND user_id IS NULL AND NOT is_bot
-                       ORDER BY seat_key LIMIT 1)
-            AND user_id IS NULL
-          RETURNING seat_key`,
-        [userId, game.id],
-      )
-      if (claimed.rows.length === 0) throw new ConflictError('That game is full.')
-
-      const stillOpen = await tx.query<{ n: number }>(
-        'SELECT count(*)::int AS n FROM seats WHERE game_id = $1 AND user_id IS NULL AND NOT is_bot',
-        [game.id],
-      )
-      // EVERY arrival is a change somebody already at the table must be able to see (the seats filling up on a
-      // waiting screen), so every arrival moves the version. Only the last one also starts the game and its clock.
-      const full = stillOpen.rows[0]!.n === 0
-      await tx.query(
-        `UPDATE games SET version = version + 1, updated_at = now(),
-                status = CASE WHEN $2::boolean THEN 'active' ELSE status END,
-                turn_started_at = CASE WHEN $2::boolean THEN now() ELSE turn_started_at END
-          WHERE id = $1`,
-        [game.id, full],
-      )
+      await claimSeat(tx, game.id, userId)
     }
     const row = await loadMember(tx, game.id, userId, false)
     return buildInfo(tx, row, userId)
@@ -373,6 +386,7 @@ export async function getGame(
     view: adapter.viewFor(row.state, row.seat_key),
     moves,
     clock: clockOf(row),
+    rematchGameId: row.rematch_game_id ?? null,
   }
 }
 
@@ -490,4 +504,71 @@ export async function leaveWaitingTable(db: Db, userId: string, gameId: string):
     if (row.status !== 'waiting') throw new ConflictError('You can only leave a table that is still waiting for players.')
     return { result: await releaseOrCloseWaiting(tx, gameId, userId) }
   })
+}
+
+export interface RematchGuards {
+  /** Runs inside the transaction just before a NEW table is made (for the person who asks first). */
+  readonly beforeCreate?: (tx: Queryable) => Promise<void>
+  /** Runs inside the transaction just before the person joins a table the other player already made. */
+  readonly beforeJoin?: (tx: Queryable) => Promise<void>
+}
+
+export interface RematchResult extends GameInfo {
+  /** True for the first player to ask (a new table was made); false for the second (they joined it). */
+  readonly created: boolean
+}
+
+/**
+ * A rematch of a finished two-player match. The first player to ask gets a new table with them in the first seat, and
+ * the finished game remembers it. The second player's request finds that table and joins it, which starts the match.
+ * Asking again is harmless (you get the same table back). Both asking at once is safe: the finished game's row is
+ * locked, so one of them is first.
+ *
+ * Four-player rematches are not offered: keeping the same partners would need seats reserved for specific people.
+ */
+export async function requestRematch(
+  db: Db,
+  userId: string,
+  gameId: string,
+  guards: RematchGuards = {},
+  options: CreateOptions = {},
+): Promise<RematchResult> {
+  assertGameId(gameId)
+  const generateCode = options.generateCode ?? generateInviteCode
+  for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
+    const code = generateCode()
+    try {
+      return await db.transaction(async (tx) => {
+        const old = await loadMember(tx, gameId, userId, true)
+        if (old.status !== 'finished') throw new ConflictError('You can only ask for a rematch once the match is over.')
+        if (old.kind !== 'two_player') throw new ConflictError('Rematches are only available for two-player matches.')
+
+        if (old.rematch_game_id) {
+          const existing = await tx.query<{ status: GameStatus }>('SELECT status FROM games WHERE id = $1 FOR UPDATE', [old.rematch_game_id])
+          const status = existing.rows[0]?.status
+          if (status && status !== 'abandoned') {
+            const mine = await tx.query('SELECT 1 FROM seats WHERE game_id = $1 AND user_id = $2', [old.rematch_game_id, userId])
+            if (mine.rows.length === 0) {
+              if (status !== 'waiting') throw new ConflictError('That rematch is already under way.')
+              await guards.beforeJoin?.(tx)
+              await claimSeat(tx, old.rematch_game_id, userId)
+            }
+            const row = await loadMember(tx, old.rematch_game_id, userId, false)
+            return { ...(await buildInfo(tx, row, userId)), created: false }
+          }
+          // The earlier rematch table was closed or is gone: fall through and make a fresh one.
+        }
+
+        await guards.beforeCreate?.(tx)
+        const newId = await insertWaitingGame(tx, userId, 'two_player', adapterFor('two_player').newMatch(), code)
+        await tx.query('UPDATE games SET rematch_game_id = $1, version = version + 1, updated_at = now() WHERE id = $2', [newId, old.id])
+        const row = await loadMember(tx, newId, userId, false)
+        return { ...(await buildInfo(tx, row, userId)), created: true }
+      })
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err
+      // That invite code was already taken; loop and try another.
+    }
+  }
+  throw new Error('Could not allocate a unique invite code.')
 }

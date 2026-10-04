@@ -65,7 +65,15 @@
       </div>
     } @else {
       @if (two(); as t) {
-        <app-two-player [remote]="t" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" />
+        <app-two-player
+          [remote]="t"
+          [clockLine]="clockLine()?.text ?? null"
+          [clockUrgent]="clockLine()?.urgent ?? false"
+          [rematchOffered]="rematchOffered()"
+          [rematchBusy]="rematchBusy()"
+          [rematchError]="rematchError()"
+          (rematch)="rematch()"
+        />
       } @else {
         @if (four(); as f) {
           <app-four-player [remote]="f" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" />

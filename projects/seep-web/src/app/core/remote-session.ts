@@ -13,6 +13,8 @@ export interface RemoteSessionOptions<TView, TActor> {
   readonly perspective: Perspective<TView, TActor>
   /** True while the tab is in the background (polling then slows right down). Defaults to the page's visibility. */
   readonly isHidden?: () => boolean
+  /** The current time in milliseconds. Defaults to the real clock; tests supply their own. */
+  readonly now?: () => number
 }
 
 const MAX_BACKOFF_MS = 30_000
@@ -55,6 +57,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
   readonly connection = signal<ConnectionState>('connecting')
   /** Whose turn clock is running and for how long, or null (no clock, or an older server). */
   readonly clock = signal<ClockState | null>(null)
+  /** The table made for a rematch of this game, once either player has asked for one. */
+  readonly rematchGameId = signal<string | null>(null)
 
   private readonly options: RemoteSessionOptions<TView, TActor>
   private version: number | undefined
@@ -63,6 +67,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
   private polling = false
   private failures = 0
   private unchangedPolls = 0
+  /** When this screen first saw the game was over (for the short listen for a rematch). */
+  private finishedSeenAt: number | null = null
 
   private constructor(options: RemoteSessionOptions<TView, TActor>) {
     this.options = options
@@ -162,7 +168,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
     this.version = res.version
     this.seat.set(res.seat)
     this.kind.set(res.kind)
-    this.status.set(res.status)
+    this.noteStatus(res.status)
+    this.rematchGameId.set(res.rematchGameId ?? null)
     this.players.set(res.players)
     this.inviteCode.set(res.inviteCode)
     this.view.set(after)
@@ -186,7 +193,7 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
     if (this.version === undefined || result.version >= this.version) {
       this.version = result.version
       this.seat.set(result.seat)
-      this.status.set(result.status)
+      this.noteStatus(result.status)
       this.view.set(after)
       this.takeClock(result.clock)
     }
@@ -251,7 +258,19 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
       phase: view === null ? '' : this.options.perspective.phase(view),
       hidden,
       unchangedPolls: this.unchangedPolls,
+      ...(this.finishedSeenAt === null ? {} : { finishedForMs: this.now() - this.finishedSeenAt }),
+      watchForRematch: this.kind() === 'two_player' && this.rematchGameId() === null,
     })
+  }
+
+  private now(): number {
+    return this.options.now?.() ?? Date.now()
+  }
+
+  /** Records the status, and when the game was first seen to be over. */
+  private noteStatus(status: GameStatus): void {
+    this.status.set(status)
+    if (status === 'finished' && this.finishedSeenAt === null) this.finishedSeenAt = this.now()
   }
 
   private onPollError(err: unknown): void {

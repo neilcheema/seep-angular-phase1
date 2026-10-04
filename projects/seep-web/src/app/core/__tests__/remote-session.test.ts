@@ -264,20 +264,72 @@ describe('RemoteSession: polling', () => {
     await vi.advanceTimersByTimeAsync(1)
 
     expect(session.status()).toBe('finished')
-    expect(vi.getTimerCount()).toBe(0) // and nothing was re-armed to poll a finished game
+    const asked = getGame.mock.calls.length
+    await vi.advanceTimersByTimeAsync(7_000)
+    expect(getGame.mock.calls.length).toBe(asked) // and no FAST poll was re-armed: only the slow listen for a rematch is waiting
     session.dispose()
   })
 
-  it('stops polling for good once the game is finished', async () => {
+  it('after a two-player match ends, listens slowly for a rematch for five minutes, and then stops for good', async () => {
     const { api, getGame } = makeApi()
     getGame.mockResolvedValueOnce(snapshot(s0, 'opponent', 1))
     getGame.mockResolvedValueOnce(snapshot(s1, 'opponent', 2, { status: 'finished' }))
+    getGame.mockResolvedValue(unchanged(2, 'finished'))
     const session = await open(api)
     await vi.advanceTimersByTimeAsync(2_100)
     expect(session.status()).toBe('finished')
-    expect(vi.getTimerCount()).toBe(0)
-    await vi.advanceTimersByTimeAsync(60_000)
     expect(getGame).toHaveBeenCalledTimes(2)
+
+    await vi.advanceTimersByTimeAsync(7_000) // not yet: the listen is every 8 seconds, not every 2
+    expect(getGame).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(getGame).toHaveBeenCalledTimes(3)
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 30_000) // five minutes after it was first seen to be over
+    expect(vi.getTimerCount()).toBe(0)
+    const total = getGame.mock.calls.length
+    expect(total).toBeLessThan(2 + 5 * 60 / 8 + 3) // about 38 listens, not a poll every 2 seconds
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(getGame.mock.calls.length).toBe(total)
+  })
+
+  it('learns that the other player has asked for a rematch, and then stops listening', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce({ ...snapshot(s1, 'opponent', 2, { status: 'finished' }), rematchGameId: null })
+    getGame.mockResolvedValueOnce({ ...snapshot(s1, 'opponent', 3, { status: 'finished' }), rematchGameId: 'g2' })
+    getGame.mockResolvedValue(unchanged(3, 'finished'))
+    const session = await open(api)
+    expect(session.rematchGameId()).toBeNull()
+    await vi.advanceTimersByTimeAsync(8_100)
+    expect(session.rematchGameId()).toBe('g2')
+    expect(vi.getTimerCount()).toBe(0) // it has heard what it was listening for
+    const asked = getGame.mock.calls.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(getGame.mock.calls.length).toBe(asked)
+  })
+
+  it('does not listen for a rematch after a four-player match: stops at once', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce({ ...snapshot(s1, 'opponent', 2, { status: 'finished' }), kind: 'four_player' })
+    await open(api)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not listen for a rematch after a table was closed', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(snapshot(s0, 'opponent', 2, { status: 'abandoned' }))
+    await open(api)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('counts the five minutes from when this screen first saw the match was over, not from when it opened', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(snapshot(s0, 'opponent', 1))
+    getGame.mockResolvedValueOnce(snapshot(s0, 'opponent', 1))
+    getGame.mockResolvedValue(unchanged(1))
+    await open(api)
+    await vi.advanceTimersByTimeAsync(10 * 60_000) // ten minutes of an ordinary game
+    expect(vi.getTimerCount()).toBe(1) // still polling it normally
   })
 
   it('stops completely when disposed, even if a poll is mid-flight', async () => {
@@ -557,6 +609,7 @@ describe('RemoteSession: the turn clock', () => {
     await vi.advanceTimersByTimeAsync(2_100)
     expect(session.status()).toBe('finished')
     expect(session.lastMove()).toBeNull() // nothing for the page to try to present as a move
-    expect(vi.getTimerCount()).toBe(0)
+    expect(vi.getTimerCount()).toBe(1) // only the slow listen for a rematch is waiting
+    session.dispose()
   })
 })
