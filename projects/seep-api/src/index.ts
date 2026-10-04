@@ -3,4 +3,5 @@
 import './functions/me'
 import './functions/account'
 import './functions/games'
+import './functions/health'
 import './functions/cleanup'

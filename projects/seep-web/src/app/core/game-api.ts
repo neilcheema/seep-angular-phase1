@@ -3,6 +3,7 @@ import type {
   GameKind,
   GameSnapshotDto,
   GameUnchangedDto,
+  LeaveGameDto,
   MutationDto,
   DeleteAccountDto,
   ProfileDto,
@@ -34,6 +35,8 @@ export interface LobbyApi {
   me(): Promise<ProfileDto>
   /** Chooses the name the person's opponents see. The server checks it and says why if it refuses. */
   setDisplayName(name: string): Promise<ProfileDto>
+  /** Leaves a table that is still waiting for players. A match under way cannot be left this way. */
+  leaveGame(gameId: string): Promise<LeaveGameDto>
   /** Erases the person from the server: forfeits matches in progress, frees or closes waiting tables, removes name and email. */
   deleteAccount(): Promise<DeleteAccountDto>
   createGame(kind: GameKind): Promise<GameInfoDto>
@@ -69,6 +72,10 @@ export class HttpApi implements GameApi, LobbyApi {
 
   setDisplayName(name: string): Promise<ProfileDto> {
     return this.request('POST', '/v1/me', { displayName: name })
+  }
+
+  leaveGame(gameId: string): Promise<LeaveGameDto> {
+    return this.request('POST', `/v1/games/${encodeURIComponent(gameId)}/leave`)
   }
 
   deleteAccount(): Promise<DeleteAccountDto> {

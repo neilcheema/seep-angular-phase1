@@ -111,6 +111,14 @@ export class LobbyComponent {
     void this.work(() => this.join(raw))
   }
 
+  /** Leaves a table that is still waiting for players (the way out of the cap on waiting tables). */
+  async leave(game: GameInfoDto): Promise<void> {
+    await this.work(async () => {
+      await this.api.leaveGame(game.gameId)
+      await this.refreshGames()
+    })
+  }
+
   open(game: GameInfoDto): void {
     void this.router.navigate(['/online/game', game.gameId])
   }

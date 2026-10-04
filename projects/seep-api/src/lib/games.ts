@@ -1,3 +1,4 @@
+import { releaseOrCloseWaiting } from './tables'
 import { ENGINE_VERSION } from 'seep-engine'
 import type { Db, Queryable } from './db'
 import { type EngineAdapter, type GameKind, adapterFor } from './engines'
@@ -476,4 +477,17 @@ export async function dealNext(db: Db, userId: string, gameId: string, expectedV
     next: adapter.dealNext(state),
     logged: { type: 'deal-next' },
   }))
+}
+
+/**
+ * Leaves a table that is still waiting for players: the seat is freed and the table stays open for anyone else
+ * there, or is closed if nobody else is. A match under way cannot be left this way (that would be a forfeit).
+ */
+export async function leaveWaitingTable(db: Db, userId: string, gameId: string): Promise<{ result: 'closed' | 'released' }> {
+  assertGameId(gameId)
+  return db.transaction(async (tx) => {
+    const row = await loadMember(tx, gameId, userId, true)
+    if (row.status !== 'waiting') throw new ConflictError('You can only leave a table that is still waiting for players.')
+    return { result: await releaseOrCloseWaiting(tx, gameId, userId) }
+  })
 }

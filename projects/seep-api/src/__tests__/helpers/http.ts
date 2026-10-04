@@ -17,6 +17,9 @@ export interface CallResult {
   readonly status: number
   readonly body: Record<string, unknown>
   readonly log: ReturnType<typeof vi.fn>
+  readonly warn: ReturnType<typeof vi.fn>
+  readonly error: ReturnType<typeof vi.fn>
+  readonly headers: Record<string, string>
 }
 
 /** Calls a handler the way the Functions host would, with a minimal fake request. */
@@ -34,6 +37,15 @@ export async function call(handler: Handler, options: CallOptions = {}): Promise
     text: () => Promise.resolve(text),
   } as unknown as HttpRequest
   const log = vi.fn()
-  const response = await handler(request, { log } as unknown as InvocationContext)
-  return { status: response.status ?? 200, body: (response.jsonBody ?? {}) as Record<string, unknown>, log }
+  const warn = vi.fn()
+  const error = vi.fn()
+  const response = await handler(request, { log, warn, error } as unknown as InvocationContext)
+  return {
+    status: response.status ?? 200,
+    body: (response.jsonBody ?? {}) as Record<string, unknown>,
+    log,
+    warn,
+    error,
+    headers: (response.headers ?? {}) as Record<string, string>,
+  }
 }

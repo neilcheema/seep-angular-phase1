@@ -97,7 +97,12 @@
               <span style="color: rgba(255,255,255,0.8); font-size: 14px; text-align: left;">
                 {{ g.kind === 'two_player' ? '2-player' : '4-player' }} · {{ statusText(g) }}
               </span>
-              <button type="button" class="btn-outline" style="padding: 4px 12px;" (click)="open(g)">Open</button>
+              <span class="flex gap-2">
+                <button type="button" class="btn-outline" style="padding: 4px 12px;" (click)="open(g)">Open</button>
+                @if (g.status === 'waiting') {
+                  <button type="button" class="btn-outline" style="padding: 4px 12px;" [disabled]="working()" (click)="leave(g)">Leave</button>
+                }
+              </span>
             </div>
           }
         </section>

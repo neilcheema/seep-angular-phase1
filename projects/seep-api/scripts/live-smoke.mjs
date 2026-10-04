@@ -139,6 +139,22 @@ async function main() {
   const nobody = await api(null, 'POST', '/v1/games', { kind: 'two_player' })
   check('a request with no token is refused (401)', nobody.status === 401, nobody.status)
 
+  // Health: the plain check needs no sign-in and never touches the database; the deep one also confirms every migration
+  // has been run, so a forgotten migration shows up here and not as a mysterious failure later.
+  const health = await api(null, 'GET', '/v1/health')
+  check('the health check answers without signing in', health.status === 200 && health.json?.status === 'ok', `${health.status} ${health.text.slice(0, 120)}`)
+  const deep = await api(null, 'GET', '/v1/health?deep=1')
+  check('the deep health check confirms the database and every migration (schema ok)', deep.status === 200 && deep.json?.schema === 'ok', `${deep.status} ${deep.text.slice(0, 120)}`)
+
+  // Leaving a table that is still waiting: a throwaway table, closed again straight away.
+  const spare = await api(TOKEN_A, 'POST', '/v1/games', { kind: 'two_player' })
+  if (check('A starts a throwaway table to leave again (201)', spare.status === 201 && spare.json?.gameId, `${spare.status} ${spare.text.slice(0, 160)}`)) {
+    const left = await api(TOKEN_A, 'POST', `/v1/games/${spare.json.gameId}/leave`)
+    check('A leaves it: a table with nobody else at it is closed', left.status === 200 && left.json?.result === 'closed', `${left.status} ${left.text.slice(0, 120)}`)
+    const again = await api(TOKEN_A, 'POST', `/v1/games/${spare.json.gameId}/leave`)
+    check('leaving it a second time is a 404 (no longer seated there)', again.status === 404, `${again.status} ${again.text.slice(0, 120)}`)
+  }
+
   const created = await api(TOKEN_A, 'POST', '/v1/games', { kind: 'two_player' })
   if (!check('A creates a two-player game (201, with an invite code)', created.status === 201 && created.json?.inviteCode, `${created.status} ${created.text.slice(0, 160)}`)) return
   const { gameId, inviteCode } = created.json

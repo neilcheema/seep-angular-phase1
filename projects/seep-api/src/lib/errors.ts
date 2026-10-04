@@ -46,3 +46,11 @@ export class IllegalMoveError extends HttpError {
     this.name = 'IllegalMoveError'
   }
 }
+
+/** 429 — too many of one kind of request in a short time. `retryAfterSeconds` tells the client when to try again. */
+export class RateLimitError extends HttpError {
+  constructor(message: string, retryAfterSeconds: number) {
+    super(429, message, { retryAfterSeconds })
+    this.name = 'RateLimitError'
+  }
+}

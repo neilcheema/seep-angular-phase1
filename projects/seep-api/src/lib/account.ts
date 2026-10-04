@@ -1,5 +1,6 @@
 import type { Db } from './db'
 import { adapterFor } from './engines'
+import { releaseOrCloseWaiting } from './tables'
 
 export interface DeleteAccountResult {
   readonly deleted: true
@@ -85,18 +86,9 @@ export async function deleteAccount(db: Db, firebaseUid: string): Promise<Delete
         ])
         forfeited++
       } else {
-        const others = await tx.query<{ n: number }>(
-          'SELECT count(*)::int AS n FROM seats WHERE game_id = $1 AND user_id IS NOT NULL AND user_id <> $2',
-          [table.id, userId],
-        )
-        if (others.rows[0]!.n === 0) {
-          await tx.query(`UPDATE games SET status = 'abandoned', version = version + 1, updated_at = now() WHERE id = $1`, [table.id])
-          closed++
-        } else {
-          // Others are waiting: free this seat (unlinked below) and tell them, by moving the version, that someone left.
-          await tx.query('UPDATE games SET version = version + 1, updated_at = now() WHERE id = $1', [table.id])
-          released++
-        }
+        // Others waiting: the seat is freed and they are told. Nobody else: the table is closed.
+        if ((await releaseOrCloseWaiting(tx, table.id, userId)) === 'closed') closed++
+        else released++
       }
     }
 

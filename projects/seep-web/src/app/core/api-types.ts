@@ -71,6 +71,11 @@ export interface MutationDto<TView> {
   readonly clock?: ClockDto
 }
 
+/** What leaving a waiting table did: it was closed (nobody else was there) or the seat was freed for the others. */
+export interface LeaveGameDto {
+  readonly result: 'closed' | 'released'
+}
+
 /** What deleting an account did, in numbers. */
 export interface DeleteAccountDto {
   readonly deleted: true

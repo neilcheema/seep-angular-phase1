@@ -50,7 +50,12 @@ export function authed(handler: (args: AuthedArgs) => Promise<HttpResponseInit>)
       return await handler({ request, context, identity })
     } catch (err) {
       if (err instanceof HttpError) {
-        return { status: err.status, jsonBody: { error: err.message, ...err.details } }
+        const retryAfter = err.status === 429 && typeof err.details['retryAfterSeconds'] === 'number' ? String(err.details['retryAfterSeconds']) : null
+        return {
+          status: err.status,
+          jsonBody: { error: err.message, ...err.details },
+          ...(retryAfter ? { headers: { 'Retry-After': retryAfter } } : {}),
+        }
       }
       throw err
     }

@@ -62,6 +62,23 @@ describe('HttpApi', () => {
     expect(result).toEqual({ deleted: true, forfeited: 1, closed: 0, released: 2 })
   })
 
+  it('leaves a waiting table with a POST to that table’s leave address, signed like every other call', async () => {
+    const { http, sent } = api([{ status: 200, body: { result: 'closed' } }])
+    const result = await http.leaveGame('3f2b8c1e-0000-4000-8000-000000000001')
+    expect(sent[0]).toMatchObject({ url: 'https://api.test/api/v1/games/3f2b8c1e-0000-4000-8000-000000000001/leave', method: 'POST', headers: { authorization: 'Bearer tok-1' } })
+    expect(result).toEqual({ result: 'closed' })
+  })
+
+  it('passes the server’s reason through when a table cannot be left (it has started)', async () => {
+    const { http } = api([{ status: 409, body: { error: 'You can only leave a table that is still waiting for players.' } }])
+    await expect(http.leaveGame('abc')).rejects.toMatchObject({ status: 409, message: 'You can only leave a table that is still waiting for players.' })
+  })
+
+  it('shows the server’s "slow down" message for a 429, and carries how long to wait', async () => {
+    const { http } = api([{ status: 429, body: { error: 'You are starting tables too quickly. Please wait a few minutes.', retryAfterSeconds: 120 } }])
+    await expect(http.createGame('two_player')).rejects.toMatchObject({ status: 429, message: expect.stringMatching(/too quickly/), details: { retryAfterSeconds: 120 } })
+  })
+
   it('only declares a JSON content type when it actually sends a body', async () => {
     const { http, sent } = api([{ status: 200, body: { id: 'u1' } }, { status: 200, body: { games: [] } }])
     await http.me()

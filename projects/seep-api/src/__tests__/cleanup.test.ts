@@ -332,6 +332,44 @@ describe('stage 3: account-deletion markers', () => {
   })
 })
 
+describe('stage 4: old rate-limit rows', () => {
+  const event = (userId: string, hoursAgo: number) =>
+    t.db.query(`INSERT INTO rate_events (user_id, kind, at) VALUES ($1, 'move', now() - make_interval(secs => $2::float8 * 3600))`, [userId, hoursAgo])
+  const remaining = async () => (await t.db.query<{ n: number }>('SELECT count(*)::int AS n FROM rate_events')).rows[0]!.n
+
+  it('removes rows older than a day, and keeps recent ones (the longest window is an hour)', async () => {
+    const user = await makeUser(t.db, 'u')
+    await event(user.id, 25)
+    await event(user.id, 100)
+    await event(user.id, 23)
+    await event(user.id, 0.1)
+    const result = await runCleanup(t.db, settings())
+    expect(result.rateEventsPurged).toBe(2)
+    expect(await remaining()).toBe(2)
+  })
+
+  it('counts them in a dry run and removes nothing; does nothing when switched off', async () => {
+    const user = await makeUser(t.db, 'u')
+    await event(user.id, 30)
+    expect((await runCleanup(t.db, settings({ CLEANUP_DRY_RUN: 'true' }))).rateEventsPurged).toBe(1)
+    expect(await remaining()).toBe(1)
+    expect((await runCleanup(t.db, settings({ CLEANUP_ENABLED: 'false' }))).rateEventsPurged).toBe(0)
+    expect(await remaining()).toBe(1)
+  })
+
+  it('is mentioned in the daily log only when there was something to remove', async () => {
+    _setDbForTests(t.db)
+    const user = await makeUser(t.db, 'u')
+    const quiet = { log: vi.fn(), warn: vi.fn() }
+    await cleanupHandler({ isPastDue: false } as unknown as Timer, quiet as unknown as InvocationContext)
+    expect(quiet.log.mock.calls.map((x) => String(x[0])).join('\n')).not.toMatch(/rate-limit/)
+    await event(user.id, 48)
+    const busy = { log: vi.fn(), warn: vi.fn() }
+    await cleanupHandler({ isPastDue: false } as unknown as Timer, busy as unknown as InvocationContext)
+    expect(busy.log.mock.calls.map((x) => String(x[0])).join('\n')).toMatch(/Removed 1 old rate-limit record\(s\)/)
+  })
+})
+
 describe('the daily timer', () => {
   const context = () => ({ log: vi.fn(), warn: vi.fn() })
   const asContext = (c: ReturnType<typeof context>) => c as unknown as InvocationContext

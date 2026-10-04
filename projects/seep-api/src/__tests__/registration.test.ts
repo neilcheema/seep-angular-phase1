@@ -21,8 +21,10 @@ describe('function registration', () => {
       [
         'GET v1/games',
         'GET v1/games/{id}',
+        'GET v1/health',
         'POST v1/games',
         'POST v1/games/{id}/deal-next',
+        'POST v1/games/{id}/leave',
         'POST v1/games/{id}/moves',
         'POST v1/join',
         'POST v1/me',
