@@ -1,14 +1,15 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core'
+import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import type { FourPlayerGameView, FourPlayerIntent, GameView, Intent, PlayerId, SeatId } from 'seep-engine'
 import { partnerOf, teamOf } from 'seep-engine'
-import { opponentNameOf, sameNames, seatNamesOf } from '../../core/board-names'
+import { fourPlayerSeatLabel, opponentNameOf, sameNames, seatNamesOf } from '../../core/board-names'
 import { seatLine } from '../../core/display-names'
 import { ApiError } from '../../core/game-api'
 import { AUTH, ONLINE_API } from '../../core/online'
 import { fourPlayerPerspective, twoPlayerPerspective } from '../../core/perspective'
-import { RemoteSession } from '../../core/remote-session'
+import { REACTIONS, reactionToastText } from '../../core/reactions'
+import { type IncomingReaction, RemoteSession } from '../../core/remote-session'
 import { type ClockNames, describeClock } from '../../core/turn-clock-text'
 import { FourPlayerComponent } from '../four-player/four-player.component'
 import { TwoPlayerComponent } from '../two-player/two-player.component'
@@ -55,6 +56,19 @@ export class OnlineGameComponent {
     const code = this.session()?.inviteCode()
     return code ? `${window.location.origin}/join/${code}` : null
   })
+
+  // --- quick reactions ---
+  readonly reactionChoices = REACTIONS
+  readonly trayOpen = signal(false)
+  /** Mute switch: incoming reactions are not shown. Lasts as long as this screen is open. */
+  readonly reactionsMuted = signal(false)
+  readonly reactionError = signal<string | null>(null)
+  readonly reactionBusy = signal(false)
+  /** The few reactions on screen right now; each disappears after four seconds. */
+  readonly toasts = signal<{ key: number; text: string }[]>([])
+  private lastHeardSeq = 0
+  private toastKey = 0
+  private readonly toastTimers = new Set<ReturnType<typeof setTimeout>>()
 
   // --- names on the boards ---
   readonly opponentName = computed(() => opponentNameOf(this.two()?.players() ?? []))
@@ -109,12 +123,71 @@ export class OnlineGameComponent {
     this.destroyRef.onDestroy(() => {
       this.disposed = true
       clearInterval(this.ticker)
+      this.toastTimers.forEach((timer) => clearTimeout(timer))
       document.removeEventListener('visibilitychange', this.onVisibilityChange)
       this.session()?.dispose()
+    })
+    // Show each new reaction once. Only the list of reactions is tracked: showing one reads names and the mute switch,
+    // which must not make this run again.
+    effect(() => {
+      const heard = this.session()?.reactions() ?? []
+      untracked(() => this.showReactions(heard))
     })
     // The same screen is reused when only the table in the address changes (old match -> its rematch), so it must
     // reopen whenever the id changes, not just once.
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => void this.reopen(params.get('id') ?? ''))
+  }
+
+  toggleTray(): void {
+    this.reactionError.set(null)
+    this.trayOpen.update((open) => !open)
+  }
+
+  toggleMute(): void {
+    this.reactionsMuted.update((muted) => !muted)
+  }
+
+  /** Sends one of the preset reactions. A refusal (such as "too quickly") is shown in the tray, in the server's own words. */
+  async sendReaction(code: string): Promise<void> {
+    const session = this.session()
+    if (!session || this.reactionBusy()) return
+    this.reactionBusy.set(true)
+    this.reactionError.set(null)
+    try {
+      await session.sendReaction(code)
+      this.trayOpen.set(false)
+    } catch (err) {
+      this.reactionError.set(err instanceof ApiError ? err.message : "Couldn't send that. Check your connection.")
+    } finally {
+      this.reactionBusy.set(false)
+    }
+  }
+
+  private showReactions(heard: readonly IncomingReaction[]): void {
+    for (const r of heard) {
+      if (r.seq <= this.lastHeardSeq) continue
+      this.lastHeardSeq = r.seq // advance even when muted, so unmuting does not suddenly show old ones
+      if (this.reactionsMuted()) continue
+      const text = reactionToastText(this.reactorName(r.seat), r.code)
+      if (text === null) continue // a code from a newer server that this version does not know
+      const key = ++this.toastKey
+      this.toasts.update((list) => [...list, { key, text }].slice(-3))
+      const timer = setTimeout(() => {
+        this.toastTimers.delete(timer)
+        this.toasts.update((list) => list.filter((toast) => toast.key !== key))
+      }, 4000)
+      this.toastTimers.add(timer)
+    }
+  }
+
+  /** Who a reaction is from, in the viewer's terms: a name, "Your partner", or a fallback. */
+  private reactorName(seat: string): string {
+    const four = this.four()
+    if (four) {
+      const mine = four.seat()
+      return mine ? fourPlayerSeatLabel(seat as SeatId, mine as SeatId, this.seatNames()) : 'Someone'
+    }
+    return this.opponentName() ?? 'Your opponent'
   }
 
   /** Asks for a rematch of this match: makes the table if first, joins it if the other player already did. */
@@ -139,6 +212,10 @@ export class OnlineGameComponent {
     this.four.set(null)
     this.error.set(null)
     this.rematchError.set(null)
+    this.lastHeardSeq = 0
+    this.toasts.set([])
+    this.trayOpen.set(false)
+    this.reactionError.set(null)
     this.gameId = id
     await this.open(id, seq)
   }

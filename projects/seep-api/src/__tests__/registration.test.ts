@@ -25,6 +25,7 @@ describe('function registration', () => {
         'POST v1/games',
         'POST v1/games/{id}/deal-next',
         'POST v1/games/{id}/leave',
+        'POST v1/games/{id}/reactions',
         'POST v1/games/{id}/rematch',
         'POST v1/games/{id}/moves',
         'POST v1/join',

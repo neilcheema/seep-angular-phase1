@@ -25,7 +25,7 @@ const backdate = (userId: string, kind: string, secondsAgo: number) =>
 
 describe('limitSettings', () => {
   it('has sensible defaults: generous for real play, tight for floods', () => {
-    expect(limitSettings({})).toEqual({ enabled: true, createPerHour: 10, movesPerMinute: 120, failedJoinsPer10Min: 10, maxWaitingTables: 5, maxActiveTables: 20 })
+    expect(limitSettings({})).toEqual({ enabled: true, createPerHour: 10, movesPerMinute: 120, failedJoinsPer10Min: 10, maxWaitingTables: 5, maxActiveTables: 20, reactionsPerMinute: 6 })
   })
   it('can be tuned, or switched off, without a redeploy', () => {
     expect(limitSettings({ LIMIT_CREATE_PER_HOUR: '3', LIMIT_MOVES_PER_MINUTE: '30', LIMIT_FAILED_JOINS_PER_10_MIN: '4', LIMIT_MAX_WAITING_TABLES: '2', LIMIT_MAX_ACTIVE_TABLES: '7' })).toMatchObject({

@@ -47,6 +47,9 @@ export interface MoveRecordDto {
 }
 
 export interface GameSnapshotDto<TView> extends GameInfoDto {
+  /** Quick reactions: the table's counter, and the recent ones after the cursor we supplied. Absent from an older server. */
+  readonly reactionSeq?: number
+  readonly reactions?: readonly ReactionDto[]
   /** The table made for a rematch of this (finished) game, once either player has asked for one. Absent from an older server. */
   readonly rematchGameId?: string | null
   readonly changed: true
@@ -57,6 +60,9 @@ export interface GameSnapshotDto<TView> extends GameInfoDto {
 }
 
 export interface GameUnchangedDto {
+  /** Quick reactions: the table's counter, and the recent ones after the cursor we supplied. Absent from an older server. */
+  readonly reactionSeq?: number
+  readonly reactions?: readonly ReactionDto[]
   readonly changed: false
   readonly gameId: string
   readonly version: number
@@ -84,6 +90,14 @@ export interface DeleteAccountDto {
   readonly forfeited: number
   readonly closed: number
   readonly released: number
+}
+
+/** A quick reaction, as the server sends it. */
+export interface ReactionDto {
+  readonly seq: number
+  readonly seat: string
+  readonly code: string
+  readonly ageMs: number
 }
 
 /** The table made for a rematch: the same shape as any table, plus whether this call made it or joined it. */

@@ -26,7 +26,9 @@ export class ApiError extends Error {
 
 /** What a live game needs from the server. */
 export interface GameApi {
-  getGame<TView>(gameId: string, since?: number): Promise<GameSnapshotDto<TView> | GameUnchangedDto>
+  getGame<TView>(gameId: string, since?: number, sinceReaction?: number): Promise<GameSnapshotDto<TView> | GameUnchangedDto>
+  /** Sends a quick reaction (a preset code) to everyone at the table. Never changes the game. */
+  sendReaction(gameId: string, code: string): Promise<{ seq: number }>
   submitMove<TView>(gameId: string, intent: unknown, expectedVersion: number): Promise<MutationDto<TView>>
   dealNext<TView>(gameId: string, expectedVersion: number): Promise<MutationDto<TView>>
 }
@@ -102,9 +104,14 @@ export class HttpApi implements GameApi, LobbyApi {
     return res.games
   }
 
-  getGame<TView>(gameId: string, since?: number): Promise<GameSnapshotDto<TView> | GameUnchangedDto> {
-    const query = since === undefined ? '' : `?since=${since}`
+  getGame<TView>(gameId: string, since?: number, sinceReaction?: number): Promise<GameSnapshotDto<TView> | GameUnchangedDto> {
+    const params = [since === undefined ? null : `since=${since}`, sinceReaction === undefined ? null : `sinceReaction=${sinceReaction}`].filter((p) => p !== null)
+    const query = params.length === 0 ? '' : `?${params.join('&')}`
     return this.request('GET', `/v1/games/${encodeURIComponent(gameId)}${query}`)
+  }
+
+  sendReaction(gameId: string, code: string): Promise<{ seq: number }> {
+    return this.request('POST', `/v1/games/${encodeURIComponent(gameId)}/reactions`, { code })
   }
 
   submitMove<TView>(gameId: string, intent: unknown, expectedVersion: number): Promise<MutationDto<TView>> {

@@ -2,9 +2,9 @@ import { app } from '@azure/functions'
 import { getDb } from '../lib/db'
 import { isGameKind } from '../lib/engines'
 import { BadRequestError } from '../lib/errors'
-import { createGame, dealNext, getGame, joinGame, leaveWaitingTable, listMyGames, parseVersion, requestRematch, submitMove } from '../lib/games'
+import { createGame, dealNext, getGame, joinGame, leaveWaitingTable, listMyGames, parseVersion, requestRematch, sendReaction, submitMove } from '../lib/games'
 import { authed, readJsonBody } from '../lib/http'
-import { assertTableCaps, guardCreate, guardJoin, guardMove, limitSettings } from '../lib/limits'
+import { assertTableCaps, guardCreate, guardJoin, guardMove, guardReaction, limitSettings } from '../lib/limits'
 import { resolveUserId } from '../lib/users'
 
 /**
@@ -46,9 +46,10 @@ export const listGamesHandler = authed(async ({ identity }) => {
 
 export const getGameHandler = authed(async ({ request, identity }) => {
   const since = parseVersion(request.query.get('since'), 'since')
+  const sinceReaction = parseVersion(request.query.get('sinceReaction'), 'sinceReaction')
   const db = getDb()
   const userId = await resolveUserId(db, identity)
-  return { status: 200, jsonBody: await getGame(db, userId, request.params['id'] ?? '', since) }
+  return { status: 200, jsonBody: await getGame(db, userId, request.params['id'] ?? '', since, sinceReaction) }
 })
 
 /**
@@ -66,6 +67,18 @@ export const rematchHandler = authed(async ({ request, context, identity }) => {
     beforeJoin: (tx) => (settings.enabled ? assertTableCaps(tx, userId, settings, 'join') : Promise.resolve()),
   })
   return { status: result.created ? 201 : 200, jsonBody: result }
+})
+
+/**
+ * POST /api/v1/games/{id}/reactions — send a quick reaction (body: { code }). Preset codes only, limited per person,
+ * and it never changes the game's version.
+ */
+export const reactionHandler = authed(async ({ request, context, identity }) => {
+  const body = await readJsonBody(request)
+  const db = getDb()
+  const userId = await resolveUserId(db, identity)
+  await guardReaction(db, userId, limitSettings(), (m) => context.warn(m))
+  return { status: 200, jsonBody: await sendReaction(db, userId, request.params['id'] ?? '', field(body, 'code')) }
 })
 
 export const leaveGameHandler = authed(async ({ request, identity }) => {
@@ -99,6 +112,7 @@ app.http('games-create', { methods: ['POST'], authLevel: 'anonymous', route: 'v1
 app.http('games-list', { methods: ['GET'], authLevel: 'anonymous', route: 'v1/games', handler: listGamesHandler })
 app.http('games-join', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/join', handler: joinGameHandler })
 app.http('games-get', { methods: ['GET'], authLevel: 'anonymous', route: 'v1/games/{id}', handler: getGameHandler })
+app.http('games-reactions', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/games/{id}/reactions', handler: reactionHandler })
 app.http('games-rematch', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/games/{id}/rematch', handler: rematchHandler })
 app.http('games-leave', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/games/{id}/leave', handler: leaveGameHandler })
 app.http('games-move', { methods: ['POST'], authLevel: 'anonymous', route: 'v1/games/{id}/moves', handler: submitMoveHandler })

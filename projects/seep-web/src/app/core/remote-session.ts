@@ -1,9 +1,16 @@
 import { signal } from '@angular/core'
-import type { ClockDto, GameKind, GameStatus, GameSnapshotDto, MutationDto, PlayerInfoDto } from './api-types'
+import type { ClockDto, GameKind, GameStatus, GameSnapshotDto, MutationDto, PlayerInfoDto, ReactionDto } from './api-types'
 import { ApiError, type GameApi } from './game-api'
 import type { GameSession, MoveEvent } from './game-session'
 import type { Perspective } from './perspective'
 import { nextPollDelay } from './poll-policy'
+
+/** A quick reaction from another player, as this screen first heard it. */
+export interface IncomingReaction {
+  readonly seq: number
+  readonly seat: string
+  readonly code: string
+}
 
 export type ConnectionState = 'connecting' | 'online' | 'offline' | 'unauthorized'
 
@@ -59,6 +66,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
   readonly clock = signal<ClockState | null>(null)
   /** The table made for a rematch of this game, once either player has asked for one. */
   readonly rematchGameId = signal<string | null>(null)
+  /** Quick reactions from the OTHER players, newest last, as this screen heard them (at most the last ten). */
+  readonly reactions = signal<IncomingReaction[]>([])
 
   private readonly options: RemoteSessionOptions<TView, TActor>
   private version: number | undefined
@@ -69,6 +78,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
   private unchangedPolls = 0
   /** When this screen first saw the game was over (for the short listen for a rematch). */
   private finishedSeenAt: number | null = null
+  /** The last quick reaction we have heard about. Undefined until the first load, so old reactions are never replayed. */
+  private reactionSeq: number | undefined
 
   private constructor(options: RemoteSessionOptions<TView, TActor>) {
     this.options = options
@@ -143,9 +154,10 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
 
   /** Fetches anything newer than what we have. Throws on any failure. */
   private async refresh(): Promise<void> {
-    const res = await this.options.api.getGame<TView>(this.options.gameId, this.version)
+    const res = await this.options.api.getGame<TView>(this.options.gameId, this.version, this.reactionSeq)
     this.failures = 0
     this.connection.set('online')
+    this.takeReactions(res)
     if (!res.changed) {
       // Same rule as for snapshots: an answer older than what we already hold (e.g. a poll sent before our own
       // move, answered after it) must not drag the status back. A finished game would look active again.
@@ -261,6 +273,29 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
       ...(this.finishedSeenAt === null ? {} : { finishedForMs: this.now() - this.finishedSeenAt }),
       watchForRematch: this.kind() === 'two_player' && this.rematchGameId() === null,
     })
+  }
+
+  /** Sends a quick reaction to everyone at the table. It never changes the game. Errors (such as “too quickly”) are let through. */
+  async sendReaction(code: string): Promise<void> {
+    await this.options.api.sendReaction(this.options.gameId, code)
+  }
+
+  /**
+   * Hears the other players' reactions. The cursor only moves forward, a reaction of our own is not echoed back to us,
+   * and an older server (which sends no reaction fields at all) is simply ignored.
+   */
+  private takeReactions(res: { reactionSeq?: number; reactions?: readonly ReactionDto[] }): void {
+    if (res.reactionSeq === undefined) return
+    const cursor = this.reactionSeq
+    if (cursor !== undefined) {
+      const mine = this.seat()
+      const fresh = (res.reactions ?? []).filter((r) => r.seq > cursor && r.seat !== mine)
+      if (fresh.length > 0) {
+        this.reactions.update((list) => [...list, ...fresh.map((r) => ({ seq: r.seq, seat: r.seat, code: r.code }))].slice(-10))
+      }
+    }
+    const newest = Math.max(res.reactionSeq, ...(res.reactions ?? []).map((r) => r.seq))
+    this.reactionSeq = cursor === undefined ? newest : Math.max(cursor, newest)
   }
 
   private now(): number {

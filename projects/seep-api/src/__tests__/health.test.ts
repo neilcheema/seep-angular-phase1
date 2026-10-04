@@ -57,7 +57,7 @@ describe('the deep health check (for people, smoke tests and a look right after 
   })
 
   it('knows every table the code relies on', () => {
-    expect(Object.keys(REQUIRED_SCHEMA).sort()).toEqual(['deleted_accounts', 'games', 'move_log', 'rate_events', 'seats', 'users'])
+    expect(Object.keys(REQUIRED_SCHEMA).sort()).toEqual(['deleted_accounts', 'games', 'move_log', 'rate_events', 'reactions', 'seats', 'users'])
   })
 
   it('says "out-of-date" if a migration was skipped, tells the logs exactly what is missing, and tells the caller nothing more', async () => {

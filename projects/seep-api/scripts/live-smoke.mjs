@@ -171,6 +171,8 @@ async function main() {
   const b = viewB.json?.view
   check('each sees their own seat as the viewer', a?.viewer === 'player' && b?.viewer === 'opponent')
   check("the other player sees A's name in the table's player list", viewB.json?.players?.find((pl) => pl.seat === 'player')?.displayName === 'Smoke A', JSON.stringify(viewB.json?.players))
+  // The poll now carries the rematch pointer (empty while the match is on). An older API has no such field at all.
+  check('the poll carries the rematch field, empty while the match is still on', viewA.json?.rematchGameId === null, `rematchGameId = ${JSON.stringify(viewA.json?.rematchGameId)}`)
   // Staged dealing: before the opening move only the bidder holds cards (their first four); everyone else is dealt after.
   check('only the bidder holds cards at this point (staged dealing), so the two views differ', (a?.myHand?.length > 0) !== (b?.myHand?.length > 0) && cards(a) !== cards(b))
   const leak = (mine, theirs) => (theirs?.myHand ?? []).some((c) => cards(mine).includes(`${cardKey(c)},"suit":"${c.suit}"`) || cards(mine).includes(`"suit":"${c.suit}","face":"${c.face}"`))
@@ -203,6 +205,20 @@ async function main() {
 
   const list = await api(TOKEN_A, 'GET', '/v1/games')
   check('the game appears in A\'s list', list.status === 200 && list.json?.games?.some((g) => g.gameId === gameId))
+
+  // A rematch can only be asked for once a match is over, so asking now must be refused with this exact 409. That proves the
+  // rematch route is deployed (an older API answers 404) and that its database column exists (a missing one would be a 500).
+  const rematchEarly = await api(TOKEN_A, 'POST', `/v1/games/${gameId}/rematch`)
+  check('asking for a rematch while the match is still on is refused (409): the rematch route and its column are live', rematchEarly.status === 409 && /once the match is over/.test(rematchEarly.json?.error ?? ''), `${rematchEarly.status} ${rematchEarly.text.slice(0, 140)}`)
+
+  // Quick reactions: preset codes only, heard by the other player on a poll. An API from before they existed has no such route
+  // (404) and its poll carries no reactionSeq, so these fail there on purpose.
+  const sentReaction = await api(TOKEN_A, 'POST', `/v1/games/${gameId}/reactions`, { code: 'good_luck' })
+  check('A sends a quick reaction to the match (200, with its number)', sentReaction.status === 200 && typeof sentReaction.json?.seq === 'number', `${sentReaction.status} ${sentReaction.text.slice(0, 120)}`)
+  const freeText = await api(TOKEN_A, 'POST', `/v1/games/${gameId}/reactions`, { code: 'free text is not allowed' })
+  check('anything but a preset reaction is refused (400)', freeText.status === 400, `${freeText.status} ${freeText.text.slice(0, 120)}`)
+  const heardIt = await api(TOKEN_B, 'GET', `/v1/games/${gameId}?sinceReaction=0`)
+  check('the other player hears it on their next poll, from the right seat', heardIt.json?.reactions?.some((r) => r.code === 'good_luck' && r.seat === 'player') === true && heardIt.json?.reactionSeq >= 1, JSON.stringify(heardIt.json?.reactions))
 
   if (TOKEN_C && TOKEN_D) await fourPlayerSection()
   else console.log('\n(four-player section skipped: it needs FIREBASE_API_KEY, or TOKEN_C and TOKEN_D as well)')

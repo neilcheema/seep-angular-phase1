@@ -19,6 +19,7 @@ export interface LimitSettings {
   readonly failedJoinsPer10Min: number
   readonly maxWaitingTables: number
   readonly maxActiveTables: number
+  readonly reactionsPerMinute: number
 }
 
 function positive(raw: string | undefined): number | undefined {
@@ -35,16 +36,18 @@ export function limitSettings(env: Record<string, string | undefined> = process.
     failedJoinsPer10Min: positive(env['LIMIT_FAILED_JOINS_PER_10_MIN']) ?? 10,
     maxWaitingTables: positive(env['LIMIT_MAX_WAITING_TABLES']) ?? 5,
     maxActiveTables: positive(env['LIMIT_MAX_ACTIVE_TABLES']) ?? 20,
+    reactionsPerMinute: positive(env['LIMIT_REACTIONS_PER_MINUTE']) ?? 6,
   }
 }
 
-export type RateKind = 'create_game' | 'move' | 'join_fail'
+export type RateKind = 'create_game' | 'move' | 'join_fail' | 'reaction'
 export type Log = (message: string) => void
 
 const MESSAGES: Record<RateKind, string> = {
   create_game: 'You are starting tables too quickly. Please wait a few minutes.',
   move: 'You are making moves too quickly. Please slow down.',
   join_fail: 'Too many wrong table codes. Please wait a few minutes before trying again.',
+  reaction: 'You are sending reactions too quickly. Please wait a moment.',
 }
 
 /**
@@ -146,3 +149,10 @@ export async function guardJoin<T>(db: Queryable, userId: string, settings: Limi
     throw err
   }
 }
+
+/** Quick reactions are limited per person, so they cannot be used to flood a table. */
+export async function guardReaction(db: Queryable, userId: string, settings: LimitSettings, log?: Log): Promise<void> {
+  if (!settings.enabled) return
+  await hit(db, userId, 'reaction', settings.reactionsPerMinute, 60, log)
+}
+

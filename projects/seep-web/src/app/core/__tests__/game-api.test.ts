@@ -62,6 +62,21 @@ describe('HttpApi', () => {
     expect(result).toEqual({ deleted: true, forfeited: 1, closed: 0, released: 2 })
   })
 
+  it('asks for a table with both cursors in the address: the game version and the last reaction heard', async () => {
+    const { http, sent } = api([{ status: 200, body: {} }, { status: 200, body: {} }, { status: 200, body: {} }])
+    await http.getGame('abc', 4, 9)
+    await http.getGame('abc', undefined, 9)
+    await http.getGame('abc')
+    expect(sent.map((s) => s.url)).toEqual(['https://api.test/api/v1/games/abc?since=4&sinceReaction=9', 'https://api.test/api/v1/games/abc?sinceReaction=9', 'https://api.test/api/v1/games/abc'])
+  })
+
+  it('sends a quick reaction as a POST of just the code, and lets the refusal through', async () => {
+    const { http, sent } = api([{ status: 200, body: { seq: 3 } }, { status: 429, body: { error: 'You are sending reactions too quickly. Please wait a moment.', retryAfterSeconds: 20 } }])
+    expect(await http.sendReaction('abc', 'good_game')).toEqual({ seq: 3 })
+    expect(sent[0]).toMatchObject({ url: 'https://api.test/api/v1/games/abc/reactions', method: 'POST', body: { code: 'good_game' } })
+    await expect(http.sendReaction('abc', 'wow')).rejects.toMatchObject({ status: 429, details: { retryAfterSeconds: 20 } })
+  })
+
   it('asks for a rematch with a POST to that match’s rematch address, and returns the table', async () => {
     const { http, sent } = api([{ status: 201, body: { gameId: 'g2', created: true, status: 'waiting' } }])
     const result = await http.requestRematch('3f2b8c1e-0000-4000-8000-000000000001')

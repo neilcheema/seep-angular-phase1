@@ -44,7 +44,8 @@ function makeApi() {
   const getGame = vi.fn()
   const submitMove = vi.fn()
   const dealNext = vi.fn()
-  return { api: { getGame, submitMove, dealNext } as unknown as GameApi, getGame, submitMove, dealNext }
+  const sendReaction = vi.fn()
+  return { api: { getGame, submitMove, dealNext, sendReaction } as unknown as GameApi, getGame, submitMove, dealNext, sendReaction }
 }
 
 const open = (api: GameApi, extra: { isHidden?: () => boolean } = {}) =>
@@ -63,7 +64,7 @@ describe('RemoteSession: loading', () => {
     getGame.mockResolvedValueOnce(snapshot(s0, 'player', 1, { status: 'waiting', inviteCode: 'ABC234' }))
     const session = await open(api)
 
-    expect(getGame).toHaveBeenCalledWith('g1', undefined)
+    expect(getGame).toHaveBeenCalledWith('g1', undefined, undefined)
     expect(session.view()?.viewer).toBe('player')
     expect(session.seat()).toBe('player')
     expect(session.status()).toBe('waiting')
@@ -111,7 +112,7 @@ describe('RemoteSession: polling', () => {
     expect(getGame).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(2)
     expect(getGame).toHaveBeenCalledTimes(2)
-    expect(getGame).toHaveBeenLastCalledWith('g1', 1)
+    expect(getGame).toHaveBeenLastCalledWith('g1', 1, undefined)
     session.dispose()
   })
 
@@ -432,7 +433,7 @@ describe('RemoteSession: making moves', () => {
     // Later polls ask from the new version. (It is still the bidder's own move: the opening move is next,
     // so this is the slow, "I'm the one being waited on" pace.)
     await vi.advanceTimersByTimeAsync(10_100)
-    expect(getGame).toHaveBeenLastCalledWith('g1', 2)
+    expect(getGame).toHaveBeenLastCalledWith('g1', 2, undefined)
     session.dispose()
   })
 
@@ -613,3 +614,113 @@ describe('RemoteSession: the turn clock', () => {
     session.dispose()
   })
 })
+
+describe('RemoteSession: quick reactions', () => {
+  const withReactions = (snap: GameSnapshotDto<GameView>, reactionSeq: number, reactions: { seq: number; seat: string; code: string }[] = []) => ({
+    ...snap,
+    reactionSeq,
+    reactions: reactions.map((r) => ({ ...r, ageMs: 100 })),
+  })
+  const unchangedWith = (version: number, reactionSeq: number, reactions: { seq: number; seat: string; code: string }[] = []) => ({
+    ...unchanged(version),
+    reactionSeq,
+    reactions: reactions.map((r) => ({ ...r, ageMs: 100 })),
+  })
+
+  it('starts from the table’s current counter on the first load, so old reactions are never replayed', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 7, [{ seq: 7, seat: 'player', code: 'wow' }])) // even if a server sent some
+    getGame.mockResolvedValue(unchangedWith(1, 7))
+    const session = await open(api)
+    expect(session.reactions()).toEqual([])
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(getGame).toHaveBeenLastCalledWith('g1', 1, 7) // and every poll now carries that cursor
+    session.dispose()
+  })
+
+  it('hears the other player’s reaction on a poll that finds nothing new in the game itself', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    getGame.mockResolvedValueOnce(unchangedWith(1, 1, [{ seq: 1, seat: 'player', code: 'nice_move' }]))
+    getGame.mockResolvedValue(unchangedWith(1, 1))
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.reactions()).toEqual([{ seq: 1, seat: 'player', code: 'nice_move' }])
+    session.dispose()
+  })
+
+  it('hears it on a poll that DOES carry a changed game, too', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s1, 'opponent', 2), 1, [{ seq: 1, seat: 'player', code: 'oops' }]))
+    getGame.mockResolvedValue(unchangedWith(2, 1))
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.reactions().map((r) => r.code)).toEqual(['oops'])
+    session.dispose()
+  })
+
+  it('never echoes the viewer’s own reaction back to them', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    getGame.mockResolvedValueOnce(unchangedWith(1, 2, [{ seq: 1, seat: 'opponent', code: 'thanks' }, { seq: 2, seat: 'player', code: 'wow' }]))
+    getGame.mockResolvedValue(unchangedWith(1, 2))
+    const session = await open(api) // the viewer sits in 'opponent'
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.reactions().map((r) => r.code)).toEqual(['wow']) // only the other seat's
+    session.dispose()
+  })
+
+  it('hears each reaction once: the cursor moves forward, and a repeated or older answer adds nothing', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    getGame.mockResolvedValueOnce(unchangedWith(1, 2, [{ seq: 1, seat: 'player', code: 'wow' }, { seq: 2, seat: 'player', code: 'oops' }]))
+    getGame.mockResolvedValueOnce(unchangedWith(1, 2, [{ seq: 2, seat: 'player', code: 'oops' }])) // the same one again
+    getGame.mockResolvedValueOnce(unchangedWith(1, 1, [{ seq: 1, seat: 'player', code: 'wow' }])) // an older answer
+    getGame.mockResolvedValue(unchangedWith(1, 2))
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    await vi.advanceTimersByTimeAsync(2_100)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.reactions().map((r) => r.seq)).toEqual([1, 2])
+    expect(getGame).toHaveBeenLastCalledWith('g1', 1, 2)
+    session.dispose()
+  })
+
+  it('keeps only the last ten', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    const many = Array.from({ length: 15 }, (_, i) => ({ seq: i + 1, seat: 'player', code: 'wow' }))
+    getGame.mockResolvedValueOnce(unchangedWith(1, 15, many))
+    getGame.mockResolvedValue(unchangedWith(1, 15))
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.reactions().map((r) => r.seq)).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+    session.dispose()
+  })
+
+  it('ignores an older server that knows nothing of reactions', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(snapshot(s0, 'opponent', 1)) // no reaction fields at all
+    getGame.mockResolvedValue(unchanged(1))
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.reactions()).toEqual([])
+    expect(getGame).toHaveBeenLastCalledWith('g1', 1, undefined)
+    session.dispose()
+  })
+
+  it('sends a reaction by calling the API with this table and the code, and lets a refusal through', async () => {
+    const { api, getGame, sendReaction } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    getGame.mockResolvedValue(unchangedWith(1, 0))
+    sendReaction.mockResolvedValueOnce({ seq: 1 })
+    sendReaction.mockRejectedValueOnce(new ApiError(429, 'You are sending reactions too quickly. Please wait a moment.'))
+    const session = await open(api)
+    await session.sendReaction('good_luck')
+    expect(sendReaction).toHaveBeenCalledWith('g1', 'good_luck')
+    await expect(session.sendReaction('wow')).rejects.toMatchObject({ status: 429, message: expect.stringMatching(/too quickly/) })
+    session.dispose()
+  })
+})
+

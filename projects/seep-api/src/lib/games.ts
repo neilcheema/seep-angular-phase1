@@ -1,3 +1,4 @@
+import { REACTIONS_PER_POLL, REACTION_FRESH_SECONDS, isReactionCode } from './reactions'
 import { releaseOrCloseWaiting } from './tables'
 import { ENGINE_VERSION } from 'seep-engine'
 import type { Db, Queryable } from './db'
@@ -56,6 +57,9 @@ export interface GameSnapshot extends GameInfo {
   readonly clock: ClockDto
   /** The table made for a rematch of this (finished) game, once either player has asked for one. */
   readonly rematchGameId: string | null
+  /** Quick reactions: the table's counter, and the recent ones after the `sinceReaction` the caller supplied. */
+  readonly reactionSeq: number
+  readonly reactions: ReactionDto[]
 }
 
 export interface GameUnchanged {
@@ -64,6 +68,16 @@ export interface GameUnchanged {
   readonly version: number
   readonly status: GameStatus
   readonly clock: ClockDto
+  readonly reactionSeq: number
+  readonly reactions: ReactionDto[]
+}
+
+/** A quick reaction as a client sees it. */
+export interface ReactionDto {
+  readonly seq: number
+  readonly seat: string
+  readonly code: string
+  readonly ageMs: number
 }
 
 export interface MutationResult {
@@ -93,6 +107,8 @@ interface MemberRow extends ListRow {
   seen_ago_ms: number | null
   /** The table made for a rematch of this game, if one has been asked for. */
   rematch_game_id: string | null
+  /** How many quick reactions have been sent at this table. */
+  reaction_seq: number
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -120,7 +136,7 @@ function isUniqueViolation(err: unknown): boolean {
 /** Loads a game only if `userId` has a seat in it. Anyone else gets "not found". */
 async function loadMember(tx: Queryable, gameId: string, userId: string, lock: boolean): Promise<MemberRow> {
   const res = await tx.query<MemberRow>(
-    `SELECT g.id, g.kind, g.status, g.version, g.state, g.invite_code, g.rematch_game_id, s.seat_key,
+    `SELECT g.id, g.kind, g.status, g.version, g.state, g.invite_code, g.rematch_game_id, g.reaction_seq, s.seat_key,
             (EXTRACT(EPOCH FROM (now() - g.turn_started_at)) * 1000)::float8 AS elapsed_ms,
             (EXTRACT(EPOCH FROM (now() - s.last_seen_at)) * 1000)::float8 AS seen_ago_ms
        FROM games g
@@ -359,14 +375,16 @@ export async function getGame(
   userId: string,
   gameId: string,
   since?: number,
+  sinceReaction?: number,
 ): Promise<GameSnapshot | GameUnchanged> {
   assertGameId(gameId)
   let row = await loadMember(db, gameId, userId, false)
   if (await settleClock(db, row, userId)) row = await loadMember(db, gameId, userId, false)
   await touchPresence(db, row.id, userId)
+  const reactions = await loadReactions(db, row, sinceReaction)
   if (since !== undefined && since === row.version) {
     // Even "nothing new" carries the clock: a restart changes no move, but the movers' screens must hear of it.
-    return { changed: false, gameId: row.id, version: row.version, status: row.status, clock: clockOf(row) }
+    return { changed: false, gameId: row.id, version: row.version, status: row.status, clock: clockOf(row), reactionSeq: row.reaction_seq, reactions }
   }
 
   const adapter = adapterFor(row.kind)
@@ -387,6 +405,8 @@ export async function getGame(
     moves,
     clock: clockOf(row),
     rematchGameId: row.rematch_game_id ?? null,
+    reactionSeq: row.reaction_seq,
+    reactions,
   }
 }
 
@@ -572,3 +592,44 @@ export async function requestRematch(
   }
   throw new Error('Could not allocate a unique invite code.')
 }
+
+/**
+ * The reactions this caller has not seen yet. Nothing is looked up unless the table's counter shows there is something
+ * newer than the caller's cursor, so an ordinary poll pays nothing. A first load (no cursor) gets none, only the counter,
+ * so old reactions are never replayed. Only recent ones are handed out.
+ */
+async function loadReactions(tx: Queryable, row: MemberRow, sinceReaction: number | undefined): Promise<ReactionDto[]> {
+  if (sinceReaction === undefined || row.reaction_seq <= sinceReaction) return []
+  const res = await tx.query<{ seq: number; seat_key: string; code: string; age_ms: number }>(
+    `SELECT seq, seat_key, code, (EXTRACT(EPOCH FROM (now() - at)) * 1000)::float8 AS age_ms
+       FROM reactions
+      WHERE game_id = $1 AND seq > $2 AND at > now() - make_interval(secs => $3::float8)
+      ORDER BY seq ASC
+      LIMIT $4`,
+    [row.id, sinceReaction, REACTION_FRESH_SECONDS, REACTIONS_PER_POLL],
+  )
+  return res.rows.map((r) => ({ seq: r.seq, seat: r.seat_key, code: r.code, ageMs: Math.round(r.age_ms) }))
+}
+
+/**
+ * Sends a quick reaction to everyone at the table. Preset codes only. It has its own counter and NEVER touches the game's
+ * version, because a move is checked against that version: a reaction that moved it would make the other player's next
+ * move fail with "the game changed". Allowed while a match is on and just after it ends ("Good game!"), not before or
+ * once the table is closed.
+ */
+export async function sendReaction(db: Db, userId: string, gameId: string, code: unknown): Promise<{ seq: number }> {
+  assertGameId(gameId)
+  if (!isReactionCode(code)) throw new BadRequestError('That is not one of the quick reactions.')
+  return db.transaction(async (tx) => {
+    const row = await loadMember(tx, gameId, userId, false)
+    if (row.status !== 'active' && row.status !== 'finished') {
+      throw new ConflictError('Reactions are for a match in progress, or one that has just finished.')
+    }
+    const bumped = await tx.query<{ reaction_seq: number }>('UPDATE games SET reaction_seq = reaction_seq + 1 WHERE id = $1 RETURNING reaction_seq', [gameId])
+    const seq = bumped.rows[0]!.reaction_seq
+    await tx.query('INSERT INTO reactions (game_id, seq, seat_key, code) VALUES ($1, $2, $3, $4)', [gameId, seq, row.seat_key, code])
+    await tx.query(`DELETE FROM reactions WHERE game_id = $1 AND at < now() - interval '10 minutes'`, [gameId])
+    return { seq }
+  })
+}
+
