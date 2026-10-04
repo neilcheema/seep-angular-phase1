@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { friendlyAuthError } from '../identity'
+import { friendlyAuthError, friendlyReauthError } from '../identity'
 
 describe('friendlyAuthError', () => {
   it.each([
@@ -32,3 +32,23 @@ describe('friendlyAuthError', () => {
     expect(friendlyAuthError(null)).toBe('Sign-in failed. Please try again.')
   })
 })
+
+describe('friendlyReauthError (confirming it is really you before deleting an account)', () => {
+  it.each(['auth/wrong-password', 'auth/invalid-credential', 'auth/invalid-login-credentials'])('says the password is wrong for %s, not that an "email and password" do not match', (code) => {
+    expect(friendlyReauthError({ code })).toBe("That password isn't right.")
+  })
+  it('asks for the password when none was given', () => {
+    expect(friendlyReauthError({ code: 'auth/missing-password' })).toBe('Enter your password to confirm.')
+  })
+  it('says nothing was deleted when the person closes the Google window', () => {
+    expect(friendlyReauthError({ code: 'auth/popup-closed-by-user' })).toBe('Cancelled. Nothing was deleted.')
+  })
+  it('explains a stale sign-in and a different account in plain words', () => {
+    expect(friendlyReauthError({ code: 'auth/requires-recent-login' })).toMatch(/confirm it is really you/)
+    expect(friendlyReauthError({ code: 'auth/user-mismatch' })).toMatch(/different account/)
+  })
+  it('never shows a raw SDK message', () => {
+    expect(friendlyReauthError(new Error('Firebase: Error (auth/internal-error).'))).toBe('Sign-in failed. Please try again.')
+  })
+})
+

@@ -3,6 +3,8 @@ export interface Identity {
   readonly uid: string
   readonly email: string | null
   readonly displayName: string | null
+  /** How the person signs in. It decides how they confirm it is really them before deleting their account. */
+  readonly method: 'password' | 'google' | 'other'
 }
 
 /**
@@ -21,6 +23,13 @@ export interface IdentityProvider {
   signOut(): Promise<void>
   /** A current ID token for the API, or null when signed out. `forceRefresh` asks for a brand-new one. */
   getIdToken(forceRefresh?: boolean): Promise<string | null>
+  /**
+   * Asks the sign-in service to confirm it is really the person: it insists on a fresh sign-in before it will delete
+   * an account. A password account supplies its password; a Google account gets the Google window.
+   */
+  reauthenticate(password?: string): Promise<void>
+  /** Deletes the sign-in record itself (email, password, Google link). The person is signed out. Harmless if already gone. */
+  deleteAccount(): Promise<void>
 }
 
 /** Cancelling the Google window is a choice, not an error. */
@@ -41,6 +50,8 @@ const MESSAGES: Record<string, string> = {
   'auth/account-exists-with-different-credential': 'That email is already registered with a different sign-in method.',
   'auth/unauthorized-domain': "Sign-in isn't enabled for this web address yet.",
   'auth/operation-not-allowed': "That sign-in method isn't enabled yet.",
+  'auth/requires-recent-login': 'For your security, please confirm it is really you and try again.',
+  'auth/user-mismatch': 'That is a different account from the one you are signed in to.',
 }
 
 /**
@@ -55,4 +66,17 @@ export function friendlyAuthError(err: unknown): string | null {
     if (known) return known
   }
   return 'Sign-in failed. Please try again.'
+}
+
+/**
+ * The same, for confirming it is really the person before deleting their account. A wrong password is the usual
+ * failure, and "that email and password don't match" would be confusing there because only the password is asked for.
+ */
+export function friendlyReauthError(err: unknown): string {
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined
+  if (code === 'auth/wrong-password' || code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials') {
+    return "That password isn't right."
+  }
+  if (code === 'auth/missing-password') return 'Enter your password to confirm.'
+  return friendlyAuthError(err) ?? 'Cancelled. Nothing was deleted.'
 }

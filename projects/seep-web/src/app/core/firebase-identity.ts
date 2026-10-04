@@ -32,7 +32,10 @@ const loadFirebase: SdkLoader = async () => {
 }
 
 function toIdentity(user: User | null): Identity | null {
-  return user ? { uid: user.uid, email: user.email, displayName: user.displayName } : null
+  if (!user) return null
+  const provider = user.providerData?.[0]?.providerId
+  const method = provider === 'password' ? 'password' : provider === 'google.com' ? 'google' : 'other'
+  return { uid: user.uid, email: user.email, displayName: user.displayName, method }
 }
 
 export class FirebaseIdentityProvider implements IdentityProvider {
@@ -78,6 +81,25 @@ export class FirebaseIdentityProvider implements IdentityProvider {
   async signOut(): Promise<void> {
     const { sdk, auth } = await this.ready()
     await sdk.auth.signOut(auth)
+  }
+
+  async reauthenticate(password?: string): Promise<void> {
+    const { sdk, auth } = await this.ready()
+    const user = auth.currentUser
+    if (!user) throw Object.assign(new Error('Not signed in.'), { code: 'auth/user-not-found' })
+    if (user.providerData?.[0]?.providerId === 'password') {
+      if (!user.email || !password) throw Object.assign(new Error('A password is needed.'), { code: 'auth/missing-password' })
+      await sdk.auth.reauthenticateWithCredential(user, sdk.auth.EmailAuthProvider.credential(user.email, password))
+    } else {
+      await sdk.auth.reauthenticateWithPopup(user, new sdk.auth.GoogleAuthProvider())
+    }
+  }
+
+  async deleteAccount(): Promise<void> {
+    const { sdk, auth } = await this.ready()
+    const user = auth.currentUser
+    if (!user) return // already gone: nothing left to delete
+    await sdk.auth.deleteUser(user)
   }
 
   async getIdToken(forceRefresh = false): Promise<string | null> {

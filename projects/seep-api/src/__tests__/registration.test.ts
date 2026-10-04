@@ -26,6 +26,7 @@ describe('function registration', () => {
         'POST v1/games/{id}/moves',
         'POST v1/join',
         'POST v1/me',
+        'POST v1/me/delete',
       ].sort(),
     )
 

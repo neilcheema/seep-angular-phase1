@@ -102,9 +102,69 @@
           }
         </section>
       }
+
+      <section class="flex flex-col items-center gap-2" style="width: 100%; max-width: 360px; margin-top: 8px;">
+        @if (!deleting()) {
+          <button type="button" id="delete-account" class="btn-outline" style="padding: 4px 12px; font-size: 13px; opacity: 0.8;" (click)="openDelete()">Delete my account</button>
+        } @else {
+          <div id="delete-panel" style="width: 100%; text-align: left; border: 1px solid #ff8a8a; border-radius: 10px; padding: 14px; background: rgba(120,0,0,0.18);">
+            <h2 class="text-xl font-bold" style="color: #ffb3b3; margin-bottom: 6px;">Delete your account</h2>
+            <p style="color: rgba(255,255,255,0.85); font-size: 14px;">This cannot be undone. If you go ahead:</p>
+            <ul style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 6px 0 8px 18px;">
+              <li>any match you are playing is <strong>forfeited</strong>, so your opponent gets a clean result;</li>
+              <li>tables still waiting for players lose your seat (or close, if nobody else is there);</li>
+              <li>your name and email are removed from our records, and your sign-in record is deleted;</li>
+              <li>finished games stay for the other players, without your name, until they expire.</li>
+            </ul>
+            <p style="color: rgba(255,255,255,0.6); font-size: 12px;">See the <a routerLink="/privacy" style="text-decoration: underline;">Privacy Policy</a>.</p>
+            <form class="flex flex-col gap-2" style="margin-top: 8px;" (submit)="confirmDelete($event, confirmText.value, deletePassword.value)">
+              <div [style.display]="needsPassword() ? 'flex' : 'none'" class="flex-col gap-1" style="flex-direction: column;">
+                <label for="delete-password" style="color: rgba(255,255,255,0.75); font-size: 13px;">Your password, to confirm it is you</label>
+                <input
+                  #deletePassword
+                  id="delete-password"
+                  type="password"
+                  autocomplete="current-password"
+                  style="padding: 8px 10px; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); color: #fff;"
+                />
+              </div>
+              @if (!needsPassword()) {
+                <p style="color: rgba(255,255,255,0.7); font-size: 13px;">You will be asked to confirm with Google.</p>
+              }
+              <label for="delete-confirm" style="color: rgba(255,255,255,0.75); font-size: 13px;">Type DELETE to confirm</label>
+              <input
+                #confirmText
+                id="delete-confirm"
+                type="text"
+                autocomplete="off"
+                style="padding: 8px 10px; border-radius: 8px; background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); color: #fff;"
+              />
+              @if (deleteError(); as e) {
+                <p id="delete-error" role="alert" style="color: #ff8a8a; font-size: 13px;">{{ e }}</p>
+              }
+              <div class="flex gap-2" style="margin-top: 4px;">
+                <button type="submit" id="delete-confirm-button" class="btn-gold" style="background: #b32020; color: #fff;" [disabled]="deleteBusy()">
+                  {{ deleteBusy() ? 'Deleting…' : 'Delete my account permanently' }}
+                </button>
+                <button type="button" class="btn-outline" [disabled]="deleteBusy()" (click)="cancelDelete()">Cancel</button>
+              </div>
+            </form>
+          </div>
+        }
+        <p style="color: rgba(255,255,255,0.4); font-size: 11px;">
+          <a routerLink="/privacy" style="text-decoration: underline;">Privacy Policy</a> ·
+          <a routerLink="/terms" style="text-decoration: underline;">Terms of Use</a>
+        </p>
+      </section>
       }
     } @else {
       <section class="flex flex-col items-center gap-3" style="width: 100%; max-width: 340px;">
+        @if (accountDeleted()) {
+          <p id="account-deleted" role="status" style="color: #bfe8c0; max-width: 340px;">
+            Your account has been deleted. Your name and email were removed from our records, and any match in progress was forfeited.
+            You are welcome to come back and create a new account any time.
+          </p>
+        }
         @if (linkCode(); as invited) {
           <p style="color: rgba(255,255,255,0.85);">You have been invited to table <strong>{{ invited }}</strong>. Sign in to take your seat.</p>
         } @else {
@@ -139,6 +199,10 @@
         <button type="button" class="btn-outline" (click)="toggleMode()">
           {{ mode() === 'signup' ? 'I already have an account' : 'Create an account instead' }}
         </button>
+        <p id="agree-line" style="color: rgba(255,255,255,0.5); font-size: 12px;">
+          By continuing you agree to the <a routerLink="/terms" style="text-decoration: underline;">Terms of Use</a> and the
+          <a routerLink="/privacy" style="text-decoration: underline;">Privacy Policy</a>.
+        </p>
 
         @if (authError(); as e) {
           <p role="alert" style="color: #ff8a8a;">{{ e }}</p>

@@ -1,0 +1,148 @@
+<div class="game-root">
+  <div class="page">
+    <div class="column" id="privacy-policy">
+      <a class="back" routerLink="/">← Home</a>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Last updated {{ legal.lastUpdated }}</p>
+
+      <p>
+        {{ legal.siteName }} ({{ legal.siteAddress }}) is a free card game. This page explains what information we handle when you
+        use it, why, who else can see it, how long we keep it, and what you can do about it.
+      </p>
+
+      <div class="box">
+        <strong>The short version</strong>
+        <ul>
+          <li>You can play against the computer without an account. Those games run in your browser and the moves are not sent to us.</li>
+          <li>To play online with other people you sign in. We then keep your email address, the name you choose, and a record of the games you play.</li>
+          <li>The people you play with see your chosen name and the moves of the games you share. They do not see your email address.</li>
+          <li>We do not sell your information or use it for advertising.</li>
+          <li>You can delete your account yourself, at any time, from Play online.</li>
+        </ul>
+      </div>
+
+      <h2>Who we are</h2>
+      <p>{{ legal.siteName }} is run by {{ legal.operator }}. You can reach us about anything on this page at {{ legal.contactEmail }}.</p>
+
+      <h2>What we collect</h2>
+      <h3>When you sign in</h3>
+      <p>
+        Sign-in is handled by Firebase Authentication, a service from Google. If you create an account with an email address, we and
+        Google hold that address, and Google holds a protected form of your password (we never see your password). If you sign in
+        with Google, Google tells us your email address. Google's sign-in service keeps what it needs to run your account, which may
+        include your name and photo from your Google profile. Our own database keeps your email address and your chosen display name, not
+        your Google name or photo. (We may use the first word of your Google name to suggest a display name when you first choose one.)
+      </p>
+      <h3>The name you choose</h3>
+      <p>To play online you choose a display name. It is shown to the people you play with.</p>
+      <h3>Your games</h3>
+      <p>
+        When you play online we keep a record of the tables you create or join, which seat you took, every move made, the cards dealt,
+        the scores and the result. This is how the game works: your opponent's screen is built from the same record.
+      </p>
+      <h3>Technical records</h3>
+      <p>
+        Our hosting providers keep standard technical logs of requests to the website and the game server, such as the time, the page or
+        action requested, any error, and the network (IP) address it came from. We use them to keep the service running, to find
+        faults, and to protect it from abuse. They are kept for a limited time and are not used for advertising.
+      </p>
+      <h3>Playing against the computer</h3>
+      <p>
+        Games against the computer run entirely in your browser and are not sent to us. (Your browser still asks our hosting provider
+        for the page itself, which appears in the technical records above.)
+      </p>
+      <h3>If you email us</h3>
+      <p>We receive your message and your email address, and keep them for as long as we need to deal with it.</p>
+
+      <h2>Why we use it</h2>
+      <ul>
+        <li>To sign you in and seat you at a table.</li>
+        <li>To run games by the rules, including the turn clock and forfeits.</li>
+        <li>To show your opponents your display name.</li>
+        <li>To keep the service secure and to fix problems.</li>
+        <li>To answer you when you contact us.</li>
+      </ul>
+      <p>We do not use your information for advertising or profiling, and we do not sell it.</p>
+
+      <h2>Who can see it</h2>
+      <ul>
+        <li><strong>Other players</strong> see your display name and the moves and results of the tables you share with them. They do not see your email address.</li>
+        <li>
+          <strong>Service providers</strong> that run the service for us: Google (Firebase Authentication, and Google sign-in if you use it),
+          Microsoft Azure (hosting for the website and game server, and technical logs), and Neon (hosting for our database, which runs on
+          Amazon Web Services). They handle information only to provide those services to us.
+        </li>
+        <li><strong>Others</strong>, if the law requires it, or to protect the safety and security of people or the service.</li>
+      </ul>
+
+      <h2>Where it is kept</h2>
+      <p>
+        Our game server and its logs are hosted in the western United States (Microsoft Azure, West US 2). Our database is hosted by Neon
+        on Amazon Web Services in Oregon, United States. Google's sign-in service runs on Google's own infrastructure and may handle your
+        sign-in details in other countries too. If you are outside the United States, online play means your information is handled in the
+        United States, where privacy laws, and the access that courts and authorities have, may differ from where you live.
+      </p>
+
+      <h2>How long we keep it</h2>
+      <ul>
+        <li><strong>Your account</strong> (email address and display name): until you delete your account.</li>
+        <li>
+          <strong>Records of games:</strong> until about {{ legal.retention.deleteAfterDays }} days after a game ends or is closed. A table that
+          nobody has played at or looked at for {{ legal.retention.abandonAfterDays }} days is closed first, so a game record normally
+          disappears about {{ weeks }} weeks after anyone last used it.
+        </li>
+        <li>
+          <strong>After you delete your account,</strong> nothing that identifies you stays, except an anonymous account number, kept for
+          {{ legal.retention.deletionMarkerHours }} hours so that a sign-in which was still open cannot bring the account back. Games you were in
+          remain for the other players, without your name, until they expire as above.
+        </li>
+        <li><strong>Technical records:</strong> a limited time, set by our hosting providers' settings, used only to run and protect the service.</li>
+        <li><strong>Emails you send us:</strong> as long as we need to deal with them.</li>
+      </ul>
+
+      <h2>Your choices and rights</h2>
+      <ul>
+        <li>
+          <strong>Delete your account</strong> yourself: go to Play online and choose Delete my account. This forfeits any match in progress (so your
+          opponent gets a clean result), frees your seat at tables still waiting for players (or closes them if nobody else is there), removes
+          your email address and name from our database, and deletes your sign-in record at Google.
+        </li>
+        <li><strong>Change your name</strong> any time from Play online.</li>
+        <li>
+          <strong>Ask us</strong> at {{ legal.contactEmail }} to see what we hold about you, to correct it, or about anything in this policy. We will answer as
+          quickly as we can, and within the time the law requires.
+        </li>
+        <li>
+          <strong>Complain</strong> if you are not satisfied: you can contact the Office of the Information and Privacy Commissioner for British
+          Columbia (oipc.bc.ca).
+        </li>
+      </ul>
+
+      <h2>Children</h2>
+      <p>
+        {{ legal.siteName }} is not meant for children under {{ legal.minimumAge }}, and you must be at least {{ legal.minimumAge }} to create an account. If you
+        believe a child under {{ legal.minimumAge }} has given us information, email {{ legal.contactEmail }} and we will delete it.
+      </p>
+
+      <h2>Security</h2>
+      <p>
+        Connections to {{ legal.siteName }} use HTTPS, and your sign-in is checked on every request. Access to our systems is limited to the people who
+        run the service. No system is perfectly secure, so we cannot promise absolute security.
+      </p>
+
+      <h2>Browser storage</h2>
+      <p>
+        We do not use advertising or tracking cookies. To keep you signed in, Google's sign-in service stores a sign-in record in your browser.
+        Signing out removes it, and you can also clear this site's data in your browser settings.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>If we change this policy we will change the date at the top and, for important changes, tell signed-in players on the site.</p>
+
+      <h2>Contact</h2>
+      <p>{{ legal.contactEmail }}</p>
+
+      <p class="meta" style="margin-top: 28px;">See also the <a class="inline" routerLink="/terms">Terms of Use</a>.</p>
+    </div>
+  </div>
+</div>

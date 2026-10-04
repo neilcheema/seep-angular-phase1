@@ -1,0 +1,45 @@
+--- a/projects/seep-engine/src/lib/gameEngine.ts
++++ b/projects/seep-engine/src/lib/gameEngine.ts
+@@ -572,12 +572,17 @@
+  * (the server's turn clock decides when). The other player wins; scores are
+  * left as they stood, and the log says why.
+  */
+-export function forfeitMatch(state: GameState, loser: PlayerId): GameState {
++export function forfeitMatch(state: GameState, loser: PlayerId, reason: ForfeitReason = 'timeout'): GameState {
+   if (state.phase === 'match-over') throw new Error('The match is already over.')
+-  return pushLog(
+-    { ...state, phase: 'match-over', winner: otherPlayer(loser) },
+-    `${label(loser)} ran out of time and forfeited the match.`,
+-  )
++  return pushLog({ ...state, phase: 'match-over', winner: otherPlayer(loser) }, `${label(loser)} ${forfeitReasonText(reason)}`)
++}
++
++/** Why a match was forfeited. 'timeout': the turn clock ran out. 'left': the person left (for example by deleting their account). */
++export type ForfeitReason = 'timeout' | 'left'
++
++/** The end of the log sentence, after the player's name. */
++export function forfeitReasonText(reason: ForfeitReason): string {
++  return reason === 'left' ? 'left the game and forfeited the match.' : 'ran out of time and forfeited the match.'
+ }
+ 
+ /**
+--- a/projects/seep-engine/src/lib/fourPlayerEngine.ts
++++ b/projects/seep-engine/src/lib/fourPlayerEngine.ts
+@@ -1,3 +1,4 @@
++import { type ForfeitReason, forfeitReasonText } from './gameEngine'
+ import { type Card, captureValue, isHouseValue, legalHouseBids } from './card'
+ import { createDeck, dealFourPlayerHands, shuffleDeck } from './deck'
+ import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, partnerOf, teamOf } from './seats'
+@@ -152,10 +153,10 @@
+  * forfeits and the other team wins. Not a rule of play; see forfeitMatch in
+  * gameEngine.ts.
+  */
+-export function forfeitFourPlayerMatch(state: FourPlayerGameState, loser: SeatId): FourPlayerGameState {
++export function forfeitFourPlayerMatch(state: FourPlayerGameState, loser: SeatId, reason: ForfeitReason = 'timeout'): FourPlayerGameState {
+   if (state.phase === 'match-over') throw new Error('The match is already over.')
+   const winner = ALL_TEAMS.find((team) => team !== teamOf(loser))!
+-  return pushLog({ ...state, phase: 'match-over', winner }, `${loser} ran out of time and forfeited the match.`)
++  return pushLog({ ...state, phase: 'match-over', winner }, `${loser} ${forfeitReasonText(reason)}`)
+ }
+ 
+ export function legalFourPlayerBids(state: FourPlayerGameState): number[] {

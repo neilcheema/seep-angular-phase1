@@ -21,6 +21,7 @@ export async function cleanupHandler(timer: Timer, context: InvocationContext): 
     `${verb} closed ${result.abandoned} idle table(s) and deleted ${result.deleted} old table(s) in ${result.batches} batch(es). ` +
       `Database size: ${formatSize(result.sizeBytesBefore)} before, ${formatSize(result.sizeBytesAfter)} after.`,
   )
+  if (result.markersPurged > 0) context.log(`Removed ${result.markersPurged} expired account-deletion marker(s).`)
   if (result.sizeWarning) {
     context.warn(
       `The database is ${formatSize(result.sizeBytesAfter)}, above the ${settings.sizeWarnMb} MB warning level. ` +

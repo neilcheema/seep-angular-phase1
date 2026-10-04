@@ -3,6 +3,7 @@ import { getDb } from '../lib/db'
 import { cleanDisplayName } from '../lib/display-name'
 import { BadRequestError } from '../lib/errors'
 import { authed, readJsonBody } from '../lib/http'
+import { AccountDeletedError } from '../lib/users'
 
 /**
  * POST /api/v1/me — verifies the bearer token, then upserts a users row
@@ -30,14 +31,16 @@ export const me = authed(async ({ request, identity }) => {
     created_at: string
   }>(
     `INSERT INTO users (firebase_uid, email, display_name, last_seen_at)
-     VALUES ($1, $2, $3, now())
+     SELECT $1::text, $2::text, $3::text, now()
+      WHERE NOT EXISTS (SELECT 1 FROM deleted_accounts WHERE firebase_uid = $1::text)
      ON CONFLICT (firebase_uid)
      DO UPDATE SET last_seen_at = now(), email = EXCLUDED.email,
                    display_name = COALESCE(EXCLUDED.display_name, users.display_name)
      RETURNING id, display_name, email, created_at`,
     [identity.uid, identity.email, displayName],
   )
-  const profile = result.rows[0]!
+  const profile = result.rows[0]
+  if (!profile) throw new AccountDeletedError() // a deleted account is not quietly re-created by a stale sign-in
   return {
     status: 200,
     jsonBody: {

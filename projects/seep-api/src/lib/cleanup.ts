@@ -39,6 +39,8 @@ export interface CleanupResult {
   readonly dryRun: boolean
   readonly abandoned: number
   readonly deleted: number
+  /** Expired account-deletion markers removed (see 005_phase5_account_deletion.sql). */
+  readonly markersPurged: number
   readonly batches: number
   readonly sizeBytesBefore: number | null
   readonly sizeBytesAfter: number | null
@@ -46,6 +48,11 @@ export interface CleanupResult {
 }
 
 const MAX_BATCH_SIZE = 1000
+/**
+ * How long an account-deletion marker is kept. Its only job is to stop a still-valid sign-in token (good for an hour)
+ * from re-creating a deleted account, so 48 hours is generous. Not a setting: shortening it only invites trouble.
+ */
+export const DELETED_MARKER_HOURS = 48
 /** Upper bound on delete batches per run, so one run can never loop for long. */
 const MAX_BATCHES = 100
 
@@ -91,17 +98,19 @@ async function databaseSize(db: Db): Promise<number | null> {
 }
 
 export async function runCleanup(db: Db, settings: CleanupSettings = cleanupSettings()): Promise<CleanupResult> {
-  const empty = { abandoned: 0, deleted: 0, batches: 0, sizeBytesBefore: null, sizeBytesAfter: null, sizeWarning: false }
+  const empty = { abandoned: 0, deleted: 0, markersPurged: 0, batches: 0, sizeBytesBefore: null, sizeBytesAfter: null, sizeWarning: false }
   if (!settings.enabled) return { ...empty, skipped: true, dryRun: settings.dryRun }
 
   const sizeBytesBefore = await databaseSize(db)
   let abandoned = 0
   let deleted = 0
+  let markersPurged = 0
   let batches = 0
 
   if (settings.dryRun) {
     abandoned = (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM games g WHERE ${ABANDON_WHERE}`, [settings.abandonAfterDays])).rows[0]!.n
     deleted = (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM games g WHERE ${DELETE_WHERE}`, [settings.deleteAfterDays])).rows[0]!.n
+    markersPurged = (await db.query<{ n: number }>(`SELECT count(*)::int AS n FROM deleted_accounts WHERE deleted_at < now() - make_interval(hours => $1::int)`, [DELETED_MARKER_HOURS])).rows[0]!.n
   } else {
     // Stage 1. Bumping the version tells anyone polling that the table changed; resetting updated_at starts stage 2's clock now.
     const closed = await db.query<{ id: string }>(
@@ -128,11 +137,18 @@ export async function runCleanup(db: Db, settings: CleanupSettings = cleanupSett
       deleted += gone.rows.length
       if (gone.rows.length < settings.batchSize) break
     }
+
+    // Stage 3: account-deletion markers that have outlived any token they could have blocked.
+    const markers = await db.query<{ firebase_uid: string }>(
+      `DELETE FROM deleted_accounts WHERE deleted_at < now() - make_interval(hours => $1::int) RETURNING firebase_uid`,
+      [DELETED_MARKER_HOURS],
+    )
+    markersPurged = markers.rows.length
   }
 
   const sizeBytesAfter = await databaseSize(db)
   const sizeWarning = sizeBytesAfter !== null && sizeBytesAfter > settings.sizeWarnMb * 1024 * 1024
-  return { skipped: false, dryRun: settings.dryRun, abandoned, deleted, batches, sizeBytesBefore, sizeBytesAfter, sizeWarning }
+  return { skipped: false, dryRun: settings.dryRun, abandoned, deleted, markersPurged, batches, sizeBytesBefore, sizeBytesAfter, sizeWarning }
 }
 
 /** "12.3 MB", or "unknown" if the size could not be read. */

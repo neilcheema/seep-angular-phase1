@@ -293,6 +293,45 @@ describe('what players experience around a closed table', () => {
   })
 })
 
+describe('stage 3: account-deletion markers', () => {
+  const marker = (uid: string, hoursAgo: number) =>
+    t.db.query(`INSERT INTO deleted_accounts (firebase_uid, deleted_at) VALUES ($1, now() - make_interval(secs => $2::float8 * 3600))`, [uid, hoursAgo])
+  const markers = async () => (await t.db.query<{ firebase_uid: string }>('SELECT firebase_uid FROM deleted_accounts ORDER BY firebase_uid')).rows.map((r) => r.firebase_uid)
+
+  it('removes a marker after 48 hours, and keeps a younger one (a token could still be valid)', async () => {
+    await marker('old', 49)
+    await marker('recent', 1)
+    await marker('just-under', 47)
+    const result = await runCleanup(t.db, settings())
+    expect(result.markersPurged).toBe(1)
+    expect(await markers()).toEqual(['just-under', 'recent'])
+  })
+
+  it('counts them in a dry run and removes nothing', async () => {
+    await marker('old', 100)
+    const result = await runCleanup(t.db, settings({ CLEANUP_DRY_RUN: 'true' }))
+    expect(result.markersPurged).toBe(1)
+    expect(await markers()).toEqual(['old'])
+  })
+
+  it('does nothing when switched off', async () => {
+    await marker('old', 100)
+    expect((await runCleanup(t.db, settings({ CLEANUP_ENABLED: 'false' }))).markersPurged).toBe(0)
+    expect(await markers()).toEqual(['old'])
+  })
+
+  it('is mentioned in the daily log only when there was something to remove', async () => {
+    _setDbForTests(t.db)
+    const quiet = { log: vi.fn(), warn: vi.fn() }
+    await cleanupHandler({ isPastDue: false } as unknown as Timer, quiet as unknown as InvocationContext)
+    expect(quiet.log.mock.calls.map((x) => String(x[0])).join('\n')).not.toMatch(/deletion marker/)
+    await marker('old', 100)
+    const busy = { log: vi.fn(), warn: vi.fn() }
+    await cleanupHandler({ isPastDue: false } as unknown as Timer, busy as unknown as InvocationContext)
+    expect(busy.log.mock.calls.map((x) => String(x[0])).join('\n')).toMatch(/Removed 1 expired account-deletion marker\(s\)/)
+  })
+})
+
 describe('the daily timer', () => {
   const context = () => ({ log: vi.fn(), warn: vi.fn() })
   const asContext = (c: ReturnType<typeof context>) => c as unknown as InvocationContext

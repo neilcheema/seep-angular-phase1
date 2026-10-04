@@ -64,3 +64,39 @@ describe('forfeitFourPlayerMatch', () => {
     expect(viewForSeat(over, 'p3').phase).toBe('match-over')
   })
 })
+
+describe('forfeiting because the person left (for example by deleting their account)', () => {
+  it('two-player: the log says they left, not that time ran out, from either side', () => {
+    const state = startMatch('player')
+    expect(forfeitMatch(state, 'player', 'left').log.at(-1)).toBe('You left the game and forfeited the match.')
+    expect(forfeitMatch(state, 'opponent', 'left').log.at(-1)).toBe('Opponent left the game and forfeited the match.')
+  })
+
+  it('two-player: the other player still wins, exactly as for a timeout', () => {
+    const state = startMatch('player')
+    for (const loser of ['player', 'opponent'] as const) {
+      const over = forfeitMatch(state, loser, 'left')
+      expect(over.phase).toBe('match-over')
+      expect(over.winner).toBe(loser === 'player' ? 'opponent' : 'player')
+    }
+  })
+
+  it('four-player: the other team wins and the log says they left', () => {
+    const state = startFourPlayerMatch('p1')
+    const over = forfeitFourPlayerMatch(state, 'p2', 'left')
+    expect(over.phase).toBe('match-over')
+    expect(over.winner).toBe('teamA') // p2 is on team B
+    expect(over.log.at(-1)).toBe('p2 left the game and forfeited the match.')
+  })
+
+  it('leaves the timeout wording exactly as it was when no reason is given', () => {
+    expect(forfeitMatch(startMatch('player'), 'player').log.at(-1)).toBe('You ran out of time and forfeited the match.')
+    expect(forfeitFourPlayerMatch(startFourPlayerMatch('p1'), 'p3').log.at(-1)).toBe('p3 ran out of time and forfeited the match.')
+  })
+
+  it('still refuses to forfeit a match that is already over', () => {
+    const over = forfeitMatch(startMatch('player'), 'opponent', 'left')
+    expect(() => forfeitMatch(over, 'player', 'left')).toThrow(/already over/)
+  })
+})
+

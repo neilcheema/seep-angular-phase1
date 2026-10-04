@@ -18,5 +18,15 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/online/online-game.component').then((m) => m.OnlineGameComponent),
     title: 'Seep — Online table',
   },
+  {
+    path: 'privacy',
+    loadComponent: () => import('./pages/legal/privacy.component').then((m) => m.PrivacyComponent),
+    title: 'Seep — Privacy Policy',
+  },
+  {
+    path: 'terms',
+    loadComponent: () => import('./pages/legal/terms.component').then((m) => m.TermsComponent),
+    title: 'Seep — Terms of Use',
+  },
   { path: '**', redirectTo: '' },
 ];

@@ -1,3 +1,4 @@
+import { type ForfeitReason, forfeitReasonText } from './gameEngine'
 import { type Card, captureValue, isHouseValue, legalHouseBids } from './card'
 import { createDeck, dealFourPlayerHands, shuffleDeck } from './deck'
 import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, partnerOf, teamOf } from './seats'
@@ -152,10 +153,10 @@ export function dealNextFourPlayerHand(state: FourPlayerGameState, seed?: number
  * forfeits and the other team wins. Not a rule of play; see forfeitMatch in
  * gameEngine.ts.
  */
-export function forfeitFourPlayerMatch(state: FourPlayerGameState, loser: SeatId): FourPlayerGameState {
+export function forfeitFourPlayerMatch(state: FourPlayerGameState, loser: SeatId, reason: ForfeitReason = 'timeout'): FourPlayerGameState {
   if (state.phase === 'match-over') throw new Error('The match is already over.')
   const winner = ALL_TEAMS.find((team) => team !== teamOf(loser))!
-  return pushLog({ ...state, phase: 'match-over', winner }, `${loser} ran out of time and forfeited the match.`)
+  return pushLog({ ...state, phase: 'match-over', winner }, `${loser} ${forfeitReasonText(reason)}`)
 }
 
 export function legalFourPlayerBids(state: FourPlayerGameState): number[] {

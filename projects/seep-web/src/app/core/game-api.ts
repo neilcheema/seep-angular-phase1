@@ -4,6 +4,7 @@ import type {
   GameSnapshotDto,
   GameUnchangedDto,
   MutationDto,
+  DeleteAccountDto,
   ProfileDto,
 } from './api-types'
 
@@ -33,6 +34,8 @@ export interface LobbyApi {
   me(): Promise<ProfileDto>
   /** Chooses the name the person's opponents see. The server checks it and says why if it refuses. */
   setDisplayName(name: string): Promise<ProfileDto>
+  /** Erases the person from the server: forfeits matches in progress, frees or closes waiting tables, removes name and email. */
+  deleteAccount(): Promise<DeleteAccountDto>
   createGame(kind: GameKind): Promise<GameInfoDto>
   joinGame(code: string): Promise<GameInfoDto>
   listGames(): Promise<GameInfoDto[]>
@@ -66,6 +69,10 @@ export class HttpApi implements GameApi, LobbyApi {
 
   setDisplayName(name: string): Promise<ProfileDto> {
     return this.request('POST', '/v1/me', { displayName: name })
+  }
+
+  deleteAccount(): Promise<DeleteAccountDto> {
+    return this.request('POST', '/v1/me/delete')
   }
 
   createGame(kind: GameKind): Promise<GameInfoDto> {

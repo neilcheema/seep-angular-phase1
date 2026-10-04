@@ -41,6 +41,19 @@ export class AuthService {
     return this.run(() => this.provider.signOut())
   }
 
+  /**
+   * Confirms it is really the person (see IdentityProvider.reauthenticate). Unlike the sign-in methods this lets the
+   * error through, because the caller is in the middle of a longer job and decides what to say (friendlyReauthError).
+   */
+  reauthenticate(password?: string): Promise<void> {
+    return this.provider.reauthenticate(password)
+  }
+
+  /** Deletes the sign-in record itself. Errors are let through for the same reason. */
+  deleteSignInRecord(): Promise<void> {
+    return this.provider.deleteAccount()
+  }
+
   /** For the API client: a current ID token, or null when signed out. */
   getToken(forceRefresh?: boolean): Promise<string | null> {
     return this.provider.getIdToken(forceRefresh)

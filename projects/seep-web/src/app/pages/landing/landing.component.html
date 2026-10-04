@@ -22,11 +22,13 @@
       <a class="mode-card" [routerLink]="['/online']">
         <span class="tag">New</span>
         <h2>Play online</h2>
-        <p>Challenge a friend to a 2 player game with an invite link. A free account is needed to play online.</p>
+        <p>Challenge friends to a 2 or 4 player game with an invite link. A free account is needed to play online.</p>
       </a>
     </div>
   </div>
   <div style="text-align: center; padding: 4px 0 10px; font-size: 10px; color: rgba(255,255,255,0.3);">
       v{{ appVersion }}
+      · <a routerLink="/privacy" style="color: inherit; text-decoration: underline;">Privacy</a>
+      · <a routerLink="/terms" style="color: inherit; text-decoration: underline;">Terms</a>
   </div>
 </div>

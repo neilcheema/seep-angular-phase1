@@ -1,7 +1,8 @@
-import { Component, effect, inject, signal, untracked } from '@angular/core'
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import type { GameInfoDto, GameKind } from '../../core/api-types'
 import { ApiError } from '../../core/game-api'
+import { friendlyReauthError } from '../../core/identity'
 import { suggestName, tableStatusText } from '../../core/display-names'
 import { AUTH, ONLINE_API } from '../../core/online'
 
@@ -42,6 +43,16 @@ export class LobbyComponent {
   readonly nameError = signal<string | null>(null)
   readonly nameSaving = signal(false)
 
+  // --- deleting the account ---
+  /** True while the "Delete your account" panel is open. */
+  readonly deleting = signal(false)
+  readonly deleteBusy = signal(false)
+  readonly deleteError = signal<string | null>(null)
+  /** Shown on the signed-out screen after a deletion, so the person knows it worked. */
+  readonly accountDeleted = signal(false)
+  /** A password account must type its password again to confirm; a Google account confirms in the Google window. */
+  readonly needsPassword = computed(() => this.identity()?.method === 'password')
+
   private handledUid: string | null = null
   /** The invited seat is taken, and the tables listed, once only per sign-in: after the name step if there is one. */
   private carriedOn = false
@@ -78,6 +89,8 @@ export class LobbyComponent {
   }
 
   signOut(): void {
+    this.accountDeleted.set(false)
+    this.deleting.set(false)
     this.games.set([])
     this.error.set(null)
     this.profileName.set(null)
@@ -120,6 +133,60 @@ export class LobbyComponent {
       this.nameError.set(this.messageFor(err))
     } finally {
       this.nameSaving.set(false)
+    }
+  }
+
+  openDelete(): void {
+    this.deleteError.set(null)
+    this.deleting.set(true)
+  }
+
+  cancelDelete(): void {
+    if (!this.deleteBusy()) this.deleting.set(false)
+  }
+
+  /**
+   * Deletes the account, in an order that is safe to interrupt at any point:
+   *   1. confirm it is really the person (nothing has been changed yet; a wrong password stops here),
+   *   2. erase our records (forfeits matches in progress, frees or closes waiting tables, removes name and email;
+   *      repeating it is harmless), and only then
+   *   3. delete the sign-in record itself.
+   * If step 3 fails the person simply tries again: steps 1 and 2 are safe to repeat.
+   */
+  async confirmDelete(event: Event, typed: string, password: string): Promise<void> {
+    event.preventDefault()
+    if (typed.trim().toUpperCase() !== 'DELETE') {
+      this.deleteError.set('Type DELETE in the box to confirm.')
+      return
+    }
+    this.deleteBusy.set(true)
+    this.deleteError.set(null)
+    try {
+      try {
+        await this.auth.reauthenticate(this.needsPassword() ? password : undefined)
+      } catch (err) {
+        this.deleteError.set(friendlyReauthError(err))
+        return
+      }
+      try {
+        await this.api.deleteAccount()
+      } catch (err) {
+        this.deleteError.set(this.messageFor(err))
+        return
+      }
+      try {
+        await this.auth.deleteSignInRecord()
+      } catch {
+        this.deleteError.set('Your game records were removed, but we could not delete your sign-in record. Please try again.')
+        return
+      }
+      this.accountDeleted.set(true)
+      this.deleting.set(false)
+      this.games.set([])
+      this.profileName.set(null)
+      this.needName.set(false)
+    } finally {
+      this.deleteBusy.set(false)
     }
   }
 

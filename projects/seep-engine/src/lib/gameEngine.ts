@@ -572,12 +572,17 @@ export function dealNextHand(state: GameState, seed?: number): GameState {
  * (the server's turn clock decides when). The other player wins; scores are
  * left as they stood, and the log says why.
  */
-export function forfeitMatch(state: GameState, loser: PlayerId): GameState {
+export function forfeitMatch(state: GameState, loser: PlayerId, reason: ForfeitReason = 'timeout'): GameState {
   if (state.phase === 'match-over') throw new Error('The match is already over.')
-  return pushLog(
-    { ...state, phase: 'match-over', winner: otherPlayer(loser) },
-    `${label(loser)} ran out of time and forfeited the match.`,
-  )
+  return pushLog({ ...state, phase: 'match-over', winner: otherPlayer(loser) }, `${label(loser)} ${forfeitReasonText(reason)}`)
+}
+
+/** Why a match was forfeited. 'timeout': the turn clock ran out. 'left': the person left (for example by deleting their account). */
+export type ForfeitReason = 'timeout' | 'left'
+
+/** The end of the log sentence, after the player's name. */
+export function forfeitReasonText(reason: ForfeitReason): string {
+  return reason === 'left' ? 'left the game and forfeited the match.' : 'ran out of time and forfeited the match.'
 }
 
 /**

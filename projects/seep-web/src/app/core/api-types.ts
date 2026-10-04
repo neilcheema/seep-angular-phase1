@@ -71,6 +71,14 @@ export interface MutationDto<TView> {
   readonly clock?: ClockDto
 }
 
+/** What deleting an account did, in numbers. */
+export interface DeleteAccountDto {
+  readonly deleted: true
+  readonly forfeited: number
+  readonly closed: number
+  readonly released: number
+}
+
 export interface ProfileDto {
   readonly id: string
   readonly displayName: string | null

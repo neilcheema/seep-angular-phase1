@@ -12,10 +12,12 @@ function fakeProvider(initial: Identity | null = null) {
     signUpWithEmail: vi.fn<(email: string, password: string) => Promise<void>>(() => Promise.resolve()),
     signOut: vi.fn(() => Promise.resolve()),
     getIdToken: vi.fn<(forceRefresh?: boolean) => Promise<string | null>>(() => Promise.resolve('tok')),
+    reauthenticate: vi.fn<(password?: string) => Promise<void>>(() => Promise.resolve()),
+    deleteAccount: vi.fn(() => Promise.resolve()),
   }
   return { provider: provider as IdentityProvider, fns: provider, emit: (i: Identity | null) => listener?.(i) }
 }
-const bob: Identity = { uid: 'u-bob', email: 'b@example.test', displayName: null }
+const bob: Identity = { uid: 'u-bob', email: 'b@example.test', displayName: null, method: 'password' }
 
 describe('AuthService', () => {
   it('is not ready until the provider has said who (if anyone) is signed in', async () => {
@@ -90,4 +92,28 @@ describe('AuthService', () => {
     expect(await auth.getToken(true)).toBe('tok')
     expect(fns.getIdToken).toHaveBeenCalledWith(true)
   })
+
+  describe('deleting an account', () => {
+    it('passes the password through to confirm it is really the person, and the sign-in record deletion through after', async () => {
+      const { provider, fns } = fakeProvider(bob)
+      const auth = new AuthService(provider)
+      await auth.start()
+      await auth.reauthenticate('hunter22')
+      await auth.deleteSignInRecord()
+      expect(fns.reauthenticate).toHaveBeenCalledWith('hunter22')
+      expect(fns.deleteAccount).toHaveBeenCalledTimes(1)
+    })
+
+    it('lets failures through to the caller instead of swallowing them into the shared error message', async () => {
+      const { provider, fns } = fakeProvider(bob)
+      fns.reauthenticate.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'auth/wrong-password' }))
+      fns.deleteAccount.mockRejectedValueOnce(new Error('network'))
+      const auth = new AuthService(provider)
+      await auth.start()
+      await expect(auth.reauthenticate('nope')).rejects.toMatchObject({ code: 'auth/wrong-password' })
+      await expect(auth.deleteSignInRecord()).rejects.toThrow('network')
+      expect(auth.error()).toBeNull()
+    })
+  })
 })
+

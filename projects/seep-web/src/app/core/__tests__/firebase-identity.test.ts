@@ -5,10 +5,11 @@ interface FakeUser {
   uid: string
   email: string | null
   displayName: string | null
+  providerData?: { providerId: string }[]
   getIdToken: ReturnType<typeof vi.fn>
 }
 
-const alice = (): FakeUser => ({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', getIdToken: vi.fn(() => Promise.resolve('token-1')) })
+const alice = (providerId = 'password'): FakeUser => ({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', providerData: [{ providerId }], getIdToken: vi.fn(() => Promise.resolve('token-1')) })
 
 function fakeSdk(initialUser: FakeUser | null = null, existingApp = false) {
   const stateListeners: ((user: FakeUser | null) => void)[] = []
@@ -34,6 +35,10 @@ function fakeSdk(initialUser: FakeUser | null = null, existingApp = false) {
       signInWithEmailAndPassword: vi.fn((_a: unknown, e: string, p: string) => (calls.push(`signin:${e}:${p}`), Promise.resolve())),
       createUserWithEmailAndPassword: vi.fn((_a: unknown, e: string, p: string) => (calls.push(`signup:${e}:${p}`), Promise.resolve())),
       signOut: vi.fn(() => (calls.push('signout'), Promise.resolve())),
+      EmailAuthProvider: { credential: vi.fn((email: string, password: string) => ({ kind: 'email-credential', email, password })) },
+      reauthenticateWithCredential: vi.fn((_u: unknown, cred: { email: string; password: string }) => (calls.push(`reauth-credential:${cred.email}:${cred.password}`), Promise.resolve())),
+      reauthenticateWithPopup: vi.fn((_u: unknown, provider: unknown) => (calls.push(`reauth-popup:${(provider as { kind: string }).kind}`), Promise.resolve())),
+      deleteUser: vi.fn(() => (calls.push('delete-user'), Promise.resolve())),
     },
   }
   return { sdk: sdk as unknown as FirebaseSdk, raw: sdk, auth, calls, emit: (u: FakeUser | null) => stateListeners.forEach((l) => l(u)) }
@@ -59,9 +64,9 @@ describe('FirebaseIdentityProvider', () => {
     expect(f.raw.app.getApp).toHaveBeenCalled()
   })
 
-  it('reports nobody when signed out, and the person (without extra fields) when a saved sign-in is restored', async () => {
+  it('reports nobody when signed out, and the person (only the fields the app needs, none of the SDK’s internals) when a saved sign-in is restored', async () => {
     expect(await provider(fakeSdk()).init()).toBeNull()
-    expect(await provider(fakeSdk(alice())).init()).toEqual({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice' })
+    expect(await provider(fakeSdk(alice())).init()).toEqual({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password' })
   })
 
   it('tells every listener when the signed-in person changes, and stops telling one that unsubscribed', async () => {
@@ -75,8 +80,8 @@ describe('FirebaseIdentityProvider', () => {
     f.emit(alice())
     stopB()
     f.emit(null)
-    expect(a.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice' }], [null]])
-    expect(b.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice' }]])
+    expect(a.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password' }], [null]])
+    expect(b.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password' }]])
   })
 
   it('performs each kind of sign-in through the SDK, loading it first if nobody has yet', async () => {
@@ -111,4 +116,60 @@ describe('FirebaseIdentityProvider', () => {
     await p.init()
     expect(await p.getIdToken()).toBeNull()
   })
+
+  describe('how the person signs in', () => {
+    it('reports an email account as "password", a Google account as "google", and anything else as "other"', async () => {
+      expect((await provider(fakeSdk(alice('password'))).init())?.method).toBe('password')
+      expect((await provider(fakeSdk(alice('google.com'))).init())?.method).toBe('google')
+      expect((await provider(fakeSdk(alice('apple.com'))).init())?.method).toBe('other')
+      const noProviderInfo = { ...alice(), providerData: undefined }
+      expect((await provider(fakeSdk(noProviderInfo)).init())?.method).toBe('other')
+    })
+  })
+
+  describe('confirming it is really the person', () => {
+    it('re-checks a password account against the password they typed, using their own email', async () => {
+      const f = fakeSdk(alice('password'))
+      await provider(f).reauthenticate('hunter22')
+      expect(f.calls).toEqual(['reauth-credential:a@example.test:hunter22'])
+    })
+
+    it('asks a Google account to confirm with the Google window', async () => {
+      const f = fakeSdk(alice('google.com'))
+      await provider(f).reauthenticate()
+      expect(f.calls).toEqual(['reauth-popup:google'])
+    })
+
+    it('refuses a password account that supplied no password, before contacting anyone', async () => {
+      const f = fakeSdk(alice('password'))
+      await expect(provider(f).reauthenticate('')).rejects.toMatchObject({ code: 'auth/missing-password' })
+      await expect(provider(f).reauthenticate()).rejects.toMatchObject({ code: 'auth/missing-password' })
+      expect(f.calls).toEqual([])
+    })
+
+    it('lets the sign-in service’s own refusal through (a wrong password), so the screen can explain it', async () => {
+      const f = fakeSdk(alice('password'))
+      f.raw.auth.reauthenticateWithCredential.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'auth/wrong-password' }))
+      await expect(provider(f).reauthenticate('nope')).rejects.toMatchObject({ code: 'auth/wrong-password' })
+    })
+
+    it('fails clearly when nobody is signed in', async () => {
+      await expect(provider(fakeSdk(null)).reauthenticate('x')).rejects.toMatchObject({ code: 'auth/user-not-found' })
+    })
+  })
+
+  describe('deleting the sign-in record', () => {
+    it('deletes the signed-in user', async () => {
+      const f = fakeSdk(alice())
+      await provider(f).deleteAccount()
+      expect(f.calls).toEqual(['delete-user'])
+    })
+
+    it('does nothing, and does not fail, if the record is already gone (so a retry can finish the job)', async () => {
+      const f = fakeSdk(null)
+      await provider(f).deleteAccount()
+      expect(f.calls).toEqual([])
+    })
+  })
 })
+

@@ -1,0 +1,73 @@
+<div class="game-root">
+  <div class="page">
+    <div class="column" id="terms-of-use">
+      <a class="back" routerLink="/">← Home</a>
+      <h1>Terms of Use</h1>
+      <p class="meta">Last updated {{ legal.lastUpdated }}</p>
+
+      <p>
+        These terms apply to your use of {{ legal.siteName }} ({{ legal.siteAddress }}), run by {{ legal.operator }}. By creating an account or playing
+        online you agree to them and to our <a class="inline" routerLink="/privacy">Privacy Policy</a>. Playing against the computer needs no account.
+      </p>
+
+      <h2>Using {{ legal.siteName }}</h2>
+      <p>{{ legal.siteName }} is a free game for personal, non-commercial use. We give you permission to play it and use its online features while you follow these terms.</p>
+
+      <h2>Your account</h2>
+      <ul>
+        <li>You must be at least {{ legal.minimumAge }} years old to create an account.</li>
+        <li>Give a real email address that you can receive mail at, and keep your sign-in details to yourself.</li>
+        <li>You are responsible for what is done with your account.</li>
+        <li>You can delete your account at any time from Play online.</li>
+      </ul>
+
+      <h2>Playing fairly</h2>
+      <p>Please do not:</p>
+      <ul>
+        <li>cheat, for example by using software to play for you, by exploiting a fault in the game, or by sharing the hidden cards of a game with someone else;</li>
+        <li>harass or threaten other players, or choose a name that is offensive or pretends to be someone else;</li>
+        <li>try to disrupt, overload, or break into the service, or collect information from it automatically;</li>
+        <li>use the service for anything unlawful.</li>
+      </ul>
+      <p>If you find a security problem, please tell us at {{ legal.contactEmail }} instead of using it.</p>
+
+      <h2>Matches, the turn clock and forfeits</h2>
+      <p>
+        Online matches have a turn clock: a warning after one minute, and a forfeit after two if the other player is there to see it. If you leave a match
+        by deleting your account, the match is forfeited. We may correct or remove a result if something went wrong. Results are for fun: we do not
+        promise to keep a history, rankings or statistics.
+      </p>
+
+      <h2>Tables and games are removed after a while</h2>
+      <p>
+        To keep the service tidy, a table nobody has played at or looked at for about {{ legal.retention.abandonAfterDays }} days is closed, and finished or
+        closed tables are deleted about {{ legal.retention.deleteAfterDays }} days after that.
+      </p>
+
+      <h2>The service</h2>
+      <p>
+        We may change, pause or end the service, or any part of it, at any time. We try to keep it running but do not promise it will always be available
+        or free of mistakes.
+      </p>
+
+      <h2>No warranty, and limits on responsibility</h2>
+      <p>
+        {{ legal.siteName }} is provided "as is", without promises about how it will work. To the extent the law allows, we are not responsible for losses that
+        come from using it, including indirect or consequential losses. Nothing in these terms limits any right or responsibility that the law does not allow
+        to be limited.
+      </p>
+
+      <h2>Ending your use</h2>
+      <p>You may stop at any time. We may suspend or close an account that breaks these terms, or if we end the service.</p>
+
+      <h2>Changes to these terms</h2>
+      <p>We may update these terms. We will change the date at the top, and if you keep using the service after a change you accept the updated terms.</p>
+
+      <h2>Governing law</h2>
+      <p>These terms are governed by the laws of {{ legal.governingLaw }}.</p>
+
+      <h2>Contact</h2>
+      <p>{{ legal.contactEmail }}</p>
+    </div>
+  </div>
+</div>

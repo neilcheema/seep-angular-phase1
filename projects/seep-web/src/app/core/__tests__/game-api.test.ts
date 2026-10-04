@@ -54,6 +54,14 @@ describe('HttpApi', () => {
     await expect(http.setDisplayName('A')).rejects.toMatchObject({ status: 400, message: 'Your name needs at least 2 characters.' })
   })
 
+  it('deletes the account with a POST (not a DELETE: see the server for why), signed like every other call, and returns what happened', async () => {
+    const { http, sent } = api([{ status: 200, body: { deleted: true, forfeited: 1, closed: 0, released: 2 } }])
+    const result = await http.deleteAccount()
+    expect(sent[0]).toMatchObject({ url: 'https://api.test/api/v1/me/delete', method: 'POST', headers: { authorization: 'Bearer tok-1' } })
+    expect(sent[0]!.headers['content-type']).toBeUndefined() // no body, so no content type
+    expect(result).toEqual({ deleted: true, forfeited: 1, closed: 0, released: 2 })
+  })
+
   it('only declares a JSON content type when it actually sends a body', async () => {
     const { http, sent } = api([{ status: 200, body: { id: 'u1' } }, { status: 200, body: { games: [] } }])
     await http.me()
