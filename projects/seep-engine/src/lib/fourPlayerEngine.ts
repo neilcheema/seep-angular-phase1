@@ -10,7 +10,7 @@ import {
 } from './floor'
 import { hasCard, hasCaptureValue, removeCard } from './hand'
 import {
-  OPENING_SWEEP_BONUS, SWEEP_BONUS, type HandSideTotals, checkBazziWinner, computeHandTotals,
+  OPENING_SWEEP_BONUS, SWEEP_BONUS, type HandRecord, type HandSideTotals, checkBazziWinner, computeHandTotals,
 } from './scoring'
 
 export type FourPlayerPhase = 'bidding' | 'opening-move' | 'playing' | 'hand-over' | 'match-over'
@@ -43,6 +43,8 @@ export interface FourPlayerGameState {
   readonly log: string[]
   readonly winner: TeamId | null
   readonly lastHandTotals: Record<TeamId, HandSideTotals> | null
+  /** Every hand finished so far this match, oldest first. Absent from games dealt before it existed (treat as empty). */
+  readonly handHistory?: readonly HandRecord<TeamId>[]
   readonly misdeals: number
   /** The engine version this game was dealt under — see version.ts. */
   readonly engineVersion: string
@@ -64,6 +66,7 @@ export function dealFourPlayerHand(
   dealer: SeatId,
   matchScores: Record<TeamId, number> = emptyRecord(ALL_TEAMS, () => 0),
   seed?: number,
+  handHistory: readonly HandRecord<TeamId>[] = [],
 ): FourPlayerGameState {
   const bidder = nextSeat(dealer)
   let attempt = 0
@@ -107,6 +110,7 @@ export function dealFourPlayerHand(
       attempt > 1 ? [`Misdealt ${attempt - 1} time(s) — no house card in the bidder's first four.`] : [],
     winner: null,
     lastHandTotals: null,
+    handHistory,
     misdeals: attempt - 1,
     engineVersion: ENGINE_VERSION,
   }
@@ -145,7 +149,7 @@ export function computeNextDealer(
 export function dealNextFourPlayerHand(state: FourPlayerGameState, seed?: number): FourPlayerGameState {
   if (state.phase !== 'hand-over') throw new Error('The current hand has not finished.')
   const nextDealer = computeNextDealer(state.dealer, state.matchScores, null)
-  return dealFourPlayerHand(nextDealer, state.matchScores, seed)
+  return dealFourPlayerHand(nextDealer, state.matchScores, seed, state.handHistory ?? [])
 }
 
 /**
@@ -245,6 +249,7 @@ export function finishFourPlayerHand(
       captures: finalCaptures,
       matchScores,
       lastHandTotals: totals,
+      handHistory: [...(state.handHistory ?? []), { totals }],
       phase: winner ? 'match-over' : 'hand-over',
       winner,
     },
@@ -629,6 +634,8 @@ export interface FourPlayerGameView {
   readonly log: string[]
   readonly winner: TeamId | null
   readonly lastHandTotals: Record<TeamId, HandSideTotals> | null
+  /** Every hand finished so far this match, oldest first. Absent from games dealt before it existed (treat as empty). */
+  readonly handHistory?: readonly HandRecord<TeamId>[]
   readonly misdeals: number
   readonly engineVersion: string
 }
@@ -655,6 +662,7 @@ export function viewForSeat(state: FourPlayerGameState, viewer: SeatId): FourPla
     log: state.log,
     winner: state.winner,
     lastHandTotals: state.lastHandTotals,
+    handHistory: state.handHistory ?? [],
     misdeals: state.misdeals,
     engineVersion: state.engineVersion,
   }

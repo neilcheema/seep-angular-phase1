@@ -1,3 +1,5 @@
+import { MatchResultsComponent } from '../../components/match-results/match-results.component'
+import { buildFourPlayerResults } from '../../core/match-results'
 import { Component, DestroyRef, type OnInit, computed, effect, inject, input, signal, untracked } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, RouterLink } from '@angular/router'
@@ -106,6 +108,7 @@ const SEAT_LABEL: Record<SeatId, string> = {
   selector: 'app-four-player',
   standalone: true,
   imports: [
+    MatchResultsComponent,
     FourPlayerStatusPanelComponent, OpponentHandComponent, FourPlayerFloorItemComponent,
     PlayerHandComponent, CardComponent, RouterLink,
   ],
@@ -149,6 +152,11 @@ export class FourPlayerComponent implements OnInit {
   readonly session = signal<GameSession<FourPlayerGameView, FourPlayerIntent, SeatId> | null>(null)
   readonly opponentPossessive = computed(() => (this.remote() ? "the other players'" : "the computer's"))
   readonly state = computed<FourPlayerGameView | null>(() => this.session()?.view() ?? null)
+  /** The results of a finished match (null while it is still going). */
+  readonly results = computed(() => {
+    const s = this.state()
+    return s && s.phase === 'match-over' ? buildFourPlayerResults(s, this.seatNames()) : null
+  })
   readonly selectedCard = signal<CardModel | null>(null)
   readonly selectedFloorIds = signal<string[]>([])
   readonly message = signal<string | null>(null)

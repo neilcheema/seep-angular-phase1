@@ -173,6 +173,9 @@ async function main() {
   check("the other player sees A's name in the table's player list", viewB.json?.players?.find((pl) => pl.seat === 'player')?.displayName === 'Smoke A', JSON.stringify(viewB.json?.players))
   // The poll now carries the rematch pointer (empty while the match is on). An older API has no such field at all.
   check('the poll carries the rematch field, empty while the match is still on', viewA.json?.rematchGameId === null, `rematchGameId = ${JSON.stringify(viewA.json?.rematchGameId)}`)
+  // The finished-hands history that the results screen itemises: a list in every player's view, empty until a hand ends. An
+  // API from before it existed sends no such field, so this fails there on purpose.
+  check('each view carries the hand-by-hand history, empty until a hand has finished', Array.isArray(viewA.json?.view?.handHistory) && viewA.json.view.handHistory.length === 0 && Array.isArray(viewB.json?.view?.handHistory), JSON.stringify(viewA.json?.view?.handHistory))
   // Staged dealing: before the opening move only the bidder holds cards (their first four); everyone else is dealt after.
   check('only the bidder holds cards at this point (staged dealing), so the two views differ', (a?.myHand?.length > 0) !== (b?.myHand?.length > 0) && cards(a) !== cards(b))
   const leak = (mine, theirs) => (theirs?.myHand ?? []).some((c) => cards(mine).includes(`${cardKey(c)},"suit":"${c.suit}"`) || cards(mine).includes(`"suit":"${c.suit}","face":"${c.face}"`))

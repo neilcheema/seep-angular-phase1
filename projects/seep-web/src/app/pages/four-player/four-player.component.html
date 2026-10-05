@@ -97,6 +97,9 @@
         <p style="color: var(--gold-lt); font-size: 22px; font-weight: 800;">
           {{ s.winner === myTeam() ? 'Your team won the bazzi!' : 'Team ' + otherTeamLetter() + ' won the bazzi.' }}
         </p>
+        @if (results(); as r) {
+          <app-match-results [results]="r" />
+        }
         @if (remote()) {
           <a class="btn-gold" routerLink="/online">Back to Play online</a>
         } @else {

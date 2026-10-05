@@ -1,11 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FourPlayerGameState, GameState, Intent } from 'seep-engine'
+import { type FourPlayerGameState, type FourPlayerGameView, type GameState, type GameView, type Intent, type SeatId, teamOf } from 'seep-engine'
 import type { Db } from '../../../../../seep-api/src/lib/db'
 import { HttpError } from '../../../../../seep-api/src/lib/errors'
 import * as server from '../../../../../seep-api/src/lib/games'
 import { aiIntent, findLeak, hiddenFrom } from '../../../../../seep-api/src/__tests__/helpers/play'
 import { type TestDb, createTestDb, makeUser } from '../../../../../seep-api/src/__tests__/helpers/test-db'
 import { ApiError, type GameApi } from '../game-api'
+import { buildFourPlayerResults, buildTwoPlayerResults } from '../match-results'
 import { type Perspective, fourPlayerPerspective, twoPlayerPerspective } from '../perspective'
 import { RemoteSession } from '../remote-session'
 
@@ -160,6 +161,29 @@ describe.each([
     // includes timers belonging to the database driver, which can still be draining a last query.
     const holdingATimer = sessions.filter((s) => (s as unknown as { timer: unknown }).timer !== null)
     expect(holdingATimer.map((s) => s.seat())).toEqual(kind === 'two_player' ? sessions.map((s) => s.seat()) : [])
+
+    // The finished match can be itemised, and every seat is sent the same story from its own side: the history each screen
+    // received adds up exactly to that screen's final score, with no hand missing, and the seats agree about each hand.
+    const results = sessions.map((s) => (kind === 'two_player' ? buildTwoPlayerResults(s.view() as GameView, null) : buildFourPlayerResults(s.view() as FourPlayerGameView, {})))
+    for (const r of results) {
+      expect(r.hands.length).toBeGreaterThanOrEqual(2) // a bazzi needs at least a couple of hands
+      expect(r.earlier).toBeNull() // so nothing is left unexplained
+      expect(r.hands.at(-1)!.after).toEqual(r.final) // and the table ends exactly on the final score
+      expect(r.winner).not.toBeNull()
+    }
+    const first = results[0]!
+    for (let i = 1; i < sessions.length; i++) {
+      const other = results[i]!
+      // Seen from the same team (teammates) the story is identical; seen from the opposing team it is the mirror image.
+      const sameSide = kind === 'four_player' && teamOf(sessions[i]!.seat() as SeatId) === teamOf(sessions[0]!.seat() as SeatId)
+      const orient = <T>(pair: readonly [T, T]): [T, T] => (sameSide ? [pair[0], pair[1]] : [pair[1], pair[0]])
+      expect(other.final).toEqual(orient(first.final))
+      expect(other.winner).toBe(first.winner === null ? null : sameSide ? first.winner : first.winner === 0 ? 1 : 0)
+      other.hands.forEach((hand, n) => {
+        const mate = first.hands[n]!
+        expect([hand.sides[0].total, hand.sides[1].total]).toEqual(orient([mate.sides[0].total, mate.sides[1].total]))
+      })
+    }
     sessions.forEach((s) => s.dispose())
   })
 })

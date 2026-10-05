@@ -9,7 +9,7 @@ import {
 } from './floor'
 import { type PlayerId, otherPlayer } from './player'
 import {
-  BAZZI_TARGET, OPENING_SWEEP_BONUS, SWEEP_BONUS,
+  BAZZI_TARGET, OPENING_SWEEP_BONUS, SWEEP_BONUS, type HandRecord,
   cardPoints, qualifyingCardPoints,
 } from './scoring'
 
@@ -53,6 +53,8 @@ export interface GameState {
   readonly log: string[]
   readonly winner: PlayerId | null
   readonly lastHandTotals: Record<PlayerId, HandTotals> | null
+  /** Every hand finished so far this match, oldest first. Absent from games dealt before it existed (treat as empty). */
+  readonly handHistory?: readonly HandRecord<PlayerId>[]
   readonly misdeals: number
   /** The engine version this game was dealt under — see version.ts. */
   readonly engineVersion: string
@@ -72,6 +74,7 @@ export function dealHand(
   bidder: PlayerId,
   matchScores: Record<PlayerId, number> = { player: 0, opponent: 0 },
   seed?: number,
+  handHistory: readonly HandRecord<PlayerId>[] = [],
 ): GameState {
   let attempt = 0
   let floor: Card[]
@@ -113,6 +116,7 @@ export function dealHand(
     log: attempt > 1 ? [`Misdealt ${attempt - 1} time(s) — no house card in the first four.`] : [],
     winner: null,
     lastHandTotals: null,
+    handHistory,
     misdeals: attempt - 1,
     engineVersion: ENGINE_VERSION,
   }
@@ -294,6 +298,7 @@ function finishMove(
       captures: finalCaptures,
       matchScores,
       lastHandTotals: totals,
+      handHistory: [...(base.handHistory ?? []), { totals }],
       phase: matchWinner ? 'match-over' : 'hand-over',
       winner: matchWinner,
     },
@@ -563,7 +568,7 @@ export function playThrow(state: GameState, playerId: PlayerId, card: Card): Gam
 
 export function dealNextHand(state: GameState, seed?: number): GameState {
   if (state.phase !== 'hand-over') throw new Error('The current hand has not finished.')
-  return dealHand(otherPlayer(state.bidder), state.matchScores, seed)
+  return dealHand(otherPlayer(state.bidder), state.matchScores, seed, state.handHistory ?? [])
 }
 
 /**
@@ -613,6 +618,8 @@ export interface GameView {
   readonly log: string[]
   readonly winner: PlayerId | null
   readonly lastHandTotals: Record<PlayerId, HandTotals> | null
+  /** Every hand finished so far this match, oldest first. Absent from games dealt before it existed (treat as empty). */
+  readonly handHistory?: readonly HandRecord<PlayerId>[]
   readonly misdeals: number
   readonly engineVersion: string
 }
@@ -637,6 +644,7 @@ export function viewFor(state: GameState, viewer: PlayerId): GameView {
     log: state.log,
     winner: state.winner,
     lastHandTotals: state.lastHandTotals,
+    handHistory: state.handHistory ?? [],
     misdeals: state.misdeals,
     engineVersion: state.engineVersion,
   }

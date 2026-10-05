@@ -84,6 +84,9 @@
         <p style="color: var(--gold-lt); font-size: 22px; font-weight: 800;">
           {{ s.winner === 'player' ? 'You won the bazzi!' : opponentLabel() + ' won the bazzi.' }}
         </p>
+        @if (results(); as r) {
+          <app-match-results [results]="r" />
+        }
         @if (remote()) {
           @if (rematchOffered()) {
             <p id="rematch-offered" style="color: rgba(255,255,255,0.85);">Your opponent wants a rematch.</p>

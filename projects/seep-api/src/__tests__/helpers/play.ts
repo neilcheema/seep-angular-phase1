@@ -54,6 +54,7 @@ export function mirrorTwoPlayerState(state: GameState): GameState {
     matchScores: swapRecord(state.matchScores),
     pendingDeal: state.pendingDeal && swapRecord(state.pendingDeal),
     lastHandTotals: state.lastHandTotals && swapRecord(state.lastHandTotals),
+    handHistory: state.handHistory?.map((hand) => ({ totals: swapRecord(hand.totals) })),
     bidder: other(state.bidder),
     turn: other(state.turn),
     lastCapturer: state.lastCapturer && other(state.lastCapturer),

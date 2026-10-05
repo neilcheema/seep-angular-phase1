@@ -44,6 +44,8 @@ export function mirrorTwoPlayerView(view: GameView): GameView {
     lastCapturer: view.lastCapturer && other(view.lastCapturer),
     winner: view.winner && other(view.winner),
     lastHandTotals: view.lastHandTotals && swap(view.lastHandTotals),
+    // The history is kept from the 'player' side too, so the opponent's seat swaps each hand's two sides as well.
+    handHistory: view.handHistory?.map((hand) => ({ totals: swap(hand.totals) })),
   }
 }
 
