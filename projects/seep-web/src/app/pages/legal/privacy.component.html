@@ -17,6 +17,7 @@
           <li>To play online with other people you sign in. We then keep your email address, the name you choose, and a record of the games you play.</li>
           <li>The people you play with see your chosen name and the moves of the games you share. They do not see your email address.</li>
           <li>We do not sell your information or use it for advertising.</li>
+          <li>If you agree, and only if you agree, we use Microsoft Clarity to see how people use the site. It is optional, and Seep works exactly the same if you say no.</li>
           <li>You can delete your account yourself, at any time, from Play online.</li>
         </ul>
       </div>
@@ -54,15 +55,48 @@
       <h3>If you email us</h3>
       <p>We receive your message and your email address, and keep them for as long as we need to deal with it.</p>
 
+      <h3>Activity records</h3>
+      <p>
+        We keep the time you last used the game and, for each table, the time you last had it open. The turn clock uses the second to decide
+        whether you were there when your time ran out. To prevent abuse we also keep a short-lived list of your recent actions of a few kinds
+        (starting a table, making a move, entering a wrong table code, sending a quick reaction), each with the time. The last-used time and that
+        list are deleted with your account, and the list after about a day anyway. The per-table time stays with that table, without your name,
+        until the table expires.
+      </p>
+
+      <h3 id="analytics">Analytics ({{ legal.analytics.provider }}), only if you agree</h3>
+      <p>
+        If you choose Accept on the analytics notice, we use {{ legal.analytics.provider }}, a service from Microsoft, to understand how people use
+        {{ legal.siteName }} so we can improve it. Until you choose Accept, Clarity is not loaded and nothing is sent to it. If you choose Decline, it is never loaded.
+      </p>
+      <p>
+        When Clarity is on, it records how you use our pages (such as clicks, taps, scrolling and mouse movement), what is shown on your screen as a
+        recording that we and Microsoft can replay, the pages you visit, details of your device and browser, and your approximate location. We ask Clarity
+        to hide the text on screens that can show your email address or sign-in details, but this hiding is not perfect. Clarity sets cookies in your browser:
+        @for (name of siteCookies; track name; let last = $last) {<code>{{ name }}</code>@if (!last) { and }} on {{ legal.siteAddress }}, and @for (name of ownCookies; track name; let last = $last) {<code>{{ name }}</code>@if (!last) { and }} on clarity.ms.
+      </p>
+      <p>
+        Microsoft receives this information and handles it under its own privacy statement ({{ legal.analytics.privacyStatement }}). Microsoft may process it in
+        the United States and other countries.
+      </p>
+      <p>
+        You can change your mind at any time: choose Privacy choices (at the bottom of the home page, or the button below). If you decline, we stop
+        loading Clarity and remove the Clarity cookies on {{ legal.siteAddress }}. The cookies set by clarity.ms can be removed in your browser's settings.
+      </p>
+      @if (analytics.enabled()) {
+        <p><button type="button" id="privacy-choices-policy" class="inline" style="background: none; border: 0; padding: 0; font: inherit; color: var(--gold-lt); text-decoration: underline; cursor: pointer;" (click)="analytics.openChoices()">Change my analytics choice</button></p>
+      }
+
       <h2>Why we use it</h2>
       <ul>
         <li>To sign you in and seat you at a table.</li>
         <li>To run games by the rules, including the turn clock and forfeits.</li>
         <li>To show your opponents your display name.</li>
         <li>To keep the service secure and to fix problems.</li>
+        <li>If you agree, to understand how people use the site and improve it.</li>
         <li>To answer you when you contact us.</li>
       </ul>
-      <p>We do not use your information for advertising or profiling, and we do not sell it.</p>
+      <p>We do not use your information for advertising or profiling, and we do not sell it. What Microsoft does with information from Clarity is described in Microsoft's privacy statement.</p>
 
       <h2>Who can see it</h2>
       <ul>
@@ -72,6 +106,7 @@
           Microsoft Azure (hosting for the website and game server, and technical logs), and Neon (hosting for our database, which runs on
           Amazon Web Services). They handle information only to provide those services to us.
         </li>
+        <li><strong>{{ legal.analytics.provider }}</strong>, only if you accept analytics: Microsoft receives the information described under Analytics.</li>
         <li><strong>Others</strong>, if the law requires it, or to protect the safety and security of people or the service.</li>
       </ul>
 
@@ -96,7 +131,11 @@
           {{ legal.retention.deletionMarkerHours }} hours so that a sign-in which was still open cannot bring the account back. Games you were in
           remain for the other players, without your name, until they expire as above.
         </li>
-        <li><strong>Technical records:</strong> a limited time, set by our hosting providers' settings, used only to run and protect the service.</li>
+        <li><strong>Technical records:</strong> our monitoring records for the game server are kept for up to {{ legal.monitoringLogDays }} days. Our hosting providers may keep their own standard technical records for a limited time, set by them. They are used only to run and protect the service.</li>
+        <li>
+          <strong>Analytics (only if you agreed):</strong> kept by Clarity for the time set in our Clarity project
+          @if (legal.analytics.retentionDays) { (currently {{ legal.analytics.retentionDays }} days) } and under Microsoft's own terms.
+        </li>
         <li><strong>Emails you send us:</strong> as long as we need to deal with them.</li>
       </ul>
 
@@ -108,6 +147,7 @@
           your email address and name from our database, and deletes your sign-in record at Google.
         </li>
         <li><strong>Change your name</strong> any time from Play online.</li>
+        <li><strong>Change your analytics choice</strong> any time: choose Privacy choices at the bottom of the home page, or the button under Analytics above.</li>
         <li>
           <strong>Ask us</strong> at {{ legal.contactEmail }} to see what we hold about you, to correct it, or about anything in this policy. We will answer as
           quickly as we can, and within the time the law requires.
@@ -132,8 +172,10 @@
 
       <h2>Browser storage</h2>
       <p>
-        We do not use advertising or tracking cookies. To keep you signed in, Google's sign-in service stores a sign-in record in your browser.
-        Signing out removes it, and you can also clear this site's data in your browser settings.
+        Unless you accept analytics, {{ legal.siteName }} sets no cookies of its own. To keep you signed in, Google's sign-in service stores a sign-in record in
+        your browser (and Google may set its own cookies on google.com as part of that service, which Google controls). We also remember your analytics
+        choice in your browser's local storage, which is not a cookie. If you accept analytics, Clarity sets the cookies listed under Analytics. Signing out
+        removes the sign-in record, and you can clear this site's data in your browser settings.
       </p>
 
       <h2>Changes to this policy</h2>

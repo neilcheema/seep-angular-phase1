@@ -30,5 +30,8 @@
       v{{ appVersion }}
       · <a routerLink="/privacy" style="color: inherit; text-decoration: underline;">Privacy</a>
       · <a routerLink="/terms" style="color: inherit; text-decoration: underline;">Terms</a>
+      @if (analytics.enabled()) {
+        · <button type="button" id="privacy-choices" (click)="analytics.openChoices()" style="background: none; border: 0; padding: 0; font: inherit; color: inherit; text-decoration: underline; cursor: pointer;">Privacy choices</button>
+      }
   </div>
 </div>

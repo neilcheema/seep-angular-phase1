@@ -9,11 +9,19 @@ export const LEGAL = {
   siteAddress: 'seep.quest',
   contactEmail: 'info@seep.quest',
   /** Who runs the site. Put your own name or business name here before relying on these pages. */
-  operator: 'the operator of seep.quest',
+  operator: 'Narender Cheema',
   /** The law the Terms are governed by. Confirm this with a lawyer. */
   governingLaw: 'British Columbia, Canada',
-  lastUpdated: '4 October 2026',
+  lastUpdated: '5 October 2026',
   minimumAge: 13,
+  /** How long our monitoring records for the game server (Azure Application Insights) are kept. An Azure setting: checked in the portal, so no server test covers it. */
+  monitoringLogDays: 90,
+  analytics: {
+    provider: 'Microsoft Clarity',
+    privacyStatement: 'privacy.microsoft.com',
+    /** How many days Clarity keeps recordings, read from the Clarity project's settings. Null until the owner has looked it up and set it. */
+    retentionDays: 30 as number | null,
+  },
   retention: {
     /** A table nobody has played at or looked at for this long is closed. */
     abandonAfterDays: 7,

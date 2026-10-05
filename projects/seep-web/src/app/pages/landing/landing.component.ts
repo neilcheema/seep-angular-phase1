@@ -1,4 +1,5 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
+import { AnalyticsService } from '../../core/analytics.service';
 import { RouterLink } from '@angular/router';
 import { APP_VERSION } from '../../version';
 
@@ -16,4 +17,6 @@ import { APP_VERSION } from '../../version';
 })
 export class LandingComponent {
   readonly appVersion = APP_VERSION;
+  /** For the "Privacy choices" link, shown only when analytics is configured. */
+  readonly analytics = inject(AnalyticsService);
 }

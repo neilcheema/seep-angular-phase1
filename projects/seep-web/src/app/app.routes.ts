@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { ShellComponent } from './components/shell/shell.component';
 import { LandingComponent } from './pages/landing/landing.component';
 import { TwoPlayerComponent } from './pages/two-player/two-player.component';
 import { FourPlayerComponent } from './pages/four-player/four-player.component';
@@ -7,7 +8,7 @@ import { FourPlayerComponent } from './pages/four-player/four-player.component';
 // anyone who only plays the bots never downloads any of it.
 const lobby = () => import('./pages/online/lobby.component').then((m) => m.LobbyComponent);
 
-export const routes: Routes = [
+const pages: Routes = [
   { path: '', component: LandingComponent, title: 'Seep' },
   { path: 'two-player', component: TwoPlayerComponent, title: 'Seep — 2 Player' },
   { path: 'four-player', component: FourPlayerComponent, title: 'Seep — 4 Player' },
@@ -30,3 +31,6 @@ export const routes: Routes = [
   },
   { path: '**', redirectTo: '' },
 ];
+
+// Every page sits inside the shell, which carries the analytics choice (see components/shell).
+export const routes: Routes = [{ path: '', component: ShellComponent, children: pages }];
