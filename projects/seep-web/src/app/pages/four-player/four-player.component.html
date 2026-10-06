@@ -81,6 +81,12 @@
     }
 
     @if (isPlayerTurn()) {
+      @if (captureHint(); as hint) {
+        <div id="capture-hint" role="status" style="text-align: center; padding: 2px 12px 8px; color: var(--gold-lt); font-size: 14px;">
+          <strong>{{ hint.headline }}</strong> {{ hint.detail }}
+          <button type="button" id="capture-hint-select" class="btn-outline" style="padding: 2px 10px; margin-left: 6px; font-size: 13px;" (click)="selectCaptureTargets()">Select them</button>
+        </div>
+      }
       <div class="action-bar">
         <button class="btn-gold" [disabled]="busy() || !canCapture()" (click)="onCapture()">Capture</button>
         <button class="btn-gold" [disabled]="busy() || !canBuild()" (click)="onBuild()">

@@ -151,3 +151,17 @@ export function canDecomposeIntoExactGroups<P = PlayerId>(
 
   return search(items, groupCount)
 }
+
+/**
+ * The floor items a capture with `card` MUST take, all at once: a house of exactly the card's value, plus every disjoint group of loose cards
+ * that add up to it. Empty when there is nothing to capture, which is exactly when the card may be thrown instead.
+ *
+ * This is the same rule playCapture enforces (and the one the screens use to know which cards a capture needs and to explain a refused throw).
+ * It lives here, once, because the screens' own copy of it drifted from the engine's before; a test now checks it against playCapture itself.
+ */
+export function requiredCaptureIds<P = PlayerId>(floor: FloorItem<P>[], card: Card): string[] {
+  const target = captureValue(card)
+  const house = findHouseByValue(floor, target)
+  const groups = findMaximalExactGroups(floor, target).flat()
+  return house ? [house.id, ...groups] : groups
+}

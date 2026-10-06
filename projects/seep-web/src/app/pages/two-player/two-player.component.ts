@@ -1,4 +1,5 @@
 import { MatchResultsComponent } from '../../components/match-results/match-results.component'
+import { captureHintFor } from '../../core/capture-hint'
 import { buildTwoPlayerResults } from '../../core/match-results'
 import { describeTurn, isOnTheMove } from '../../core/turn-text'
 import { Component, DestroyRef, type OnInit, computed, effect, inject, input, output, signal, untracked } from '@angular/core'
@@ -18,9 +19,9 @@ import {
   cardLabel,
   faceLabel,
   findHouseByValue,
-  findMaximalExactGroups,
   findItem,
   hasAnyLegalCapture,
+  requiredCaptureIds,
   hasCaptureValue,
   isHouse,
   isHouseValue,
@@ -178,6 +179,23 @@ export class TwoPlayerComponent implements OnInit {
   })
 
   /**
+   * Why Throw is greyed out, when the reason is that the selected card HAS to capture: a beginner's "why can't I throw this?". Null otherwise,
+   * including during the opening move (the card must match the bid instead) and once the player has started choosing cards to capture.
+   */
+  readonly captureHint = computed(() => {
+    const s = this.state()
+    const c = this.selectedCard()
+    if (!s || !c || !this.isPlayerTurn() || this.isOpening() || this.selectedFloorIds().length > 0) return null
+    return captureHintFor(s.floor, c)
+  })
+
+  /** "Select them": picks the cards the capture must take, so Capture is ready to press. */
+  selectCaptureTargets(): void {
+    const hint = this.captureHint()
+    if (hint) this.selectedFloorIds.set([...hint.ids])
+  }
+
+  /**
    * Mirrors the engine's own playCapture validation exactly
    * (findHouseByValue + findMaximalExactGroups, the same "required
    * selection" computation) rather than a simplified, independent check.
@@ -193,10 +211,7 @@ export class TwoPlayerComponent implements OnInit {
     const s = this.state()
     const c = this.selectedCard()
     if (!(s && c && this.selectedFloorIds().length > 0 && this.bidMatches())) return false
-    const target = captureValue(c)
-    const house = findHouseByValue(s.floor, target)
-    const maxGroups = findMaximalExactGroups(s.floor, target)
-    const requiredIds = new Set(house ? [house.id, ...maxGroups.flat()] : maxGroups.flat())
+    const requiredIds = new Set(requiredCaptureIds(s.floor, c))
     if (requiredIds.size === 0) return false
     const selected = new Set(this.selectedFloorIds())
     return requiredIds.size === selected.size && [...requiredIds].every((id) => selected.has(id))
