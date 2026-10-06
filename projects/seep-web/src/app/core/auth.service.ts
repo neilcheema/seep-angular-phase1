@@ -11,6 +11,8 @@ export class AuthService {
   readonly ready = signal(false)
   readonly busy = signal(false)
   readonly error = signal<string | null>(null)
+  /** How the last attempt to send the confirmation email went: null until one has been tried. */
+  readonly verificationEmail = signal<'sent' | 'failed' | null>(null)
 
   private readonly provider: IdentityProvider
   private started: Promise<void> | null = null
@@ -26,19 +28,44 @@ export class AuthService {
   }
 
   signInWithGoogle(): Promise<void> {
+    this.verificationEmail.set(null)
     return this.run(() => this.provider.signInWithGoogle())
   }
 
   signInWithEmail(email: string, password: string): Promise<void> {
+    this.verificationEmail.set(null)
     return this.run(() => this.provider.signInWithEmail(email.trim(), password))
   }
 
+  /** Creates the account and, as soon as it exists, emails the person the link that confirms their address. */
   signUpWithEmail(email: string, password: string): Promise<void> {
-    return this.run(() => this.provider.signUpWithEmail(email.trim(), password))
+    this.verificationEmail.set(null)
+    return this.run(async () => {
+      await this.provider.signUpWithEmail(email.trim(), password)
+      await this.sendVerificationEmail() // a failure here is not a failed sign-up: the person can ask for the email again
+    })
   }
 
   signOut(): Promise<void> {
+    this.verificationEmail.set(null)
     return this.run(() => this.provider.signOut())
+  }
+
+  /** Sends the confirmation link. Resolves to null when it went, or a sentence for the person when it did not. */
+  async sendVerificationEmail(): Promise<string | null> {
+    try {
+      await this.provider.sendVerificationEmail()
+      this.verificationEmail.set('sent')
+      return null
+    } catch (err) {
+      this.verificationEmail.set('failed')
+      return friendlyAuthError(err) ?? "Couldn't send the email. Please try again."
+    }
+  }
+
+  /** Re-reads the account after the person says they have confirmed. Errors are let through: the caller says what to do. */
+  refreshVerification(): Promise<void> {
+    return this.provider.refreshIdentity()
   }
 
   /**

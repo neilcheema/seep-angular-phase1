@@ -53,6 +53,15 @@ describe('the Privacy Policy matches what the site does', () => {
     expect(privacy).toContain('privacy-choices-policy')
   })
 
+  it('explains that a new email-and-password account must confirm its address, what is held until then, and how to have it removed', () => {
+    expect(privacy).toContain('id="privacy-confirm-email"')
+    expect(privacy).toContain('you have to confirm the address before you can play online')
+    expect(privacy).toContain('our own database holds nothing about you')
+    expect(privacy).toMatch(/whether or not you ever confirm/)
+    expect(privacy).toMatch(/If you want that record removed, email \{\{ legal\.contactEmail \}\}/)
+    expect(privacy).toMatch(/before this step existed were not asked/)
+  })
+
   it('lists the activity records the system really keeps: when someone last used the game, and the short-lived action counts', () => {
     expect(privacy).toContain('Activity records')
     expect(privacy).toContain('last used the game')

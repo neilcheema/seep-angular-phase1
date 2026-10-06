@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core'
+import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import type { GameInfoDto, GameKind } from '../../core/api-types'
 import { ApiError } from '../../core/game-api'
@@ -43,6 +43,18 @@ export class LobbyComponent {
   readonly nameError = signal<string | null>(null)
   readonly nameSaving = signal(false)
 
+  // --- confirming the email address (a NEW account has to, before it can play) ---
+  /** True while the "Check your email" step is showing: the SERVER said this new account has not confirmed its address yet. */
+  readonly needsVerification = signal(false)
+  readonly verifyBusy = signal(false)
+  readonly verifyNote = signal<string | null>(null)
+  readonly verifyError = signal<string | null>(null)
+  /** How the last attempt to send the confirmation email went (it is sent automatically at sign-up). */
+  readonly verificationEmail = this.auth.verificationEmail
+  /** Seconds before "send again" is allowed, so the button cannot be hammered. */
+  readonly resendWait = signal(0)
+  private resendTimer: ReturnType<typeof setInterval> | null = null
+
   // --- deleting the account ---
   /** True while the "Delete your account" panel is open. */
   readonly deleting = signal(false)
@@ -61,6 +73,7 @@ export class LobbyComponent {
     const code = this.route.snapshot.paramMap.get('code')
     if (code) this.linkCode.set(code.trim().toUpperCase())
     void this.auth.start()
+    inject(DestroyRef).onDestroy(() => this.stopCountdown())
 
     // Once per sign-in: register the profile, then either take the invited seat or list the person's tables.
     effect(() => {
@@ -96,6 +109,7 @@ export class LobbyComponent {
     this.profileName.set(null)
     this.needName.set(false)
     this.nameError.set(null)
+    this.resetVerification()
     void this.auth.signOut()
   }
 
@@ -198,6 +212,45 @@ export class LobbyComponent {
     }
   }
 
+  /** Sends the confirmation link again (the first one went automatically when the account was made). */
+  async resendVerification(): Promise<void> {
+    if (this.verifyBusy() || this.resendWait() > 0) return
+    this.verifyBusy.set(true)
+    this.verifyError.set(null)
+    this.verifyNote.set(null)
+    const problem = await this.auth.sendVerificationEmail()
+    this.verifyBusy.set(false)
+    if (problem) {
+      this.verifyError.set(problem)
+      return
+    }
+    this.verifyNote.set(`We sent the link to ${this.identity()?.email ?? 'your email address'}. It can take a minute, and it may land in your spam or junk folder.`)
+    this.startCountdown()
+  }
+
+  /**
+   * "I have confirmed it": re-reads the account and gets a fresh token (the old one still says the address is unconfirmed), then asks
+   * the server again. The server is the one that decides, so this also does the right thing for anyone it lets through anyway.
+   */
+  async checkVerified(): Promise<void> {
+    if (this.verifyBusy()) return
+    this.verifyBusy.set(true)
+    this.verifyError.set(null)
+    this.verifyNote.set(null)
+    try {
+      await this.auth.refreshVerification()
+    } catch {
+      this.verifyBusy.set(false)
+      this.verifyError.set("Couldn't check just now. Check your connection and try again.")
+      return
+    }
+    await this.afterSignIn()
+    this.verifyBusy.set(false)
+    if (this.needsVerification()) {
+      this.verifyError.set('We can’t see the confirmation yet. Open the link in the email we sent you, then tap this button again.')
+    }
+  }
+
   changeName(): void {
     this.nameSuggestion.set(this.profileName() ?? '')
     this.nameError.set(null)
@@ -210,6 +263,7 @@ export class LobbyComponent {
 
   private async afterSignIn(): Promise<void> {
     this.error.set(null)
+    this.needsVerification.set(false)
     this.carriedOn = false
     try {
       const profile = await this.api.me()
@@ -222,6 +276,10 @@ export class LobbyComponent {
       }
       await this.carryOn()
     } catch (err) {
+      if (err instanceof ApiError && err.status === 403 && err.details['code'] === 'email_not_verified') {
+        this.needsVerification.set(true) // not an error: the next step is to confirm the address
+        return
+      }
       this.error.set(this.messageFor(err))
     }
   }
@@ -255,6 +313,29 @@ export class LobbyComponent {
     } finally {
       this.working.set(false)
     }
+  }
+
+  private resetVerification(): void {
+    this.needsVerification.set(false)
+    this.verifyBusy.set(false)
+    this.verifyNote.set(null)
+    this.verifyError.set(null)
+    this.stopCountdown()
+  }
+
+  private startCountdown(): void {
+    this.stopCountdown()
+    this.resendWait.set(60)
+    this.resendTimer = setInterval(() => {
+      this.resendWait.update((n) => Math.max(0, n - 1))
+      if (this.resendWait() === 0) this.stopCountdown()
+    }, 1000)
+  }
+
+  private stopCountdown(): void {
+    if (this.resendTimer !== null) clearInterval(this.resendTimer)
+    this.resendTimer = null
+    this.resendWait.set(0)
   }
 
   private messageFor(err: unknown): string {

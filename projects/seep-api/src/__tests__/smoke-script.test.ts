@@ -19,7 +19,7 @@ vi.mock('../lib/auth', async (importOriginal) => {
     verifyFirebaseToken: (header: string | null) => {
       const person = header?.startsWith('Bearer ') ? header.slice(7).split('.')[1] : undefined
       return person
-        ? Promise.resolve({ uid: `firebase-${person}`, email: `${person}@example.test`, emailVerified: true })
+        ? Promise.resolve({ uid: `firebase-${person}`, email: `${person}@example.test`, emailVerified: !person.includes('unverified') })
         : Promise.reject(new actual.AuthError('Missing or malformed Authorization header'))
     },
   }
@@ -52,6 +52,8 @@ function matchRoute(method: string, path: string): { route: Registered; params: 
 
 /** Accounts known to the fake Firebase: email -> password. Persists across a test file, like the real thing. */
 const fakeFirebaseAccounts = new Map<string, string>()
+/** Accounts the script asked Firebase to delete (the throwaway one it makes for the unconfirmed-email check). */
+const fakeDeleted: string[] = []
 const VALID_API_KEY = 'valid-key'
 const fakeToken = (email: string) => `header.${email.split('@')[0]}.signature`
 
@@ -60,7 +62,15 @@ function fakeIdentityToolkit(url: URL, body: string, res: ServerResponse): void 
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(json))
   }
   if (url.searchParams.get('key') !== VALID_API_KEY) return reply(400, { error: { message: 'API key not valid. Please pass a valid API key.' } })
-  const { email, password } = JSON.parse(body) as { email: string; password: string }
+  const parsed = JSON.parse(body) as { email: string; password: string; idToken?: string }
+  if (url.pathname.endsWith(':delete')) {
+    const gone = [...fakeFirebaseAccounts.keys()].find((e) => fakeToken(e) === parsed.idToken)
+    if (!gone) return reply(400, { error: { message: 'INVALID_ID_TOKEN' } })
+    fakeFirebaseAccounts.delete(gone)
+    fakeDeleted.push(gone)
+    return reply(200, {})
+  }
+  const { email, password } = parsed
   if (url.pathname.endsWith(':signInWithPassword')) {
     if (!fakeFirebaseAccounts.has(email)) return reply(400, { error: { message: 'INVALID_LOGIN_CREDENTIALS' } })
     if (fakeFirebaseAccounts.get(email) !== password) return reply(400, { error: { message: 'INVALID_LOGIN_CREDENTIALS' } })
@@ -131,13 +141,15 @@ const CAROL = 'header.carol.signature'
 const DAVE = 'header.dave.signature'
 
 // These tests run the script several times in a row against the same accounts, to test how it handles TOKENS. They are not about rate limits,
-// and each run makes three reaction attempts against an allowance of six a minute, so give the allowance room here. (Against the real site,
+// and each run makes three reaction attempts against an allowance of six a minute and starts a table against ten an hour, so give the allowances room here. (Against the real site,
 // do not run the script more than twice within a minute.)
 beforeAll(() => {
   process.env['LIMIT_REACTIONS_PER_MINUTE'] = '1000'
+  process.env['LIMIT_CREATE_PER_HOUR'] = '1000' // every run starts a throwaway table, and these tests run the script a dozen times for the same few accounts
 })
 afterAll(() => {
   delete process.env['LIMIT_REACTIONS_PER_MINUTE']
+  delete process.env['LIMIT_CREATE_PER_HOUR']
 })
 
 describe('scripts/live-smoke.mjs', () => {
@@ -146,6 +158,7 @@ describe('scripts/live-smoke.mjs', () => {
     expect(out).toMatch(/PASS: \d+ of \d+ checks passed/)
     expect(out).not.toMatch(/FAIL/)
     expect(out).toMatch(/four-player section skipped/) // two tokens cannot fill a four-player table
+    expect(out).toMatch(/unverified-account check skipped/) // and without an API key it cannot make a throwaway account
     expect(code).toBe(0)
   })
 
@@ -191,6 +204,39 @@ describe('scripts/live-smoke.mjs', () => {
       expect(out).toMatch(/PASS/)
       expect(code).toBe(0)
       expect([...fakeFirebaseAccounts.entries()]).toEqual(before)
+    })
+
+    it('checks that a brand-new account that has not confirmed its email is refused, then deletes it again, leaving no trace', async () => {
+      const before = [...fakeFirebaseAccounts.keys()].sort()
+      const deletedBefore = fakeDeleted.length
+      const { code, out } = await viaFirebase()
+      expect(out).toMatch(/ok .*a brand-new account that has not confirmed its email is refused \(403, code email_not_verified\)/)
+      expect(code).toBe(0)
+      expect(fakeDeleted.length).toBe(deletedBefore + 1)
+      expect(fakeDeleted.at(-1)).toMatch(/^smoke-unverified-.*@example\.com$/)
+      expect([...fakeFirebaseAccounts.keys()].sort()).toEqual(before) // nothing left behind in Firebase
+      expect((await t.db.query("SELECT 1 FROM users WHERE email LIKE 'smoke-unverified-%'")).rows).toHaveLength(0) // nor in our database
+    })
+
+    it('FAILS that check when the server does not enforce the rule, and says why (so the check can fail)', async () => {
+      process.env['REQUIRE_VERIFIED_EMAIL'] = 'false'
+      try {
+        const { code, out } = await viaFirebase()
+        expect(out).toMatch(/FAIL .*a brand-new account that has not confirmed its email is refused/)
+        expect(out).toMatch(/REQUIRE_VERIFIED_EMAIL/)
+        expect(code).toBe(1)
+        expect(fakeDeleted.at(-1)).toMatch(/^smoke-unverified-/) // it still cleaned up after itself
+      } finally {
+        delete process.env['REQUIRE_VERIFIED_EMAIL']
+      }
+    })
+
+    it('explains, rather than just failing, when a brand-new test account is refused for an unconfirmed email', async () => {
+      const { code, out } = await viaFirebase({ EMAIL_A: 'unverified-newcomer@example.test' })
+      expect(out).toMatch(/refused because this account is new and has not confirmed its email/)
+      expect(out).toMatch(/REQUIRE_VERIFIED_EMAIL=false/)
+      expect(code).toBe(1)
+      fakeFirebaseAccounts.delete('unverified-newcomer@example.test')
     })
 
     it('says plainly what is wrong when an existing test account has a different password (exit 2)', async () => {

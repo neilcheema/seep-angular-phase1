@@ -22,7 +22,29 @@
         }
       }
 
-      @if (needName()) {
+      @if (needsVerification()) {
+<section id="verify-panel" class="flex flex-col items-center gap-3" style="width: 100%; max-width: 380px; text-align: center;">
+<h2 class="text-xl font-bold" style="color: var(--gold-lt);">Check your email</h2>
+@if (verificationEmail() === 'sent') {
+<p id="verify-message">We sent a link to <strong id="verify-email">{{ identity()?.email }}</strong>. Open it, then come back here and tap the button below.</p>
+} @else if (verificationEmail() === 'failed') {
+<p id="verify-message">We couldn’t send the email to <strong id="verify-email">{{ identity()?.email }}</strong> just now. Tap “Send the email” to try again.</p>
+} @else {
+<p id="verify-message">Please confirm your email address, <strong id="verify-email">{{ identity()?.email }}</strong>, before you play online. Tap “Send the email” and we will send you a link.</p>
+}
+<p style="font-size: 13px; color: rgba(255, 255, 255, 0.65);">The email can take a minute, and it may land in your spam or junk folder.</p>
+<button type="button" id="verify-continue" class="btn-gold" [disabled]="verifyBusy()" (click)="checkVerified()">I’ve confirmed my email</button>
+<button type="button" id="verify-resend" class="btn-outline" [disabled]="verifyBusy() || resendWait() > 0" (click)="resendVerification()">
+@if (resendWait() > 0) { Send again in {{ resendWait() }}s } @else if (verificationEmail() === 'sent') { Send the email again } @else { Send the email }
+</button>
+@if (verifyNote(); as n) {
+<p id="verify-note" role="status" style="color: #bfe8c0; font-size: 14px;">{{ n }}</p>
+}
+@if (verifyError(); as e) {
+<p id="verify-error" role="alert" style="color: #ff8a8a; font-size: 14px;">{{ e }}</p>
+}
+</section>
+} @else if (needName()) {
         <section id="name-step" class="flex flex-col items-center gap-3" style="width: 100%; max-width: 360px;">
           <h2 class="text-xl font-bold" style="color: var(--gold-lt);">What should we call you?</h2>
           <p style="color: rgba(255,255,255,0.65); font-size: 13px;">

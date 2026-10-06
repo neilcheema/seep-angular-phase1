@@ -3,7 +3,7 @@ import { getDb } from '../lib/db'
 import { cleanDisplayName } from '../lib/display-name'
 import { BadRequestError } from '../lib/errors'
 import { authed, readJsonBody } from '../lib/http'
-import { AccountDeletedError } from '../lib/users'
+import { AccountDeletedError, assertMayCreateAccount } from '../lib/users'
 
 /**
  * POST /api/v1/me — verifies the bearer token, then upserts a users row
@@ -23,6 +23,9 @@ export const me = authed(async ({ request, identity }) => {
   }
   const given = (body as Record<string, unknown>)['displayName']
   const displayName = given === undefined ? null : cleanDisplayName(given)
+
+  // A new account must have a confirmed email address; an existing one is never refused (see lib/users.ts).
+  await assertMayCreateAccount(getDb(), identity)
 
   const result = await getDb().query<{
     id: string

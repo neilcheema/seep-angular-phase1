@@ -62,6 +62,31 @@ async function tokenFor(email) {
   throw new Error(`Firebase could not create ${email}: ${created.message}`)
 }
 
+/**
+ * A brand-new email-and-password account that has NOT confirmed its address (creating one through this call sends no email).
+ * Returns its token and a function that deletes it again, so the check that uses it leaves nothing behind in Firebase.
+ */
+async function throwawayAccount() {
+  const email = `smoke-unverified-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`
+  const post = async (action, body) => {
+    const res = await fetch(`${IDENTITY}/v1/accounts:${action}?key=${encodeURIComponent(API_KEY)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return { ok: res.ok, json: await res.json().catch(() => ({})) }
+  }
+  const made = await post('signUp', { email, password: PASSWORD, returnSecureToken: true })
+  if (!made.json.idToken) throw new Error(`Firebase could not create the throwaway account: ${made.json.error?.message ?? 'unknown error'}`)
+  return {
+    token: made.json.idToken,
+    remove: async () => {
+      const gone = await post('delete', { idToken: made.json.idToken })
+      if (!gone.ok) console.log(`  (warning: could not delete the throwaway account ${email}; delete it in the Firebase console)`)
+    },
+  }
+}
+
 // With an API key the script fetches fresh tokens itself and ignores any TOKEN_A / TOKEN_B left in the
 // environment: a reused terminal session can easily still hold stale or junk values from an earlier attempt.
 let TOKEN_A = API_KEY ? undefined : process.env.TOKEN_A
@@ -125,7 +150,38 @@ async function main() {
 
   for (const [who, token] of [['A', TOKEN_A], ['B', TOKEN_B]]) {
     const me = await api(token, 'POST', '/v1/me')
-    check(`${who} signs in (POST /v1/me)`, me.status === 200 && me.json?.id, `${me.status} ${me.text.slice(0, 120)}`)
+    check(
+      `${who} signs in (POST /v1/me)`,
+      me.status === 200 && me.json?.id,
+      me.json?.code === 'email_not_verified'
+        ? `refused because this account is new and has not confirmed its email. On a fresh database, set REQUIRE_VERIFIED_EMAIL=false on the Function App for the first run, or use accounts that already exist. (${me.status})`
+        : `${me.status} ${me.text.slice(0, 120)}`,
+    )
+  }
+  // A brand-new account that has not confirmed its email address must be refused (the rule in lib/users.ts). A throwaway account is
+  // made in Firebase for this and deleted straight afterwards. This fails against an API from before the rule, and when the Function App
+  // setting REQUIRE_VERIFIED_EMAIL is "false", which is the point: it tells you the rule is switched off.
+  if (API_KEY) {
+    let throwaway = null
+    try {
+      throwaway = await throwawayAccount()
+    } catch (err) {
+      check('a throwaway unconfirmed account could be created for the check', false, err.message)
+    }
+    if (throwaway) {
+      try {
+        const refused = await api(throwaway.token, 'POST', '/v1/me')
+        check(
+          'a brand-new account that has not confirmed its email is refused (403, code email_not_verified)',
+          refused.status === 403 && refused.json?.code === 'email_not_verified',
+          `${refused.status} ${refused.text.slice(0, 120)} (if REQUIRE_VERIFIED_EMAIL is "false" on the Function App, this fails on purpose: the rule is switched off)`,
+        )
+      } finally {
+        await throwaway.remove()
+      }
+    }
+  } else {
+    console.log('  (unverified-account check skipped: it needs FIREBASE_API_KEY, to create a throwaway account)')
   }
   // A name is chosen through the same call, so this runs the real upsert on the real database: the name is saved, a bad one
   // is refused without changing it, and the next plain sign-in (which sends no name) must not erase it.

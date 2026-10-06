@@ -5,6 +5,8 @@ export interface Identity {
   readonly displayName: string | null
   /** How the person signs in. It decides how they confirm it is really them before deleting their account. */
   readonly method: 'password' | 'google' | 'other'
+  /** Whether the email address has been confirmed (a Google sign-in always has). The SERVER decides who may play; this is for the screens. */
+  readonly emailVerified: boolean
 }
 
 /**
@@ -30,6 +32,13 @@ export interface IdentityProvider {
   reauthenticate(password?: string): Promise<void>
   /** Deletes the sign-in record itself (email, password, Google link). The person is signed out. Harmless if already gone. */
   deleteAccount(): Promise<void>
+  /** Emails the signed-in person a link that confirms their address. */
+  sendVerificationEmail(): Promise<void>
+  /**
+   * Re-reads the account and gets a brand-new token, so an address that has just been confirmed shows up (the old token still says
+   * it is not). Tells everyone listening for changes.
+   */
+  refreshIdentity(): Promise<void>
 }
 
 /** Cancelling the Google window is a choice, not an error. */

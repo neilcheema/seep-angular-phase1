@@ -6,10 +6,12 @@ interface FakeUser {
   email: string | null
   displayName: string | null
   providerData?: { providerId: string }[]
+  emailVerified?: boolean
   getIdToken: ReturnType<typeof vi.fn>
+  reload?: ReturnType<typeof vi.fn>
 }
 
-const alice = (providerId = 'password'): FakeUser => ({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', providerData: [{ providerId }], getIdToken: vi.fn(() => Promise.resolve('token-1')) })
+const alice = (providerId = 'password'): FakeUser => ({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', providerData: [{ providerId }], emailVerified: false, getIdToken: vi.fn(() => Promise.resolve('token-1')) })
 
 function fakeSdk(initialUser: FakeUser | null = null, existingApp = false) {
   const stateListeners: ((user: FakeUser | null) => void)[] = []
@@ -39,6 +41,7 @@ function fakeSdk(initialUser: FakeUser | null = null, existingApp = false) {
       reauthenticateWithCredential: vi.fn((_u: unknown, cred: { email: string; password: string }) => (calls.push(`reauth-credential:${cred.email}:${cred.password}`), Promise.resolve())),
       reauthenticateWithPopup: vi.fn((_u: unknown, provider: unknown) => (calls.push(`reauth-popup:${(provider as { kind: string }).kind}`), Promise.resolve())),
       deleteUser: vi.fn(() => (calls.push('delete-user'), Promise.resolve())),
+      sendEmailVerification: vi.fn((user: { email: string }) => (calls.push(`verify-email:${user.email}`), Promise.resolve())),
     },
   }
   return { sdk: sdk as unknown as FirebaseSdk, raw: sdk, auth, calls, emit: (u: FakeUser | null) => stateListeners.forEach((l) => l(u)) }
@@ -66,7 +69,7 @@ describe('FirebaseIdentityProvider', () => {
 
   it('reports nobody when signed out, and the person (only the fields the app needs, none of the SDK’s internals) when a saved sign-in is restored', async () => {
     expect(await provider(fakeSdk()).init()).toBeNull()
-    expect(await provider(fakeSdk(alice())).init()).toEqual({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password' })
+    expect(await provider(fakeSdk(alice())).init()).toEqual({ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password', emailVerified: false })
   })
 
   it('tells every listener when the signed-in person changes, and stops telling one that unsubscribed', async () => {
@@ -80,8 +83,8 @@ describe('FirebaseIdentityProvider', () => {
     f.emit(alice())
     stopB()
     f.emit(null)
-    expect(a.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password' }], [null]])
-    expect(b.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password' }]])
+    expect(a.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password', emailVerified: false }], [null]])
+    expect(b.mock.calls).toEqual([[{ uid: 'u-alice', email: 'a@example.test', displayName: 'Alice', method: 'password', emailVerified: false }]])
   })
 
   it('performs each kind of sign-in through the SDK, loading it first if nobody has yet', async () => {
@@ -171,5 +174,57 @@ describe('FirebaseIdentityProvider', () => {
       expect(f.calls).toEqual([])
     })
   })
-})
 
+  describe('confirming the email address', () => {
+    it('reports whether the address is confirmed, and never claims it is when the SDK says nothing', async () => {
+      expect((await provider(fakeSdk({ ...alice(), emailVerified: true })).init())?.emailVerified).toBe(true)
+      expect((await provider(fakeSdk(alice())).init())?.emailVerified).toBe(false)
+      const silent = { ...alice(), emailVerified: undefined }
+      expect((await provider(fakeSdk(silent)).init())?.emailVerified).toBe(false)
+    })
+
+    it('sends the confirmation link to the signed-in person through the SDK', async () => {
+      const f = fakeSdk(alice())
+      await provider(f).sendVerificationEmail()
+      expect(f.calls).toEqual(['verify-email:a@example.test'])
+    })
+
+    it('refuses to send it when nobody is signed in, and sends nothing', async () => {
+      const f = fakeSdk()
+      await expect(provider(f).sendVerificationEmail()).rejects.toMatchObject({ code: 'auth/user-not-found' })
+      expect(f.calls).toEqual([])
+    })
+
+    it('lets the SDK’s own refusal through, so the screen can say “too many attempts”', async () => {
+      const f = fakeSdk(alice())
+      f.raw.auth.sendEmailVerification.mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'auth/too-many-requests' }))
+      await expect(provider(f).sendVerificationEmail()).rejects.toMatchObject({ code: 'auth/too-many-requests' })
+    })
+
+    it('refreshes by re-reading the account AND getting a brand-new token, then tells every listener what it found', async () => {
+      const user = { ...alice(), reload: vi.fn() }
+      user.reload.mockImplementation(() => {
+        user.emailVerified = true // the address was confirmed while the person was in their mail app
+        return Promise.resolve()
+      })
+      const f = fakeSdk(user)
+      const p = provider(f)
+      const heard = vi.fn()
+      p.onChange(heard)
+      await p.init()
+      await p.refreshIdentity()
+      expect(user.reload).toHaveBeenCalledTimes(1)
+      expect(user.getIdToken).toHaveBeenCalledWith(true) // the old token still says "unconfirmed"
+      expect(heard).toHaveBeenCalledWith(expect.objectContaining({ uid: 'u-alice', emailVerified: true }))
+    })
+
+    it('refreshes nothing, and tells nobody, when nobody is signed in', async () => {
+      const p = provider(fakeSdk())
+      const heard = vi.fn()
+      p.onChange(heard)
+      await p.init()
+      await expect(p.refreshIdentity()).resolves.toBeUndefined()
+      expect(heard).not.toHaveBeenCalled()
+    })
+  })
+})

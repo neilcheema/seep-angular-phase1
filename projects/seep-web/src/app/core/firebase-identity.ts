@@ -35,7 +35,7 @@ function toIdentity(user: User | null): Identity | null {
   if (!user) return null
   const provider = user.providerData?.[0]?.providerId
   const method = provider === 'password' ? 'password' : provider === 'google.com' ? 'google' : 'other'
-  return { uid: user.uid, email: user.email, displayName: user.displayName, method }
+  return { uid: user.uid, email: user.email, displayName: user.displayName, method, emailVerified: user.emailVerified === true }
 }
 
 export class FirebaseIdentityProvider implements IdentityProvider {
@@ -100,6 +100,23 @@ export class FirebaseIdentityProvider implements IdentityProvider {
     const user = auth.currentUser
     if (!user) return // already gone: nothing left to delete
     await sdk.auth.deleteUser(user)
+  }
+
+  async sendVerificationEmail(): Promise<void> {
+    const { sdk, auth } = await this.ready()
+    const user = auth.currentUser
+    if (!user) throw Object.assign(new Error('Not signed in.'), { code: 'auth/user-not-found' })
+    await sdk.auth.sendEmailVerification(user)
+  }
+
+  async refreshIdentity(): Promise<void> {
+    const { auth } = await this.ready()
+    const user = auth.currentUser
+    if (!user) return
+    await user.reload() // picks up that the address has been confirmed
+    await user.getIdToken(true) // and the token the server sees now says so too
+    const identity = toIdentity(auth.currentUser)
+    for (const listener of this.listeners) listener(identity)
   }
 
   async getIdToken(forceRefresh = false): Promise<string | null> {
