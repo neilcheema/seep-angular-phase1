@@ -11,6 +11,7 @@ const lobby = () => import('./pages/online/lobby.component').then((m) => m.Lobby
 const pages: Routes = [
   { path: '', component: LandingComponent, title: 'Seep' },
   { path: 'two-player', component: TwoPlayerComponent, title: 'Seep — 2 Player' },
+  { path: 'learn', component: TwoPlayerComponent, data: { learn: true }, title: 'Seep — Learn' },
   { path: 'four-player', component: FourPlayerComponent, title: 'Seep — 4 Player' },
   { path: 'online', loadComponent: lobby, title: 'Seep — Play online' },
   { path: 'join/:code', loadComponent: lobby, title: 'Seep — Join a table' },

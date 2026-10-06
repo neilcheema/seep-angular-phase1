@@ -58,6 +58,50 @@
       <div role="timer" class="text-center text-sm" style="padding: 0 12px 6px;" [style.color]="clockUrgent() ? '#ff8a8a' : 'rgba(255,255,255,0.7)'">{{ line }}</div>
     }
 
+    @if (learn()) {
+      <section id="learn-panel" style="padding: 4px 12px 8px; text-align: center;">
+        @if (primerOpen()) {
+          <div id="learn-primer" style="text-align: left; max-width: 560px; margin: 0 auto 8px; padding: 10px 14px; border: 1px solid var(--gold-lt); border-radius: 10px; background: #0b1d12; color: rgba(255, 255, 255, 0.92); font-size: 14px; line-height: 1.5;">
+            <strong style="color: var(--gold-lt);">Welcome to Learn Seep: how it works in a minute</strong>
+            <ul style="list-style: disc; padding-left: 18px; margin: 6px 0;">
+              <li>The first player to lead by 100 points wins the match, over as many hands as it takes.</li>
+              <li>On your turn you play one card. Cards are worth Ace 1, 2 to 10 as printed, Jack 11, Queen 12, King 13.</li>
+              <li><strong>Capture:</strong> play a card that matches a card on the floor, or several floor cards that add up to it, and you take them. If a card can capture, you must capture with it, which is why Throw sometimes greys out.</li>
+              <li><strong>Throw:</strong> a card that cannot capture can be thrown onto the floor.</li>
+              <li><strong>Build a house</strong> (worth 9 to 13) from your card and loose floor cards, as long as you keep another card of that value to capture it with later. A house is only captured by a card of exactly its value. Adding more of the same total cements it, and a cemented house cannot be broken up.</li>
+              <li><strong>Points:</strong> spades are worth their face value, other aces 1, the Ten of Diamonds 6, everything else 0, and fewer than 9 points in a hand scores nothing. Clearing the whole floor is a Seep: 50 bonus points (25 on the first move of a hand, none on the last card).</li>
+              <li><strong>Bidding:</strong> before each hand the bidder names a house value they hold (9 to 13), and their first move must use a card of that value.</li>
+              <li>Tap <strong>Show me</strong> on your turn for a few good options with the reasons. They are suggestions, not the only way to play.</li>
+            </ul>
+            <button type="button" id="learn-primer-close" class="btn-outline" style="padding: 3px 12px;" (click)="primerOpen.set(false)">Got it, let me play</button>
+          </div>
+        }
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          @if (canAskCoach()) {
+            <button type="button" id="learn-show" class="btn-gold" (click)="showAdvice()">Show me</button>
+          }
+          <button type="button" id="learn-rules" class="btn-outline" (click)="primerOpen.set(!primerOpen())">{{ primerOpen() ? 'Hide the rules' : 'Rules refresher' }}</button>
+        </div>
+        @if (visibleAdvice(); as cards) {
+          <div id="advice-panel" style="max-width: 560px; margin: 8px auto 0; text-align: left;">
+            <p style="margin: 0 0 6px; text-align: center; color: rgba(255, 255, 255, 0.75); font-size: 13px;">Good options, not the only way to play:</p>
+            @for (c of cards; track $index) {
+              <div data-advice-card [attr.data-advice-index]="$index" style="margin-bottom: 8px; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 10px; background: #0b1d12;">
+                <strong style="color: var(--gold-lt);">{{ c.title }}</strong>
+                <ul style="list-style: disc; padding-left: 18px; margin: 4px 0 6px; font-size: 14px; line-height: 1.45;">
+                  @for (r of c.reasons; track r) {
+                    <li>{{ r }}</li>
+                  }
+                </ul>
+                <button type="button" class="btn-gold" style="padding: 3px 14px;" [attr.data-advice-play]="$index" [disabled]="busy()" (click)="playAdvice(c)">Play this</button>
+              </div>
+            }
+            <div style="text-align: center;"><button type="button" id="advice-hide" class="btn-outline" style="padding: 2px 12px;" (click)="hideAdvice()">Hide</button></div>
+          </div>
+        }
+      </section>
+    }
+
     @if (s.phase === 'bidding' && s.turn === 'player' && !pendingReveal()) {
       <div class="action-bar">
         <span style="color: rgba(255,255,255,0.75);">Choose your bid:</span>

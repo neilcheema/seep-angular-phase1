@@ -1,4 +1,5 @@
 import { MatchResultsComponent } from '../../components/match-results/match-results.component'
+import { adviceCard, bidCard } from '../../core/advice-text'
 import { captureHintFor } from '../../core/capture-hint'
 import { buildTwoPlayerResults } from '../../core/match-results'
 import { describeTurn, isOnTheMove } from '../../core/turn-text'
@@ -20,6 +21,8 @@ import {
   faceLabel,
   findHouseByValue,
   findItem,
+  adviseBids,
+  adviseMoves,
   hasAnyLegalCapture,
   requiredCaptureIds,
   hasCaptureValue,
@@ -77,6 +80,14 @@ const SUIT_SYMBOL: Record<Suit, string> = {
  * near-duplicate places this page used to build its own MoveReveal by
  * hand — see buildReveal().
  */
+/** A suggestion as the Learn panel shows it: a move to play, or a bid. */
+interface LearnCard {
+  readonly title: string
+  readonly reasons: string[]
+  readonly intent?: Intent
+  readonly bid?: number
+}
+
 @Component({
   selector: 'app-two-player',
   standalone: true,
@@ -193,6 +204,56 @@ export class TwoPlayerComponent implements OnInit {
   selectCaptureTargets(): void {
     const hint = this.captureHint()
     if (hint) this.selectedFloorIds.set([...hint.ids])
+  }
+
+  // --- Learn mode: the same game against the computer, with a coach. Only the /learn route turns it on. ---
+  readonly learn = signal(this.route.snapshot.data['learn'] === true)
+  /** The short "how Seep works" card at the start, which can be closed and opened again. */
+  readonly primerOpen = signal(true)
+  private readonly adviceShown = signal<{ key: string; cards: LearnCard[] } | null>(null)
+  /**
+   * When the coach can be asked: whenever the player has a decision to make. That includes BIDDING, which isPlayerTurn() deliberately leaves out
+   * (the bid buttons have their own condition), so the very first decision of a game could otherwise not be asked about.
+   */
+  readonly canAskCoach = computed(() => {
+    const s = this.state()
+    if (!s || !this.learn() || this.pendingReveal() || this.busy()) return false
+    return s.phase === 'bidding' ? s.turn === 'player' : this.isPlayerTurn()
+  })
+  /** The suggestions on screen, or null. They vanish by themselves the moment the game moves on, so they can never be stale. */
+  readonly visibleAdvice = computed(() => {
+    const shown = this.adviceShown()
+    const s = this.state()
+    return shown && s && shown.key === this.adviceKey(s) ? shown.cards : null
+  })
+
+  private adviceKey(s: GameView): string {
+    return [s.phase, s.turn, s.cardsPlayedThisHand, s.myHand.length, s.floor.map((i) => i.id).join(',')].join('|')
+  }
+
+  /** "Show me": the best few moves (or bids) for this position. The coach is only ever shown what the player can see: it is given the player's view. */
+  showAdvice(): void {
+    const s = this.state()
+    if (!s || !this.canAskCoach()) return
+    const cards: LearnCard[] =
+      s.phase === 'bidding'
+        ? adviseBids(s, { count: 3, budgetMs: 150 }).map((b) => ({ ...bidCard(b), bid: b.value }))
+        : adviseMoves(s, { count: 3, budgetMs: 150 }).map((a) => adviceCard(a))
+    this.message.set(null)
+    this.adviceShown.set({ key: this.adviceKey(s), cards })
+  }
+
+  hideAdvice(): void {
+    this.adviceShown.set(null)
+  }
+
+  /** One tap on a suggestion plays it exactly as the buttons would. */
+  playAdvice(card: LearnCard): void {
+    this.adviceShown.set(null)
+    this.clearSelection()
+    const intent = card.intent
+    if (card.bid !== undefined) this.onBid(card.bid)
+    else if (intent) void this.runPlayerAction(() => this.session()!.submit(intent))
   }
 
   /**
