@@ -17,9 +17,10 @@
     <app-four-player-status-panel [state]="s" [mySeat]="mySeat()" [seatNames]="seatNames()" />
     <div class="gold-line"></div>
 
-    <div class="partner-row">
+    <div class="partner-row" style="position: relative;">
       <span class="seat-label" [style.color]="onTheMove(partnerSeat()) ? 'var(--gold-lt)' : null" [style.fontWeight]="onTheMove(partnerSeat()) ? 700 : null">{{ onTheMove(partnerSeat()) ? '▶ ' : '' }}{{ seatHeaderLabel(partnerSeat()) }}</span>
       <app-opponent-hand [count]="s.handCounts[partnerSeat()]" />
+      <ng-content select="[table-toasts]" />
     </div>
 
     <div class="four-seat-row">

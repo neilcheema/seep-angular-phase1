@@ -15,11 +15,12 @@
     <app-status-panel [state]="s" [opponentName]="opponentName()" />
     <div class="gold-line"></div>
 
-    <div class="flex flex-col items-center gap-1 py-2">
+    <div class="flex flex-col items-center gap-1 py-2" style="position: relative;">
       @if (opponentName(); as name) {
         <span id="opponent-name" style="font-size: 12px;" [style.color]="opponentOnTheMove() ? 'var(--gold-lt)' : 'rgba(255,255,255,0.65)'" [style.fontWeight]="opponentOnTheMove() ? 700 : 400">{{ opponentOnTheMove() ? '▶ ' : '' }}{{ name }}</span>
       }
       <app-opponent-hand [count]="s.opponentCardCount" />
+      <ng-content select="[table-toasts]" />
     </div>
 
     <div class="floor-row" style="flex: 1; justify-content: center;">

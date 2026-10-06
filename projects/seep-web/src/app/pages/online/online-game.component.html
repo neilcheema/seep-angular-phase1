@@ -78,6 +78,9 @@
           <span table-tools style="position: absolute; right: 8px; top: 0; bottom: 0; display: flex; align-items: center;">
             <ng-container [ngTemplateOutlet]="reactionTools" />
           </span>
+          <div table-toasts id="reaction-toasts" role="status" aria-live="polite" style="position: absolute; left: 0; right: 0; top: 22px; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; pointer-events: none; z-index: 45;">
+            <ng-container [ngTemplateOutlet]="reactionToastList" />
+          </div>
         </app-two-player>
       } @else {
         @if (four(); as f) {
@@ -85,17 +88,13 @@
             <span table-tools style="position: absolute; right: 8px; top: 0; bottom: 0; display: flex; align-items: center;">
               <ng-container [ngTemplateOutlet]="reactionTools" />
             </span>
+            <div table-toasts id="reaction-toasts" role="status" aria-live="polite" style="position: absolute; left: 0; right: 0; top: 22px; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; pointer-events: none; z-index: 45;">
+              <ng-container [ngTemplateOutlet]="reactionToastList" />
+            </div>
           </app-four-player>
         }
       }
 
-      @if (reactionsAvailable()) {
-        <div id="reaction-toasts" role="status" aria-live="polite" style="position: fixed; top: 44px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; flex-direction: column; gap: 4px; align-items: center; pointer-events: none;">
-          @for (toast of toasts(); track toast.key) {
-            <div [attr.data-to-me]="toast.toMe" style="padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.82); color: #fff; font-size: 14px; border-style: solid; border-color: var(--gold-lt);" [style.borderWidth]="toast.toMe ? '3px' : '1px'">{{ toast.text }}</div>
-          }
-        </div>
-      }
     }
   } @else {
     <div class="game-root">
@@ -114,7 +113,7 @@
     <span style="position: relative; display: inline-block;">
       <button type="button" id="reactions-toggle" class="btn-outline" style="padding: 4px 10px; border-radius: 999px; line-height: 1;" aria-label="Quick reactions" [attr.aria-expanded]="trayOpen()" (click)="toggleTray()">💬</button>
       @if (trayOpen()) {
-        <div id="reactions-tray" role="group" aria-label="Quick reactions" style="position: fixed; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 70; box-sizing: border-box; width: 264px; max-width: calc(100vw - 16px); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.9); border: 1px solid rgba(255, 255, 255, 0.25); text-align: left;">
+        <div id="reactions-tray" role="group" aria-label="Quick reactions" style="position: fixed; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 70; box-sizing: border-box; width: 264px; max-width: calc(100vw - 16px); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 8px; border-radius: 10px; background: #0b1d12; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.25); text-align: left;">
           @if (reactionRecipients().length > 0) {
             <div id="reaction-to" role="radiogroup" aria-label="Who the reaction is for" style="grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;">
               <span style="font-size: 12px; color: rgba(255, 255, 255, 0.7);">To:</span>
@@ -137,5 +136,15 @@
         </div>
       }
     </span>
+  }
+</ng-template>
+
+<!-- The reaction messages. They are shown INSIDE each game screen, over the opponent's (or partner's) face-down cards, which are the least
+     important thing on the screen. They used to float at the top of the screen and covered the bid in the status bar. -->
+<ng-template #reactionToastList>
+  @if (reactionsAvailable()) {
+    @for (toast of toasts(); track toast.key) {
+      <div [attr.data-to-me]="toast.toMe" style="padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.9); color: #fff; font-size: 14px; border-style: solid; border-color: var(--gold-lt);" [style.borderWidth]="toast.toMe ? '3px' : '1px'">{{ toast.text }}</div>
+    }
   }
 </ng-template>
