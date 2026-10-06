@@ -1,6 +1,6 @@
 import { app } from '@azure/functions'
 import { getDb } from '../lib/db'
-import { cleanDisplayName } from '../lib/display-name'
+import { NameTakenError, cleanDisplayName, freeNameSuggestions, isNameTaken } from '../lib/display-name'
 import { BadRequestError } from '../lib/errors'
 import { authed, readJsonBody } from '../lib/http'
 import { AccountDeletedError, assertMayCreateAccount } from '../lib/users'
@@ -27,21 +27,30 @@ export const me = authed(async ({ request, identity }) => {
   // A new account must have a confirmed email address; an existing one is never refused (see lib/users.ts).
   await assertMayCreateAccount(getDb(), identity)
 
-  const result = await getDb().query<{
-    id: string
-    display_name: string | null
-    email: string | null
-    created_at: string
-  }>(
-    `INSERT INTO users (firebase_uid, email, display_name, last_seen_at)
+  const upsert = () =>
+    getDb().query<{
+      id: string
+      display_name: string | null
+      email: string | null
+      created_at: string
+    }>(
+      `INSERT INTO users (firebase_uid, email, display_name, last_seen_at)
      SELECT $1::text, $2::text, $3::text, now()
       WHERE NOT EXISTS (SELECT 1 FROM deleted_accounts WHERE firebase_uid = $1::text)
      ON CONFLICT (firebase_uid)
      DO UPDATE SET last_seen_at = now(), email = EXCLUDED.email,
                    display_name = COALESCE(EXCLUDED.display_name, users.display_name)
      RETURNING id, display_name, email, created_at`,
-    [identity.uid, identity.email, displayName],
-  )
+      [identity.uid, identity.email, displayName],
+    )
+  let result: Awaited<ReturnType<typeof upsert>>
+  try {
+    result = await upsert()
+  } catch (err) {
+    // The unique index is the only thing that decides this, so two people choosing the same name at the same moment cannot both win.
+    if (displayName !== null && isNameTaken(err)) throw new NameTakenError(await freeNameSuggestions(getDb(), displayName))
+    throw err
+  }
   const profile = result.rows[0]
   if (!profile) throw new AccountDeletedError() // a deleted account is not quietly re-created by a stale sign-in
   return {

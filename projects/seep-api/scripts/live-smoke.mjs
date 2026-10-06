@@ -185,12 +185,27 @@ async function main() {
   }
   // A name is chosen through the same call, so this runs the real upsert on the real database: the name is saved, a bad one
   // is refused without changing it, and the next plain sign-in (which sends no name) must not erase it.
-  const named = await api(TOKEN_A, 'POST', '/v1/me', { displayName: 'Smoke A' })
-  check('A chooses a display name', named.status === 200 && named.json?.displayName === 'Smoke A', `${named.status} ${named.text.slice(0, 120)}`)
+  // Names are unique across the site, so if "Smoke A" already belongs to a DIFFERENT account (say you switched which account plays A), the
+  // server refuses it and offers free alternatives: take the first one. That is also the real suggestion flow, run live.
+  let nameA = 'Smoke A'
+  let named = await api(TOKEN_A, 'POST', '/v1/me', { displayName: nameA })
+  if (named.status === 409 && named.json?.code === 'name_taken' && named.json.suggestions?.length > 0) {
+    nameA = named.json.suggestions[0]
+    named = await api(TOKEN_A, 'POST', '/v1/me', { displayName: nameA })
+  }
+  check('A chooses a display name', named.status === 200 && named.json?.displayName === nameA, `${named.status} ${named.text.slice(0, 120)}`)
+  // Display names are unique: B cannot take A's name even written differently (case, spaces and . - _ ' are ignored: "Smoke A" and "smoke_a" are one name). The server refuses (409,
+  // code name_taken) and offers free alternatives. An API from before unique names accepts it (200), so this fails there on purpose.
+  const taken = await api(TOKEN_B, 'POST', '/v1/me', { displayName: nameA.toLowerCase().replace(/ /g, '_') })
+  check(
+    'someone else taking A’s name, written differently, is refused (409, name_taken) and offered free alternatives',
+    taken.status === 409 && taken.json?.code === 'name_taken' && Array.isArray(taken.json?.suggestions) && taken.json.suggestions.length > 0,
+    `${taken.status} ${taken.text.slice(0, 160)}`,
+  )
   const badName = await api(TOKEN_A, 'POST', '/v1/me', { displayName: '<b>x</b>' })
   check('a display name with markup is refused (400)', badName.status === 400, `${badName.status} ${badName.text.slice(0, 120)}`)
   const signedInAgain = await api(TOKEN_A, 'POST', '/v1/me')
-  check('signing in again, with no name sent, keeps the chosen name', signedInAgain.json?.displayName === 'Smoke A', `${signedInAgain.status} ${signedInAgain.text.slice(0, 120)}`)
+  check('signing in again, with no name sent, keeps the chosen name', signedInAgain.json?.displayName === nameA, `${signedInAgain.status} ${signedInAgain.text.slice(0, 120)}`)
 
   const nobody = await api(null, 'POST', '/v1/games', { kind: 'two_player' })
   check('a request with no token is refused (401)', nobody.status === 401, nobody.status)
@@ -226,7 +241,7 @@ async function main() {
   const a = viewA.json?.view
   const b = viewB.json?.view
   check('each sees their own seat as the viewer', a?.viewer === 'player' && b?.viewer === 'opponent')
-  check("the other player sees A's name in the table's player list", viewB.json?.players?.find((pl) => pl.seat === 'player')?.displayName === 'Smoke A', JSON.stringify(viewB.json?.players))
+  check("the other player sees A's name in the table's player list", viewB.json?.players?.find((pl) => pl.seat === 'player')?.displayName === nameA, JSON.stringify(viewB.json?.players))
   // The poll now carries the rematch pointer (empty while the match is on). An older API has no such field at all.
   check('the poll carries the rematch field, empty while the match is still on', viewA.json?.rematchGameId === null, `rematchGameId = ${JSON.stringify(viewA.json?.rematchGameId)}`)
   // The finished-hands history that the results screen itemises: a list in every player's view, empty until a hand ends. An

@@ -26,6 +26,9 @@ export const REQUIRED_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   reactions: ['code', 'to_seat'],
 }
 
+/** Functions the code relies on (migration 010 creates the one that compares display names). */
+export const REQUIRED_FUNCTIONS: readonly string[] = ['seep_name_key']
+
 const DEEP_REPEAT_MS = 30_000
 let lastDeep: { at: number; status: number; body: Record<string, unknown> } | null = null
 
@@ -48,7 +51,12 @@ export async function healthHandler(request: HttpRequest, context: InvocationCon
       [Object.keys(REQUIRED_SCHEMA)],
     )
     const have = new Set(found.rows.map((r) => `${r.table_name}.${r.column_name}`))
-    const missing = Object.entries(REQUIRED_SCHEMA).flatMap(([table, columns]) => columns.filter((c) => !have.has(`${table}.${c}`)).map((c) => `${table}.${c}`))
+    const functions = await getDb().query<{ proname: string }>('SELECT proname FROM pg_proc WHERE proname = ANY($1::text[])', [REQUIRED_FUNCTIONS])
+    const haveFunctions = new Set(functions.rows.map((r) => r.proname))
+    const missing = [
+      ...Object.entries(REQUIRED_SCHEMA).flatMap(([table, columns]) => columns.filter((c) => !have.has(`${table}.${c}`)).map((c) => `${table}.${c}`)),
+      ...REQUIRED_FUNCTIONS.filter((f) => !haveFunctions.has(f)).map((f) => `function ${f}`),
+    ]
     if (missing.length > 0) {
       status = 503
       body = { status: 'degraded', database: 'ok', schema: 'out-of-date' }

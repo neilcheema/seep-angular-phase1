@@ -2,7 +2,7 @@ import { afterEach, beforeAll, afterAll, beforeEach, describe, expect, it, vi } 
 import type { HttpRequest, InvocationContext } from '@azure/functions'
 import { REQUIRED_SCHEMA, _resetHealthThrottleForTests, healthHandler } from '../functions/health'
 import { type Db, _setDbForTests } from '../lib/db'
-import { type TestDb, createTestDb } from './helpers/test-db'
+import { type TestDb, createTestDb, readMigration } from './helpers/test-db'
 
 let t: TestDb
 beforeAll(async () => {
@@ -81,6 +81,17 @@ describe('the deep health check (for people, smoke tests and a look right after 
       expect(String(warn.mock.calls[0]![0])).toContain('games.turn_started_at')
     } finally {
       await t.db.query('ALTER TABLE games RENAME COLUMN turn_started_at_hidden TO turn_started_at')
+    }
+  })
+
+  it('notices that the name-comparison function is missing, so a forgotten migration 010 is caught', async () => {
+    await t.raw.exec('DROP INDEX users_display_name_key; DROP FUNCTION seep_name_key(text)')
+    try {
+      const { ctx, warn } = context()
+      expect((await healthHandler(request('deep=1'), ctx)).status).toBe(503)
+      expect(String(warn.mock.calls[0]![0])).toContain('function seep_name_key')
+    } finally {
+      await t.raw.exec(readMigration('010_phase6_unique_names.sql'))
     }
   })
 

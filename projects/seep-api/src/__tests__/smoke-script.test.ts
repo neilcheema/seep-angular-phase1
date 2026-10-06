@@ -26,7 +26,7 @@ vi.mock('../lib/auth', async (importOriginal) => {
 })
 
 import { _setDbForTests } from '../lib/db'
-import { type TestDb, createTestDb } from './helpers/test-db'
+import { type TestDb, createTestDb, readMigration } from './helpers/test-db'
 
 /**
  * Runs the real scripts/live-smoke.mjs — the exact file you'll point at the
@@ -171,6 +171,21 @@ describe('scripts/live-smoke.mjs', () => {
     expect(out).toMatch(/PASS: \d+ of \d+ checks passed/)
     expect(out).not.toMatch(/FAIL/)
     expect(code).toBe(0)
+  })
+
+  it('checks that a second person cannot take the first person’s name, and FAILS that check against a server that lets them (so it can fail)', async () => {
+    const ok = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB })
+    expect(ok.out).toMatch(/ok .*someone else taking A’s name, written differently, is refused \(409, name_taken\)/)
+    expect(ok.code).toBe(0)
+    await t.raw.exec('DROP INDEX users_display_name_key') // a server from before unique names
+    try {
+      const bad = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB })
+      expect(bad.out).toMatch(/FAIL .*someone else taking A’s name/)
+      expect(bad.code).toBe(1)
+    } finally {
+      await t.raw.exec("UPDATE users SET display_name = NULL WHERE firebase_uid = 'firebase-bob'") // undo what the lenient server let through
+      await t.raw.exec(readMigration('010_phase6_unique_names.sql'))
+    }
   })
 
   it('fails the four-player section when two of the four tokens are secretly the same person', async () => {

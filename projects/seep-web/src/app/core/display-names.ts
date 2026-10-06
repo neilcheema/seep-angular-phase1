@@ -1,4 +1,5 @@
 import type { GameInfoDto, PlayerInfoDto } from './api-types'
+import { ApiError } from './game-api'
 
 /** "Narender Cheema" -> "Narender": a first-name suggestion from a sign-in provider's full name. Empty if nothing usable. */
 export function suggestName(fullName: string | null): string {
@@ -40,4 +41,14 @@ export function tableStatusText(game: GameInfoDto): string {
     return game.kind === 'two_player' ? `In progress vs ${others[0]}` : `In progress with ${others.join(', ')}`
   }
   return game.status === 'finished' ? 'Finished' : 'Closed'
+}
+
+/**
+ * When saving a name fails because somebody already has it (or a name that counts as the same), the server offers a few free alternatives.
+ * This returns them (an empty list if it offered none), or null when the failure was anything else.
+ */
+export function nameTakenSuggestions(err: unknown): string[] | null {
+  if (!(err instanceof ApiError) || err.status !== 409 || err.details['code'] !== 'name_taken') return null
+  const offered = err.details['suggestions']
+  return Array.isArray(offered) ? offered.filter((x): x is string => typeof x === 'string' && x.trim() !== '').slice(0, 5) : []
 }

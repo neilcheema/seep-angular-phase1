@@ -3,7 +3,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router'
 import type { GameInfoDto, GameKind } from '../../core/api-types'
 import { ApiError } from '../../core/game-api'
 import { friendlyReauthError } from '../../core/identity'
-import { suggestName, tableStatusText } from '../../core/display-names'
+import { nameTakenSuggestions, suggestName, tableStatusText } from '../../core/display-names'
 import { AUTH, ONLINE_API } from '../../core/online'
 
 /**
@@ -42,6 +42,8 @@ export class LobbyComponent {
   readonly nameSuggestion = signal('')
   readonly nameError = signal<string | null>(null)
   readonly nameSaving = signal(false)
+  /** Free alternatives offered when the chosen name is already taken. One tap takes one of them. */
+  readonly nameSuggestions = signal<string[]>([])
 
   // --- confirming the email address (a NEW account has to, before it can play) ---
   /** True while the "Check your email" step is showing: the SERVER said this new account has not confirmed its address yet. */
@@ -109,6 +111,7 @@ export class LobbyComponent {
     this.profileName.set(null)
     this.needName.set(false)
     this.nameError.set(null)
+    this.nameSuggestions.set([])
     this.resetVerification()
     void this.auth.signOut()
   }
@@ -144,15 +147,31 @@ export class LobbyComponent {
   /** Saves the chosen name, then carries on to whatever the person came here to do. */
   async saveName(event: Event, raw: string): Promise<void> {
     event.preventDefault()
+    await this.submitName(raw)
+  }
+
+  /** One tap on a suggested name: take it. */
+  async useSuggestedName(name: string): Promise<void> {
+    await this.submitName(name)
+  }
+
+  private async submitName(raw: string): Promise<void> {
     this.nameSaving.set(true)
     this.nameError.set(null)
+    this.nameSuggestions.set([])
     try {
       const profile = await this.api.setDisplayName(raw)
       this.profileName.set(profile.displayName)
       this.needName.set(false)
       await this.carryOn()
     } catch (err) {
-      this.nameError.set(this.messageFor(err))
+      const offered = nameTakenSuggestions(err)
+      if (offered === null) {
+        this.nameError.set(this.messageFor(err))
+      } else {
+        this.nameError.set(offered.length > 0 ? 'That name is already taken. Choose one of these, or type a different one:' : 'That name is already taken. Please type a different one.')
+        this.nameSuggestions.set(offered)
+      }
     } finally {
       this.nameSaving.set(false)
     }
@@ -254,6 +273,7 @@ export class LobbyComponent {
   changeName(): void {
     this.nameSuggestion.set(this.profileName() ?? '')
     this.nameError.set(null)
+    this.nameSuggestions.set([])
     this.needName.set(true)
   }
 

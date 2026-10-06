@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GameInfoDto, PlayerInfoDto } from '../api-types'
-import { otherNames, seatLine, seatNumber, suggestName, tableStatusText } from '../display-names'
+import { ApiError } from '../game-api'
+import { nameTakenSuggestions, otherNames, seatLine, seatNumber, suggestName, tableStatusText } from '../display-names'
 
 const player = (seat: string, over: Partial<PlayerInfoDto> = {}): PlayerInfoDto => ({
   seat, displayName: null, isBot: false, isYou: false, joined: true, ...over,
@@ -74,5 +75,31 @@ describe('tableStatusText', () => {
   it('lists only people who have arrived and are not you or a bot', () => {
     const g = game({ players: [player('p1', { isYou: true, displayName: 'Me' }), player('p2', { displayName: 'Bob' }), player('p3', { isBot: true, displayName: 'Robo' }), player('p4', { joined: false, displayName: 'Ghost' })] })
     expect(otherNames(g)).toEqual(['Bob'])
+  })
+})
+
+describe('nameTakenSuggestions', () => {
+  const taken = (details: Record<string, unknown>, status = 409) => new ApiError(status, 'That name is already taken.', details)
+
+  it('returns the free alternatives the server offered', () => {
+    expect(nameTakenSuggestions(taken({ code: 'name_taken', suggestions: ['Alex 2', 'Alex 3', 'Alex 4'] }))).toEqual(['Alex 2', 'Alex 3', 'Alex 4'])
+  })
+
+  it('returns an empty list, not null, when the name is taken but nothing was offered (it is still a taken name)', () => {
+    expect(nameTakenSuggestions(taken({ code: 'name_taken' }))).toEqual([])
+    expect(nameTakenSuggestions(taken({ code: 'name_taken', suggestions: 'Alex 2' }))).toEqual([])
+  })
+
+  it('keeps only real, non-empty text, and no more than five', () => {
+    expect(nameTakenSuggestions(taken({ code: 'name_taken', suggestions: ['A 2', 7, '', '   ', null, 'A 3', 'A 4', 'A 5', 'A 6', 'A 7'] }))).toEqual(['A 2', 'A 3', 'A 4', 'A 5', 'A 6'])
+  })
+
+  it('is null for every other kind of failure, so those are shown as the ordinary error they are', () => {
+    expect(nameTakenSuggestions(taken({ code: 'something_else' }))).toBeNull()
+    expect(nameTakenSuggestions(taken({}))).toBeNull()
+    expect(nameTakenSuggestions(taken({ code: 'name_taken', suggestions: ['A 2'] }, 400))).toBeNull()
+    expect(nameTakenSuggestions(taken({ code: 'name_taken', suggestions: ['A 2'] }, 500))).toBeNull()
+    expect(nameTakenSuggestions(new Error('name_taken'))).toBeNull()
+    expect(nameTakenSuggestions(null)).toBeNull()
   })
 })
