@@ -18,13 +18,13 @@
     <div class="gold-line"></div>
 
     <div class="partner-row">
-      <span class="seat-label">{{ seatHeaderLabel(partnerSeat()) }}</span>
+      <span class="seat-label" [style.color]="onTheMove(partnerSeat()) ? 'var(--gold-lt)' : null" [style.fontWeight]="onTheMove(partnerSeat()) ? 700 : null">{{ onTheMove(partnerSeat()) ? '▶ ' : '' }}{{ seatHeaderLabel(partnerSeat()) }}</span>
       <app-opponent-hand [count]="s.handCounts[partnerSeat()]" />
     </div>
 
     <div class="four-seat-row">
       <div class="side-hand">
-        <span class="seat-label">{{ seatHeaderLabel(leftSeat()) }}</span>
+        <span class="seat-label" [style.color]="onTheMove(leftSeat()) ? 'var(--gold-lt)' : null" [style.fontWeight]="onTheMove(leftSeat()) ? 700 : null">{{ onTheMove(leftSeat()) ? '▶ ' : '' }}{{ seatHeaderLabel(leftSeat()) }}</span>
         <app-opponent-hand [count]="s.handCounts[leftSeat()]" orientation="left" />
       </div>
 
@@ -46,7 +46,7 @@
       </div>
 
       <div class="side-hand">
-        <span class="seat-label">{{ seatHeaderLabel(rightSeat()) }}</span>
+        <span class="seat-label" [style.color]="onTheMove(rightSeat()) ? 'var(--gold-lt)' : null" [style.fontWeight]="onTheMove(rightSeat()) ? 700 : null">{{ onTheMove(rightSeat()) ? '▶ ' : '' }}{{ seatHeaderLabel(rightSeat()) }}</span>
         <app-opponent-hand [count]="s.handCounts[rightSeat()]" orientation="right" />
       </div>
     </div>
@@ -55,8 +55,15 @@
       <div class="text-center text-sm" style="color: #ff8a8a; padding: 0 12px 6px;">{{ m }}</div>
     }
 
-    @if (remote() && s.turn !== mySeat() && (s.phase === 'bidding' || s.phase === 'opening-move' || s.phase === 'playing') && !pendingReveal()) {
-      <div class="text-center text-sm" style="color: rgba(255,255,255,0.6); padding: 0 12px 6px;">Waiting for the other players…</div>
+    @if (remote()) {
+      <div id="turn-bar" style="position: relative; display: flex; align-items: center; justify-content: center; min-height: 40px; padding: 2px 52px; box-sizing: border-box;">
+        @if (turnLine(); as turn) {
+          @if (!pendingReveal()) {
+            <span id="turn-line" [attr.data-mine]="turn.mine" style="font-size: 17px; font-weight: 800; text-align: center;" [style.color]="turn.mine ? 'var(--gold-lt)' : '#fff'">{{ turn.mine ? '▶ ' : '' }}{{ turn.text }}</span>
+          }
+        }
+        <ng-content select="[table-tools]" />
+      </div>
     }
 
     @if (clockLine(); as line) {

@@ -1,5 +1,6 @@
 import { MatchResultsComponent } from '../../components/match-results/match-results.component'
 import { buildTwoPlayerResults } from '../../core/match-results'
+import { describeTurn, isOnTheMove } from '../../core/turn-text'
 import { Component, DestroyRef, type OnInit, computed, effect, inject, input, output, signal, untracked } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, RouterLink } from '@angular/router'
@@ -112,6 +113,16 @@ export class TwoPlayerComponent implements OnInit {
   readonly results = computed(() => {
     const s = this.state()
     return s && s.phase === 'match-over' ? buildTwoPlayerResults(s, this.opponentName()) : null
+  })
+  /** Whose turn it is, in words, for the big line above the buttons (online tables only). */
+  readonly turnLine = computed(() => {
+    const s = this.state()
+    return s && this.remote() ? describeTurn(s.phase, s.turn, 'player', () => this.opponentLabel()) : null
+  })
+  /** True while it is the opponent's turn, so their name can carry a marker. */
+  readonly opponentOnTheMove = computed(() => {
+    const s = this.state()
+    return !!s && !!this.remote() && isOnTheMove(s.phase, s.turn, 'opponent')
   })
   readonly selectedCard = signal<CardModel | null>(null)
   readonly selectedFloorIds = signal<string[]>([])

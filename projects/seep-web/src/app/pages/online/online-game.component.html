@@ -74,33 +74,25 @@
           [rematchBusy]="rematchBusy()"
           [rematchError]="rematchError()"
           (rematch)="rematch()"
-        />
+        >
+          <span table-tools style="position: absolute; right: 8px; top: 0; bottom: 0; display: flex; align-items: center;">
+            <ng-container [ngTemplateOutlet]="reactionTools" />
+          </span>
+        </app-two-player>
       } @else {
         @if (four(); as f) {
-          <app-four-player [remote]="f" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" [seatNames]="seatNames()" />
+          <app-four-player [remote]="f" [clockLine]="clockLine()?.text ?? null" [clockUrgent]="clockLine()?.urgent ?? false" [seatNames]="seatNames()">
+            <span table-tools style="position: absolute; right: 8px; top: 0; bottom: 0; display: flex; align-items: center;">
+              <ng-container [ngTemplateOutlet]="reactionTools" />
+            </span>
+          </app-four-player>
         }
       }
 
-      @if (s.status() === 'active' || s.status() === 'finished') {
-        <div id="reactions" style="position: fixed; right: 6px; top: 50%; transform: translateY(-50%); z-index: 40; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
-          <button type="button" id="reactions-toggle" class="btn-outline" style="padding: 4px 10px; border-radius: 999px;" aria-label="Quick reactions" [attr.aria-expanded]="trayOpen()" (click)="toggleTray()">💬</button>
-          @if (trayOpen()) {
-            <div id="reactions-tray" role="group" aria-label="Quick reactions" style="display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 10px; background: rgba(0,0,0,0.78); border: 1px solid rgba(255,255,255,0.2);">
-              @for (choice of reactionChoices; track choice.code) {
-                <button type="button" class="btn-outline" style="padding: 4px 10px; text-align: left;" [attr.data-code]="choice.code" [disabled]="reactionBusy()" (click)="sendReaction(choice.code)">{{ choice.emoji }} {{ choice.text }}</button>
-              }
-              <label style="color: rgba(255,255,255,0.8); font-size: 12px; display: flex; gap: 6px; align-items: center;">
-                <input type="checkbox" id="reactions-mute" [checked]="reactionsMuted()" (change)="toggleMute()" /> Mute reactions
-              </label>
-              @if (reactionError(); as err) {
-                <p id="reaction-error" role="alert" style="color: #ff8a8a; font-size: 12px; max-width: 180px;">{{ err }}</p>
-              }
-            </div>
-          }
-        </div>
+      @if (reactionsAvailable()) {
         <div id="reaction-toasts" role="status" aria-live="polite" style="position: fixed; top: 44px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; flex-direction: column; gap: 4px; align-items: center; pointer-events: none;">
           @for (toast of toasts(); track toast.key) {
-            <div style="padding: 6px 14px; border-radius: 999px; background: rgba(0,0,0,0.82); color: #fff; font-size: 14px; border: 1px solid var(--gold-lt);">{{ toast.text }}</div>
+            <div style="padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.82); color: #fff; font-size: 14px; border: 1px solid var(--gold-lt);">{{ toast.text }}</div>
           }
         </div>
       }
@@ -113,3 +105,27 @@
     </div>
   }
 }
+
+<!-- The quick-reactions button and its tray. The BUTTON is shown inside each game screen's turn bar (see the table-tools slot there), in the
+     normal page layout, so it cannot cover the cards or the scores the way a floating button did. The TRAY is pinned to the bottom corner of the
+     screen so it is always fully on screen, wherever the bar happens to be (it used to open upward and could land off the top). -->
+<ng-template #reactionTools>
+  @if (reactionsAvailable()) {
+    <span style="position: relative; display: inline-block;">
+      <button type="button" id="reactions-toggle" class="btn-outline" style="padding: 4px 10px; border-radius: 999px; line-height: 1;" aria-label="Quick reactions" [attr.aria-expanded]="trayOpen()" (click)="toggleTray()">💬</button>
+      @if (trayOpen()) {
+        <div id="reactions-tray" role="group" aria-label="Quick reactions" style="position: fixed; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 70; box-sizing: border-box; width: 264px; max-width: calc(100vw - 16px); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.9); border: 1px solid rgba(255, 255, 255, 0.25); text-align: left;">
+          @for (choice of reactionChoices; track choice.code) {
+            <button type="button" class="btn-outline" style="padding: 6px 8px; text-align: left; font-size: 13px;" [attr.data-code]="choice.code" [disabled]="reactionBusy()" (click)="sendReaction(choice.code)">{{ choice.emoji }} {{ choice.text }}</button>
+          }
+          <label style="grid-column: 1 / -1; color: rgba(255, 255, 255, 0.8); font-size: 12px; display: flex; gap: 6px; align-items: center;">
+            <input type="checkbox" id="reactions-mute" [checked]="reactionsMuted()" (change)="toggleMute()" /> Mute reactions
+          </label>
+          @if (reactionError(); as err) {
+            <p id="reaction-error" role="alert" style="grid-column: 1 / -1; margin: 0; color: #ff8a8a; font-size: 12px;">{{ err }}</p>
+          }
+        </div>
+      }
+    </span>
+  }
+</ng-template>

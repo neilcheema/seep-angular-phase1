@@ -1,5 +1,6 @@
 import { MatchResultsComponent } from '../../components/match-results/match-results.component'
 import { buildFourPlayerResults } from '../../core/match-results'
+import { describeTurn, isOnTheMove } from '../../core/turn-text'
 import { Component, DestroyRef, type OnInit, computed, effect, inject, input, signal, untracked } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, RouterLink } from '@angular/router'
@@ -157,6 +158,17 @@ export class FourPlayerComponent implements OnInit {
     const s = this.state()
     return s && s.phase === 'match-over' ? buildFourPlayerResults(s, this.seatNames()) : null
   })
+  /** Whose turn it is, in words, for the big line above the buttons (online tables only). */
+  readonly turnLine = computed(() => {
+    const s = this.state()
+    return s && this.remote() ? describeTurn(s.phase, s.turn, this.mySeat(), (seat) => fourPlayerSeatLabel(seat as SeatId, this.mySeat(), this.seatNames())) : null
+  })
+
+  /** True while it is this seat's turn, so its label can carry a marker (online tables only). */
+  onTheMove(seat: SeatId): boolean {
+    const s = this.state()
+    return !!s && !!this.remote() && isOnTheMove(s.phase, s.turn, seat)
+  }
   readonly selectedCard = signal<CardModel | null>(null)
   readonly selectedFloorIds = signal<string[]>([])
   readonly message = signal<string | null>(null)

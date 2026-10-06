@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common'
 import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core'
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop'
 import { ActivatedRoute, Router, RouterLink } from '@angular/router'
@@ -26,7 +27,7 @@ type FourPlayerSession = RemoteSession<FourPlayerGameView, FourPlayerIntent, Sea
 @Component({
   selector: 'app-online-game',
   standalone: true,
-  imports: [RouterLink, TwoPlayerComponent, FourPlayerComponent],
+  imports: [RouterLink, NgTemplateOutlet, TwoPlayerComponent, FourPlayerComponent],
   templateUrl: './online-game.component.html',
 })
 export class OnlineGameComponent {
@@ -59,6 +60,11 @@ export class OnlineGameComponent {
 
   // --- quick reactions ---
   readonly reactionChoices = REACTIONS
+  /** The reactions button and toasts exist while a match is on, and just after it ends ("Good game!"). */
+  readonly reactionsAvailable = computed(() => {
+    const status = this.session()?.status()
+    return status === 'active' || status === 'finished'
+  })
   readonly trayOpen = signal(false)
   /** Mute switch: incoming reactions are not shown. Lasts as long as this screen is open. */
   readonly reactionsMuted = signal(false)
