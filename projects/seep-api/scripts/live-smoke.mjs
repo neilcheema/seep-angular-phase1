@@ -118,6 +118,13 @@ for (const [name, token] of [['TOKEN_A', TOKEN_A], ['TOKEN_B', TOKEN_B], ...(TOK
 const FACE_VALUE = { Ace: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9, Ten: 10, Jack: 11, Queen: 12, King: 13 }
 let checks = 0
 let failures = 0
+// Set when a join was refused because an account is already in the maximum number of active matches (see matchLimitExplanation below).
+let hitMatchLimit = false
+/** The accounts this run signed in with. The clean-up SQL printed on a limit failure only ever touches matches made by these. */
+const smokeEmails = new Set()
+const isMatchLimit = (res) => res.status === 409 && /already playing \d+ matches/.test(res.text)
+/** Notes (and remembers) that a refused join was the match limit, for the detail of a failed check. Empty for any other response. */
+const limitNote = (res) => (isMatchLimit(res) ? ((hitMatchLimit = true), '  <- this account is at its limit of active matches: see the explanation at the end') : '')
 
 async function api(token, method, path, body) {
   const headers = { 'content-type': 'application/json', 'x-app-version': process.env.APP_VERSION || '1.5.0' }
@@ -131,6 +138,47 @@ async function api(token, method, path, body) {
     // leave json null; the check below will show the raw text
   }
   return { status: res.status, json, text }
+}
+
+/**
+ * Printed when a join was refused because a test account is already in the maximum number of active matches (20 by default). It is not a bug:
+ * every run of this script leaves the matches it starts open (about two a run), and nothing in the app lets a player end a match early, so the
+ * test accounts slowly fill up. The SQL only touches matches in which EVERY human player is one of the accounts this run used.
+ */
+function matchLimitExplanation() {
+  const emails = [...new Set([...smokeEmails, ...(API_KEY ? [EMAIL_C, EMAIL_D] : [])])]
+  const list = emails.map((e) => `'${e.replace(/'/g, "''")}'`).join(', ')
+  const smokeOnly = `bool_and(u.email IN (${list}))`
+  const bar = '-'.repeat(110)
+  return `
+${bar}
+THIS IS NOT A BUG IN THE APP. A player can be in at most 20 active matches, and a smoke-test account has reached that limit: each run of this
+script leaves the matches it starts open (about two a run), and nothing in the app lets a player end a match early. The daily cleanup closes
+them by itself after 7 idle days (by default). To clear them now, run the SQL below in the Neon SQL editor on the PRODUCTION branch.
+Run STEP 1 first and check that every row is a smoke-test match. Only then run STEP 2. Then run this script again.
+It only touches matches in which EVERY human player is one of: ${emails.join(', ')}.${API_KEY ? '' : ' If you also use TOKEN_C and TOKEN_D, add their emails to both lists.'}
+
+-- STEP 1: preview
+SELECT g.id, g.created_at, count(*) AS humans
+FROM games g
+JOIN seats s ON s.game_id = g.id AND s.user_id IS NOT NULL
+JOIN users u ON u.id = s.user_id
+WHERE g.status = 'active'
+GROUP BY g.id, g.created_at
+HAVING ${smokeOnly}
+ORDER BY g.created_at;
+
+-- STEP 2: close them (the same change the daily cleanup makes)
+UPDATE games SET status = 'abandoned', version = version + 1, updated_at = now()
+WHERE id IN (
+  SELECT g.id FROM games g
+  JOIN seats s ON s.game_id = g.id AND s.user_id IS NOT NULL
+  JOIN users u ON u.id = s.user_id
+  WHERE g.status = 'active'
+  GROUP BY g.id
+  HAVING ${smokeOnly}
+);
+${bar}`
 }
 
 function check(label, ok, detail) {
@@ -150,6 +198,7 @@ async function main() {
 
   for (const [who, token] of [['A', TOKEN_A], ['B', TOKEN_B]]) {
     const me = await api(token, 'POST', '/v1/me')
+    if (me.json?.email) smokeEmails.add(me.json.email)
     check(
       `${who} signs in (POST /v1/me)`,
       me.status === 200 && me.json?.id,
@@ -232,7 +281,7 @@ async function main() {
   check('A is seated first and the game is waiting', created.json.seat === 'player' && created.json.status === 'waiting')
 
   const joined = await api(TOKEN_B, 'POST', '/v1/join', { code: inviteCode.toLowerCase() })
-  if (!check('B joins with the code (any case) and the game starts', joined.status === 200 && joined.json?.status === 'active', `${joined.status} ${joined.text.slice(0, 160)}`)) return
+  if (!check('B joins with the code (any case) and the game starts', joined.status === 200 && joined.json?.status === 'active', `${joined.status} ${joined.text.slice(0, 160)}${limitNote(joined)}`)) return
   check('B took the other seat', joined.json.seat === 'opponent' && joined.json.version === 1)
 
   const viewA = await api(TOKEN_A, 'GET', `/v1/games/${gameId}`)
@@ -319,7 +368,7 @@ async function fourPlayerSection() {
   let seen = 0
   for (const [seat, status, joined] of [['p2', 'waiting', 2], ['p3', 'waiting', 3], ['p4', 'active', 4]]) {
     const joinedRes = await api(tokens[seat], 'POST', '/v1/join', { code: inviteCode })
-    check(`${seat} joins and takes seat ${seat} (${status})`, joinedRes.status === 200 && joinedRes.json?.seat === seat && joinedRes.json?.status === status, `${joinedRes.status} ${joinedRes.text.slice(0, 160)}`)
+    check(`${seat} joins and takes seat ${seat} (${status})`, joinedRes.status === 200 && joinedRes.json?.seat === seat && joinedRes.json?.status === status, `${joinedRes.status} ${joinedRes.text.slice(0, 160)}${limitNote(joinedRes)}`)
     const poll = await api(TOKEN_A, 'GET', `/v1/games/${gameId}?since=${seen}`)
     check(`the creator is told about that arrival (${joined} of 4 seats filled), even before the game starts`, poll.json?.changed === true && poll.json?.players?.filter((pl) => pl.joined).length === joined, `${poll.status} ${poll.text.slice(0, 160)}`)
     seen = poll.json?.version ?? seen
@@ -352,6 +401,7 @@ main()
     console.error('Smoke test crashed:', err)
   })
   .finally(() => {
+    if (hitMatchLimit) console.log(matchLimitExplanation())
     console.log(`\n${failures === 0 ? 'PASS' : 'FAIL'}: ${checks - failures} of ${checks} checks passed`)
     process.exit(failures === 0 ? 0 : 1)
   })

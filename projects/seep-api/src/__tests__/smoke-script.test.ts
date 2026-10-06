@@ -26,7 +26,8 @@ vi.mock('../lib/auth', async (importOriginal) => {
 })
 
 import { _setDbForTests } from '../lib/db'
-import { type TestDb, createTestDb, readMigration } from './helpers/test-db'
+import { createGame, joinGame } from '../lib/games'
+import { type TestDb, createTestDb, makeUser, readMigration } from './helpers/test-db'
 
 /**
  * Runs the real scripts/live-smoke.mjs — the exact file you'll point at the
@@ -185,6 +186,50 @@ describe('scripts/live-smoke.mjs', () => {
     } finally {
       await t.raw.exec("UPDATE users SET display_name = NULL WHERE firebase_uid = 'firebase-bob'") // undo what the lenient server let through
       await t.raw.exec(readMigration('010_phase6_unique_names.sql'))
+    }
+  })
+
+  it('explains the limit on active matches, prints SQL that clears ONLY smoke-test matches, and passes again once it has been run', async () => {
+    await t.raw.exec("UPDATE games SET status = 'abandoned'") // start clean: earlier tests in this file left matches open
+    process.env['LIMIT_MAX_ACTIVE_TABLES'] = '1'
+    try {
+      const first = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB })
+      expect(first.code).toBe(0)
+      expect(first.out).not.toMatch(/NOT A BUG|STEP 1/) // a normal run says nothing about it
+
+      // A real player's match with Alice in it: the clean-up SQL must never touch it.
+      const carol = await makeUser(t.db, 'real-carol')
+      const alice = (await t.db.query<{ id: string }>("SELECT id FROM users WHERE email = 'alice@example.test'")).rows[0]!
+      const real = await createGame(t.db, alice.id, 'two_player')
+      await joinGame(t.db, carol.id, real.inviteCode)
+
+      const second = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB }) // Bob is now at the limit
+      expect(second.code).toBe(1)
+      expect(second.out).toMatch(/FAIL .*B joins with the code.*at its limit of active matches/)
+      expect(second.out).toMatch(/THIS IS NOT A BUG IN THE APP/)
+      expect(second.out).toMatch(/at most 20 active matches/)
+      expect(second.out).toMatch(/Run STEP 1 first/)
+      expect(second.out).toContain("'alice@example.test'") // the lists are built from the accounts this run actually used
+      expect(second.out).toContain("'bob@example.test'")
+
+      // Run the printed SQL for real, exactly as printed.
+      const step1 = /(SELECT g\.id[\s\S]*?;)/.exec(second.out)![1]!
+      const step2 = /(UPDATE games SET[\s\S]*?\n\);)/.exec(second.out)![1]!
+      const preview = await t.raw.query<{ id: string }>(step1)
+      expect(preview.rows).toHaveLength(1) // the smoke match from the first run, and NOT Alice's match with a real player
+      const abandoned = async () => (await t.db.query("SELECT 1 FROM games WHERE status = 'abandoned'")).rows.length
+      const abandonedBefore = await abandoned()
+      await t.raw.exec(step2)
+      expect(await abandoned()).toBe(abandonedBefore + 1) // closed with the same status the daily cleanup uses, and only the one smoke match
+      const status = async (id: string) => (await t.db.query<{ status: string }>('SELECT status FROM games WHERE id = $1', [id])).rows[0]!.status
+      expect(await status(real.gameId)).toBe('active') // the real player's match is untouched
+      expect((await t.db.query("SELECT 1 FROM games WHERE status = 'active'")).rows).toHaveLength(1)
+
+      const third = await runScript({ TOKEN_A: ALICE, TOKEN_B: BOB })
+      expect(third.code).toBe(0) // and the script works again
+      expect(third.out).not.toMatch(/NOT A BUG|STEP 1/)
+    } finally {
+      delete process.env['LIMIT_MAX_ACTIVE_TABLES']
     }
   })
 
