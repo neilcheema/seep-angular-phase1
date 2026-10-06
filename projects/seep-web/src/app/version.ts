@@ -8,6 +8,6 @@
  *
  * FEEDBACK_EMAIL is where the "notice something off?" note is addressed.
  */
-export const APP_VERSION = '1.6.0';
+export const APP_VERSION = '1.7.0';
 
 export const FEEDBACK_EMAIL = 'info@seep.quest';
