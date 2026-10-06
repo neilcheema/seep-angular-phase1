@@ -199,10 +199,69 @@ describe('housekeeping and privacy', () => {
     const { a, b, gameId } = await match()
     await sendReaction(t.db, a.id, gameId, 'nice_move')
     const columns = (await t.db.query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns WHERE table_name = 'reactions' ORDER BY column_name`)).rows.map((r) => r.column_name)
-    expect(columns).toEqual(['at', 'code', 'game_id', 'seat_key', 'seq']) // no user id, no name
+    expect(columns).toEqual(['at', 'code', 'game_id', 'seat_key', 'seq', 'to_seat']) // no user id, no name: to_seat is a seat label like 'p2', not a person
     const uid = (await one<{ firebase_uid: string }>('SELECT firebase_uid FROM users WHERE id = $1', [a.id])).firebase_uid
     await deleteAccount(t.db, uid)
     expect((await poll(b, gameId, undefined, 0)).reactions).toHaveLength(1) // still just “a reaction from seat player”
+  })
+})
+
+describe('addressing a reaction to one player', () => {
+  async function fourPlayers() {
+    const users = await Promise.all(['u1', 'u2', 'u3', 'u4'].map((n) => makeUser(t.db, n)))
+    const table = await createGame(t.db, users[0]!.id, 'four_player')
+    for (const u of users.slice(1)) await joinGame(t.db, u.id, table.inviteCode)
+    return { users, gameId: table.gameId }
+  }
+
+  it('is stored, and shown on the poll as the seat it is for; without an address it is for everyone', async () => {
+    const { a, b, gameId } = await match()
+    await sendReaction(t.db, a.id, gameId, 'nice_move', 'opponent')
+    await sendReaction(t.db, a.id, gameId, 'wow')
+    const heard = await poll(b, gameId, undefined, 0)
+    expect(heard.reactions.map((r) => [r.code, r.seat, r.to])).toEqual([['nice_move', 'player', 'opponent'], ['wow', 'player', null]])
+  })
+
+  it('is still delivered to EVERYONE at the table: the address is a label, not a privacy filter', async () => {
+    const { users, gameId } = await fourPlayers()
+    await sendReaction(t.db, users[0]!.id, gameId, 'nice_move', 'p2') // p1 -> p2
+    for (const watcher of [users[1]!, users[2]!, users[3]!]) {
+      const heard = await poll(watcher, gameId, undefined, 0)
+      expect(heard.reactions.map((r) => [r.seat, r.to])).toEqual([['p1', 'p2']]) // the addressee AND the two bystanders
+    }
+  })
+
+  it.each([['a seat that is not at this table', 'nobody'], ['a seat from the other kind of table', 'p1'], ['an empty address', ''], ['the sender’s own seat', 'player']])('refuses %s with a 400, and records nothing', async (_label, bad) => {
+    const { a, gameId } = await match()
+    await expect(sendReaction(t.db, a.id, gameId, 'wow', bad)).rejects.toMatchObject({ status: 400 })
+    expect((await one<{ n: number }>('SELECT count(*)::int AS n FROM reactions')).n).toBe(0)
+    expect((await one<{ reaction_seq: number }>('SELECT reaction_seq FROM games WHERE id = $1', [gameId])).reaction_seq).toBe(0) // not even the counter moved
+  })
+
+  it.each([[7], [true], [{ seat: 'opponent' }], [['opponent']]])('refuses an address that is not text (%j) with a 400', async (bad) => {
+    const { a, gameId } = await match()
+    await expect(sendReaction(t.db, a.id, gameId, 'wow', bad)).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('treats a missing or null address as “for everyone”', async () => {
+    const { a, gameId } = await match()
+    await expect(sendReaction(t.db, a.id, gameId, 'wow', null)).resolves.toBeDefined()
+    await expect(sendReaction(t.db, a.id, gameId, 'wow', undefined)).resolves.toBeDefined()
+  })
+
+  it('reads an older reaction, from before addresses existed, as being for everyone', async () => {
+    const { a, b, gameId } = await match()
+    await sendReaction(t.db, a.id, gameId, 'wow')
+    await t.db.query('UPDATE reactions SET to_seat = NULL')
+    expect((await poll(b, gameId, undefined, 0)).reactions[0]!.to).toBeNull()
+  })
+
+  it('can still be addressed to a seat whose person has deleted their account: the seat, and the finished table, are still there', async () => {
+    const { a, b, gameId } = await match()
+    const uid = (await one<{ firebase_uid: string }>('SELECT firebase_uid FROM users WHERE id = $1', [b.id])).firebase_uid
+    await deleteAccount(t.db, uid) // forfeits the match, so the table is finished; reactions are still allowed there ("Good game!")
+    await expect(sendReaction(t.db, a.id, gameId, 'good_game', 'opponent')).resolves.toBeDefined()
+    expect((await poll(a, gameId, undefined, 0)).reactions.map((r) => r.to)).toEqual(['opponent'])
   })
 })
 
@@ -254,3 +313,24 @@ describe('through the real handlers, with the limits', () => {
     expect((await get('uid-b', id, 'sinceReaction=abc')).status).toBe(400)
   })
 })
+
+describe('the address through the real handler', () => {
+  const as = (uid: string) => verifyMock.mockResolvedValue({ uid, email: `${uid}@example.test`, emailVerified: true })
+  const create = (uid: string) => (as(uid), call(createGameHandler, { as: 'x', body: { kind: 'two_player' } }))
+  const join = (uid: string, code: unknown) => (as(uid), call(joinGameHandler, { as: 'x', body: { code } }))
+  const react = (uid: string, id: string, body: unknown) => (as(uid), call(reactionHandler, { as: 'x', params: { id }, body }))
+  async function started() {
+    const made = await create('uid-a')
+    await join('uid-b', made.body['inviteCode'])
+    return made.body['gameId'] as string
+  }
+
+  it('accepts a good address (200), and refuses a bad one or a non-text one (400)', async () => {
+    const id = await started()
+    expect((await react('uid-a', id, { code: 'wow', to: 'opponent' })).status).toBe(200)
+    expect((await react('uid-a', id, { code: 'wow', to: 'nobody' })).status).toBe(400)
+    expect((await react('uid-a', id, { code: 'wow', to: 7 })).status).toBe(400)
+    expect((await react('uid-a', id, { code: 'wow' })).status).toBe(200) // no address: for everyone
+  })
+})
+

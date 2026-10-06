@@ -23,8 +23,12 @@ export function reactionLabel(code: string): string | null {
   return found ? `${found.emoji} ${found.text}` : null
 }
 
-/** The line shown when someone reacts: "Bob: 👍 Nice move!". Null for an unknown code, so it is simply not shown. */
-export function reactionToastText(who: string, code: string): string | null {
+/**
+ * The line shown when someone reacts: "Bob: 👍 Nice move!", or, when it is addressed to someone, "Bob → Dave: 👍 Nice move!".
+ * Null for an unknown code, so it is simply not shown. Everyone at the table sees the line; the arrow only says who it is for.
+ */
+export function reactionToastText(who: string, code: string, addressee: string | null = null): string | null {
   const label = reactionLabel(code)
-  return label === null ? null : `${who}: ${label}`
+  if (label === null) return null
+  return addressee ? `${who} → ${addressee}: ${label}` : `${who}: ${label}`
 }

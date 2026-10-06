@@ -78,7 +78,7 @@ export const reactionHandler = authed(async ({ request, context, identity }) => 
   const db = getDb()
   const userId = await resolveUserId(db, identity)
   await guardReaction(db, userId, limitSettings(), (m) => context.warn(m))
-  return { status: 200, jsonBody: await sendReaction(db, userId, request.params['id'] ?? '', field(body, 'code')) }
+  return { status: 200, jsonBody: await sendReaction(db, userId, request.params['id'] ?? '', field(body, 'code'), field(body, 'to')) }
 })
 
 export const leaveGameHandler = authed(async ({ request, identity }) => {

@@ -97,6 +97,8 @@ export interface ReactionDto {
   readonly seq: number
   readonly seat: string
   readonly code: string
+  /** The seat it is addressed to; null or absent when it is for everyone. Everyone at the table still receives it. Absent from an older server. */
+  readonly to?: string | null
   readonly ageMs: number
 }
 

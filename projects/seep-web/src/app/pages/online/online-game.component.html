@@ -92,7 +92,7 @@
       @if (reactionsAvailable()) {
         <div id="reaction-toasts" role="status" aria-live="polite" style="position: fixed; top: 44px; left: 50%; transform: translateX(-50%); z-index: 45; display: flex; flex-direction: column; gap: 4px; align-items: center; pointer-events: none;">
           @for (toast of toasts(); track toast.key) {
-            <div style="padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.82); color: #fff; font-size: 14px; border: 1px solid var(--gold-lt);">{{ toast.text }}</div>
+            <div [attr.data-to-me]="toast.toMe" style="padding: 6px 14px; border-radius: 999px; background: rgba(0, 0, 0, 0.82); color: #fff; font-size: 14px; border-style: solid; border-color: var(--gold-lt);" [style.borderWidth]="toast.toMe ? '3px' : '1px'">{{ toast.text }}</div>
           }
         </div>
       }
@@ -115,6 +115,16 @@
       <button type="button" id="reactions-toggle" class="btn-outline" style="padding: 4px 10px; border-radius: 999px; line-height: 1;" aria-label="Quick reactions" [attr.aria-expanded]="trayOpen()" (click)="toggleTray()">💬</button>
       @if (trayOpen()) {
         <div id="reactions-tray" role="group" aria-label="Quick reactions" style="position: fixed; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 70; box-sizing: border-box; width: 264px; max-width: calc(100vw - 16px); display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.9); border: 1px solid rgba(255, 255, 255, 0.25); text-align: left;">
+          @if (reactionRecipients().length > 0) {
+            <div id="reaction-to" role="radiogroup" aria-label="Who the reaction is for" style="grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;">
+              <span style="font-size: 12px; color: rgba(255, 255, 255, 0.7);">To:</span>
+              <button type="button" id="reaction-to-everyone" role="radio" class="btn-outline" style="padding: 3px 8px; font-size: 12px;" [attr.aria-checked]="reactionTarget() === null" [style.background]="reactionTarget() === null ? 'var(--gold-lt)' : null" [style.color]="reactionTarget() === null ? '#000' : null" (click)="chooseTarget(null)">Everyone</button>
+              @for (r of reactionRecipients(); track r.seat) {
+                <button type="button" role="radio" class="btn-outline" style="padding: 3px 8px; font-size: 12px;" [attr.data-to]="r.seat" [attr.aria-checked]="reactionTarget() === r.seat" [style.background]="reactionTarget() === r.seat ? 'var(--gold-lt)' : null" [style.color]="reactionTarget() === r.seat ? '#000' : null" (click)="chooseTarget(r.seat)">{{ r.label }}</button>
+              }
+            </div>
+            <p style="grid-column: 1 / -1; margin: 0; font-size: 11px; color: rgba(255, 255, 255, 0.6);">Everyone at the table sees it; “To” says who it is for.</p>
+          }
           @for (choice of reactionChoices; track choice.code) {
             <button type="button" class="btn-outline" style="padding: 6px 8px; text-align: left; font-size: 13px;" [attr.data-code]="choice.code" [disabled]="reactionBusy()" (click)="sendReaction(choice.code)">{{ choice.emoji }} {{ choice.text }}</button>
           }

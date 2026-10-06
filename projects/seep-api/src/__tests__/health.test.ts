@@ -84,6 +84,17 @@ describe('the deep health check (for people, smoke tests and a look right after 
     }
   })
 
+  it('notices that the reaction recipient column is missing, so a forgotten migration 009 is caught', async () => {
+    await t.db.query('ALTER TABLE reactions RENAME COLUMN to_seat TO to_seat_hidden')
+    try {
+      const { ctx, warn } = context()
+      expect((await healthHandler(request('deep=1'), ctx)).status).toBe(503)
+      expect(String(warn.mock.calls[0]![0])).toContain('reactions.to_seat')
+    } finally {
+      await t.db.query('ALTER TABLE reactions RENAME COLUMN to_seat_hidden TO to_seat')
+    }
+  })
+
   it('notices that the rematch column is missing, so a forgotten migration 007 is caught', async () => {
     await t.db.query('ALTER TABLE games RENAME COLUMN rematch_game_id TO rematch_game_id_hidden')
     try {

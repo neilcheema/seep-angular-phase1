@@ -28,7 +28,7 @@ export class ApiError extends Error {
 export interface GameApi {
   getGame<TView>(gameId: string, since?: number, sinceReaction?: number): Promise<GameSnapshotDto<TView> | GameUnchangedDto>
   /** Sends a quick reaction (a preset code) to everyone at the table. Never changes the game. */
-  sendReaction(gameId: string, code: string): Promise<{ seq: number }>
+  sendReaction(gameId: string, code: string, to?: string | null): Promise<{ seq: number }>
   submitMove<TView>(gameId: string, intent: unknown, expectedVersion: number): Promise<MutationDto<TView>>
   dealNext<TView>(gameId: string, expectedVersion: number): Promise<MutationDto<TView>>
 }
@@ -110,8 +110,9 @@ export class HttpApi implements GameApi, LobbyApi {
     return this.request('GET', `/v1/games/${encodeURIComponent(gameId)}${query}`)
   }
 
-  sendReaction(gameId: string, code: string): Promise<{ seq: number }> {
-    return this.request('POST', `/v1/games/${encodeURIComponent(gameId)}/reactions`, { code })
+  sendReaction(gameId: string, code: string, to?: string | null): Promise<{ seq: number }> {
+    // An address is only sent when there is one: no address means "for everyone", exactly as before addressing existed.
+    return this.request('POST', `/v1/games/${encodeURIComponent(gameId)}/reactions`, to ? { code, to } : { code })
   }
 
   submitMove<TView>(gameId: string, intent: unknown, expectedVersion: number): Promise<MutationDto<TView>> {

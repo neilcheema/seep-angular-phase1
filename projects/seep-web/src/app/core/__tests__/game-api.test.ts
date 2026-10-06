@@ -77,6 +77,14 @@ describe('HttpApi', () => {
     await expect(http.sendReaction('abc', 'wow')).rejects.toMatchObject({ status: 429, details: { retryAfterSeconds: 20 } })
   })
 
+  it('sends the address of a reaction only when there is one', async () => {
+    const { http, sent } = api([{ status: 200, body: { seq: 1 } }, { status: 200, body: { seq: 2 } }, { status: 200, body: { seq: 3 } }])
+    await http.sendReaction('abc', 'wow', 'p3')
+    await http.sendReaction('abc', 'wow')
+    await http.sendReaction('abc', 'wow', null)
+    expect(sent.map((s) => s.body)).toEqual([{ code: 'wow', to: 'p3' }, { code: 'wow' }, { code: 'wow' }])
+  })
+
   it('asks for a rematch with a POST to that match’s rematch address, and returns the table', async () => {
     const { http, sent } = api([{ status: 201, body: { gameId: 'g2', created: true, status: 'waiting' } }])
     const result = await http.requestRematch('3f2b8c1e-0000-4000-8000-000000000001')

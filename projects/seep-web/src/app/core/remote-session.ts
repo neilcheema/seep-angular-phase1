@@ -10,6 +10,8 @@ export interface IncomingReaction {
   readonly seq: number
   readonly seat: string
   readonly code: string
+  /** The seat it is addressed to, or null when it is for everyone. */
+  readonly to: string | null
 }
 
 export type ConnectionState = 'connecting' | 'online' | 'offline' | 'unauthorized'
@@ -276,8 +278,8 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
   }
 
   /** Sends a quick reaction to everyone at the table. It never changes the game. Errors (such as “too quickly”) are let through. */
-  async sendReaction(code: string): Promise<void> {
-    await this.options.api.sendReaction(this.options.gameId, code)
+  async sendReaction(code: string, to?: string | null): Promise<void> {
+    await this.options.api.sendReaction(this.options.gameId, code, to)
   }
 
   /**
@@ -291,7 +293,7 @@ export class RemoteSession<TView, TIntent, TActor> implements GameSession<TView,
       const mine = this.seat()
       const fresh = (res.reactions ?? []).filter((r) => r.seq > cursor && r.seat !== mine)
       if (fresh.length > 0) {
-        this.reactions.update((list) => [...list, ...fresh.map((r) => ({ seq: r.seq, seat: r.seat, code: r.code }))].slice(-10))
+        this.reactions.update((list) => [...list, ...fresh.map((r) => ({ seq: r.seq, seat: r.seat, code: r.code, to: r.to ?? null }))].slice(-10))
       }
     }
     const newest = Math.max(res.reactionSeq, ...(res.reactions ?? []).map((r) => r.seq))

@@ -23,7 +23,7 @@ export const REQUIRED_SCHEMA: Readonly<Record<string, readonly string[]>> = {
   move_log: ['version'],
   deleted_accounts: ['firebase_uid'],
   rate_events: ['kind'],
-  reactions: ['code'],
+  reactions: ['code', 'to_seat'],
 }
 
 const DEEP_REPEAT_MS = 30_000

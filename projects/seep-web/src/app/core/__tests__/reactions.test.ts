@@ -27,6 +27,17 @@ describe('the quick reactions', () => {
     expect(reactionToastText('Your partner', 'thanks')).toBe('Your partner: 🙏 Thanks')
   })
 
+  it('say who a reaction is for, when it is addressed: "Bob → Dave: …"', () => {
+    expect(reactionToastText('Bob', 'nice_move', 'Dave')).toBe('Bob → Dave: 👍 Nice move!')
+    expect(reactionToastText('Bob', 'oops', 'you')).toBe('Bob → you: 😅 Oops')
+  })
+
+  it('read exactly as before when there is no address (for everyone)', () => {
+    expect(reactionToastText('Bob', 'thanks', null)).toBe('Bob: 🙏 Thanks')
+    expect(reactionToastText('Bob', 'thanks', '')).toBe('Bob: 🙏 Thanks')
+    expect(reactionToastText('Bob', 'thanks')).toBe('Bob: 🙏 Thanks')
+  })
+
   it('show nothing for a code this version does not know (a newer server’s), rather than something broken', () => {
     expect(reactionLabel('some_new_one')).toBeNull()
     expect(reactionToastText('Bob', 'some_new_one')).toBeNull()

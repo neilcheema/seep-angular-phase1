@@ -71,7 +71,22 @@ export class OnlineGameComponent {
   readonly reactionError = signal<string | null>(null)
   readonly reactionBusy = signal(false)
   /** The few reactions on screen right now; each disappears after four seconds. */
-  readonly toasts = signal<{ key: number; text: string }[]>([])
+  readonly toasts = signal<{ key: number; text: string; toMe: boolean }[]>([])
+  /** Who the next reaction is for: a seat, or null for everyone (the default, and what it goes back to after each send). */
+  readonly reactionTarget = signal<string | null>(null)
+  /**
+   * At a four-player table: the other three seats a reaction can be addressed to, the viewer's partner first, each labelled from the
+   * viewer's side ("Your partner", or a name). A two-player table has only one other person, so there is nothing to choose.
+   */
+  readonly reactionRecipients = computed(() => {
+    const four = this.four()
+    const mine = four?.seat() as SeatId | null | undefined
+    if (!four || !mine) return []
+    const names = this.seatNames()
+    const partner = partnerOf(mine)
+    const others = (['p1', 'p2', 'p3', 'p4'] as SeatId[]).filter((seat) => seat !== mine && seat !== partner)
+    return [partner, ...others].map((seat) => ({ seat: seat as string, label: fourPlayerSeatLabel(seat, mine, names) }))
+  })
   private lastHeardSeq = 0
   private toastKey = 0
   private readonly toastTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -147,6 +162,11 @@ export class OnlineGameComponent {
   toggleTray(): void {
     this.reactionError.set(null)
     this.trayOpen.update((open) => !open)
+    if (!this.trayOpen()) this.reactionTarget.set(null) // closing without sending forgets who it was going to be for
+  }
+
+  chooseTarget(seat: string | null): void {
+    this.reactionTarget.set(seat)
   }
 
   toggleMute(): void {
@@ -160,8 +180,9 @@ export class OnlineGameComponent {
     this.reactionBusy.set(true)
     this.reactionError.set(null)
     try {
-      await session.sendReaction(code)
+      await session.sendReaction(code, this.reactionTarget())
       this.trayOpen.set(false)
+      this.reactionTarget.set(null) // each reaction starts as "for everyone" again, so nobody is addressed by accident
     } catch (err) {
       this.reactionError.set(err instanceof ApiError ? err.message : "Couldn't send that. Check your connection.")
     } finally {
@@ -174,16 +195,28 @@ export class OnlineGameComponent {
       if (r.seq <= this.lastHeardSeq) continue
       this.lastHeardSeq = r.seq // advance even when muted, so unmuting does not suddenly show old ones
       if (this.reactionsMuted()) continue
-      const text = reactionToastText(this.reactorName(r.seat), r.code)
+      const text = reactionToastText(this.reactorName(r.seat), r.code, r.to === null ? null : this.addresseeName(r.to))
       if (text === null) continue // a code from a newer server that this version does not know
+      const toMe = r.to !== null && r.to === this.mySeatKey() // one addressed to this player gets a stronger border
       const key = ++this.toastKey
-      this.toasts.update((list) => [...list, { key, text }].slice(-3))
+      this.toasts.update((list) => [...list, { key, text, toMe }].slice(-3))
       const timer = setTimeout(() => {
         this.toastTimers.delete(timer)
         this.toasts.update((list) => list.filter((toast) => toast.key !== key))
       }, 4000)
       this.toastTimers.add(timer)
     }
+  }
+
+  private mySeatKey(): string | null {
+    return this.four()?.seat() ?? this.two()?.seat() ?? null
+  }
+
+  /** How an addressee is named inside a toast: "you" for the viewer, "your partner" for their partner, otherwise the name. */
+  private addresseeName(to: string): string {
+    if (to === this.mySeatKey()) return 'you'
+    const label = this.reactorName(to)
+    return label === 'Your partner' ? 'your partner' : label
   }
 
   /** Who a reaction is from, in the viewer's terms: a name, "Your partner", or a fallback. */

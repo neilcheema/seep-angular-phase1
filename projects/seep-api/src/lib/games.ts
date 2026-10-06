@@ -77,6 +77,8 @@ export interface ReactionDto {
   readonly seq: number
   readonly seat: string
   readonly code: string
+  /** The seat the reaction is addressed to, or null when it is for everyone. Everyone at the table still receives it. */
+  readonly to: string | null
   readonly ageMs: number
 }
 
@@ -600,15 +602,15 @@ export async function requestRematch(
  */
 async function loadReactions(tx: Queryable, row: MemberRow, sinceReaction: number | undefined): Promise<ReactionDto[]> {
   if (sinceReaction === undefined || row.reaction_seq <= sinceReaction) return []
-  const res = await tx.query<{ seq: number; seat_key: string; code: string; age_ms: number }>(
-    `SELECT seq, seat_key, code, (EXTRACT(EPOCH FROM (now() - at)) * 1000)::float8 AS age_ms
+  const res = await tx.query<{ seq: number; seat_key: string; code: string; to_seat: string | null; age_ms: number }>(
+    `SELECT seq, seat_key, code, to_seat, (EXTRACT(EPOCH FROM (now() - at)) * 1000)::float8 AS age_ms
        FROM reactions
       WHERE game_id = $1 AND seq > $2 AND at > now() - make_interval(secs => $3::float8)
       ORDER BY seq ASC
       LIMIT $4`,
     [row.id, sinceReaction, REACTION_FRESH_SECONDS, REACTIONS_PER_POLL],
   )
-  return res.rows.map((r) => ({ seq: r.seq, seat: r.seat_key, code: r.code, ageMs: Math.round(r.age_ms) }))
+  return res.rows.map((r) => ({ seq: r.seq, seat: r.seat_key, code: r.code, to: r.to_seat, ageMs: Math.round(r.age_ms) }))
 }
 
 /**
@@ -617,17 +619,26 @@ async function loadReactions(tx: Queryable, row: MemberRow, sinceReaction: numbe
  * move fail with "the game changed". Allowed while a match is on and just after it ends ("Good game!"), not before or
  * once the table is closed.
  */
-export async function sendReaction(db: Db, userId: string, gameId: string, code: unknown): Promise<{ seq: number }> {
+export async function sendReaction(db: Db, userId: string, gameId: string, code: unknown, to: unknown = null): Promise<{ seq: number }> {
   assertGameId(gameId)
   if (!isReactionCode(code)) throw new BadRequestError('That is not one of the quick reactions.')
+  if (to !== null && to !== undefined && typeof to !== 'string') throw new BadRequestError('Say who a reaction is for by their seat, or leave it for everyone.')
   return db.transaction(async (tx) => {
     const row = await loadMember(tx, gameId, userId, false)
     if (row.status !== 'active' && row.status !== 'finished') {
       throw new ConflictError('Reactions are for a match in progress, or one that has just finished.')
     }
+    // A reaction may be addressed to one other seat at THIS table. It is still delivered to everyone; the address is only a label.
+    let toSeat: string | null = null
+    if (typeof to === 'string') {
+      if (to === row.seat_key) throw new BadRequestError('You cannot send a reaction to yourself.')
+      const there = await tx.query('SELECT 1 FROM seats WHERE game_id = $1 AND seat_key = $2', [gameId, to])
+      if (there.rows.length === 0) throw new BadRequestError('That player is not at this table.')
+      toSeat = to
+    }
     const bumped = await tx.query<{ reaction_seq: number }>('UPDATE games SET reaction_seq = reaction_seq + 1 WHERE id = $1 RETURNING reaction_seq', [gameId])
     const seq = bumped.rows[0]!.reaction_seq
-    await tx.query('INSERT INTO reactions (game_id, seq, seat_key, code) VALUES ($1, $2, $3, $4)', [gameId, seq, row.seat_key, code])
+    await tx.query('INSERT INTO reactions (game_id, seq, seat_key, code, to_seat) VALUES ($1, $2, $3, $4, $5)', [gameId, seq, row.seat_key, code, toSeat])
     await tx.query(`DELETE FROM reactions WHERE game_id = $1 AND at < now() - interval '10 minutes'`, [gameId])
     return { seq }
   })

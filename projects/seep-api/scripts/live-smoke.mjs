@@ -216,12 +216,18 @@ async function main() {
 
   // Quick reactions: preset codes only, heard by the other player on a poll. An API from before they existed has no such route
   // (404) and its poll carries no reactionSeq, so these fail there on purpose.
-  const sentReaction = await api(TOKEN_A, 'POST', `/v1/games/${gameId}/reactions`, { code: 'good_luck' })
-  check('A sends a quick reaction to the match (200, with its number)', sentReaction.status === 200 && typeof sentReaction.json?.seq === 'number', `${sentReaction.status} ${sentReaction.text.slice(0, 120)}`)
+  const sentReaction = await api(TOKEN_A, 'POST', `/v1/games/${gameId}/reactions`, { code: 'good_luck', to: 'opponent' })
+  check('A sends a quick reaction to the match, addressed to the other player (200, with its number)', sentReaction.status === 200 && typeof sentReaction.json?.seq === 'number', `${sentReaction.status} ${sentReaction.text.slice(0, 120)}`)
   const freeText = await api(TOKEN_A, 'POST', `/v1/games/${gameId}/reactions`, { code: 'free text is not allowed' })
   check('anything but a preset reaction is refused (400)', freeText.status === 400, `${freeText.status} ${freeText.text.slice(0, 120)}`)
   const heardIt = await api(TOKEN_B, 'GET', `/v1/games/${gameId}?sinceReaction=0`)
   check('the other player hears it on their next poll, from the right seat', heardIt.json?.reactions?.some((r) => r.code === 'good_luck' && r.seat === 'player') === true && heardIt.json?.reactionSeq >= 1, JSON.stringify(heardIt.json?.reactions))
+  // A reaction can be addressed to the other player: everyone still receives it, and the poll says who it was for. A made-up recipient is
+  // refused (400). An API from before addressing existed ignores the address, so these fail there on purpose. (Each run makes THREE reaction
+  // attempts: the default allowance is 6 a minute, so running this script more than twice within a minute can trip the limit.)
+  const bogusAddress = await api(TOKEN_A, 'POST', `/v1/games/${gameId}/reactions`, { code: 'nice_move', to: 'nobody-at-this-table' })
+  check('a reaction addressed to someone who is not at the table is refused (400)', bogusAddress.status === 400, `${bogusAddress.status} ${bogusAddress.text.slice(0, 120)}`)
+  check('the poll says who the reaction was for', heardIt.json?.reactions?.some((r) => r.code === 'good_luck' && r.to === 'opponent') === true, JSON.stringify(heardIt.json?.reactions))
 
   if (TOKEN_C && TOKEN_D) await fourPlayerSection()
   else console.log('\n(four-player section skipped: it needs FIREBASE_API_KEY, or TOKEN_C and TOKEN_D as well)')

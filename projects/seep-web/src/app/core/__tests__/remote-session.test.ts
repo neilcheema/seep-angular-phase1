@@ -645,7 +645,7 @@ describe('RemoteSession: quick reactions', () => {
     getGame.mockResolvedValue(unchangedWith(1, 1))
     const session = await open(api)
     await vi.advanceTimersByTimeAsync(2_100)
-    expect(session.reactions()).toEqual([{ seq: 1, seat: 'player', code: 'nice_move' }])
+    expect(session.reactions()).toEqual([{ seq: 1, seat: 'player', code: 'nice_move', to: null }])
     session.dispose()
   })
 
@@ -699,6 +699,30 @@ describe('RemoteSession: quick reactions', () => {
     session.dispose()
   })
 
+  it('keeps who a reaction was addressed to, and reads a missing address (an older server) as “for everyone”', async () => {
+    const { api, getGame } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    getGame.mockResolvedValueOnce(unchangedWith(1, 2, [{ seq: 1, seat: 'player', code: 'wow', to: 'opponent' } as never, { seq: 2, seat: 'player', code: 'oops' }]))
+    getGame.mockResolvedValue(unchangedWith(1, 2))
+    const session = await open(api)
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(session.reactions().map((x) => [x.code, x.to])).toEqual([['wow', 'opponent'], ['oops', null]])
+    session.dispose()
+  })
+
+  it('sends the address along with the reaction', async () => {
+    const { api, getGame, sendReaction } = makeApi()
+    getGame.mockResolvedValueOnce(withReactions(snapshot(s0, 'opponent', 1), 0))
+    getGame.mockResolvedValue(unchangedWith(1, 0))
+    sendReaction.mockResolvedValue({ seq: 1 })
+    const session = await open(api)
+    await session.sendReaction('nice_move', 'p3')
+    await session.sendReaction('wow')
+    expect(sendReaction).toHaveBeenNthCalledWith(1, 'g1', 'nice_move', 'p3')
+    expect(sendReaction).toHaveBeenNthCalledWith(2, 'g1', 'wow', undefined)
+    session.dispose()
+  })
+
   it('ignores an older server that knows nothing of reactions', async () => {
     const { api, getGame } = makeApi()
     getGame.mockResolvedValueOnce(snapshot(s0, 'opponent', 1)) // no reaction fields at all
@@ -718,7 +742,7 @@ describe('RemoteSession: quick reactions', () => {
     sendReaction.mockRejectedValueOnce(new ApiError(429, 'You are sending reactions too quickly. Please wait a moment.'))
     const session = await open(api)
     await session.sendReaction('good_luck')
-    expect(sendReaction).toHaveBeenCalledWith('g1', 'good_luck')
+    expect(sendReaction).toHaveBeenCalledWith('g1', 'good_luck', undefined)
     await expect(session.sendReaction('wow')).rejects.toMatchObject({ status: 429, message: expect.stringMatching(/too quickly/) })
     session.dispose()
   })

@@ -88,7 +88,7 @@ async function serve(req: IncomingMessage, res: ServerResponse) {
   for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v)
   const request = { url: url.href, headers, params: hit.params, query: url.searchParams, text: () => Promise.resolve(body) }
   try {
-    const out = await hit.route.handler(request as unknown as HttpRequest, { log: () => undefined } as unknown as InvocationContext)
+    const out = await hit.route.handler(request as unknown as HttpRequest, { log: () => undefined, warn: () => undefined, error: () => undefined } as unknown as InvocationContext)
     res.writeHead(out.status ?? 200, { 'content-type': 'application/json' }).end(JSON.stringify(out.jsonBody ?? {}))
   } catch (err) {
     res.writeHead(500).end(String(err))
@@ -129,6 +129,16 @@ const ALICE = 'header.alice.signature'
 const BOB = 'header.bob.signature'
 const CAROL = 'header.carol.signature'
 const DAVE = 'header.dave.signature'
+
+// These tests run the script several times in a row against the same accounts, to test how it handles TOKENS. They are not about rate limits,
+// and each run makes three reaction attempts against an allowance of six a minute, so give the allowance room here. (Against the real site,
+// do not run the script more than twice within a minute.)
+beforeAll(() => {
+  process.env['LIMIT_REACTIONS_PER_MINUTE'] = '1000'
+})
+afterAll(() => {
+  delete process.env['LIMIT_REACTIONS_PER_MINUTE']
+})
 
 describe('scripts/live-smoke.mjs', () => {
   it('passes every check against the real handlers over HTTP, given two tokens', async () => {
