@@ -33,6 +33,17 @@
     </div>
     <app-install-hint />
   </div>
+  @if (!installedApp) {
+    <!-- How to put Seep on a phone's home screen: two one-page PDF guides (in public/). Hidden once Seep is running as an installed app, which needs no
+         guide, and where a PDF opened in the app's own window could leave someone with no way back. -->
+    <div id="install-guides" style="text-align: center; padding: 4px 12px 2px; font-size: 13px; color: rgba(255,255,255,0.7);">
+      Put Seep on your phone's home screen:
+      <a id="guide-iphone" href="Seep-on-your-iPhone.pdf" target="_blank" rel="noopener" style="color: var(--gold-lt); text-decoration: underline;">iPhone guide</a>
+      ·
+      <a id="guide-android" href="Seep-on-your-Android-phone.pdf" target="_blank" rel="noopener" style="color: var(--gold-lt); text-decoration: underline;">Android guide</a>
+      (one-page PDFs)
+    </div>
+  }
   <div style="text-align: center; padding: 4px 0 10px; font-size: 10px; color: rgba(255,255,255,0.3);">
       v{{ appVersion }}
       · <a routerLink="/privacy" style="color: inherit; text-decoration: underline;">Privacy</a>
