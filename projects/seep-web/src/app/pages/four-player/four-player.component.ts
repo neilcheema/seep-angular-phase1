@@ -39,6 +39,7 @@ import { PlayerHandComponent } from '../../components/player-hand/player-hand.co
 import { CardComponent } from '../../components/card/card.component'
 import { LocalFourPlayerSession } from '../../core/local-four-player-session'
 import { type SeatNames, fourPlayerSeatLabel } from '../../core/board-names'
+import { joinNames } from '../../core/names'
 import type { GameSession, MoveEvent } from '../../core/game-session'
 
 type RevealKind = 'capture' | 'build' | 'cement' | 'break' | 'throw' | 'bid'
@@ -585,12 +586,12 @@ export class FourPlayerComponent implements OnInit {
     let base: string
     switch (r.kind) {
       case 'capture':
-        base = `${framing} played ${cardTxt} and captured ${r.targetCards.length} card(s).`
+        base = `${framing} played ${cardTxt} and captured ${r.targetCards.length > 0 ? joinNames(r.targetCards.map(cardLabel)) : 'the cards'}.`
         if (r.sweepBonus > 0) base += ` Seep! +${r.sweepBonus} sweep bonus.`
         break
-      case 'build': base = `${framing} built a house using ${cardTxt} plus ${r.targetCards.length} floor card(s).`; break
-      case 'cement': base = `${framing} cemented a house using ${cardTxt}.`; break
-      case 'break': base = `${framing} broke a house using ${cardTxt}.`; break
+      case 'build': base = `${framing} built a house using ${cardTxt}${r.targetCards.length > 0 ? ` plus ${joinNames(r.targetCards.map(cardLabel))}` : ''}.`; break
+      case 'cement': base = `${framing} cemented a house using ${cardTxt}${r.targetCards.length > 0 ? ` plus ${joinNames(r.targetCards.map(cardLabel))}` : ''}.`; break
+      case 'break': base = `${framing} broke a house using ${cardTxt}${r.targetCards.length > 0 ? ` plus ${joinNames(r.targetCards.map(cardLabel))}` : ''}.`; break
       case 'throw': base = `${framing} threw down ${cardTxt}.`; break
       case 'bid': base = `${framing} ${r.label.toLowerCase()}.`; break
     }

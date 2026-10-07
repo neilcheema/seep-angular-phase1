@@ -5,7 +5,7 @@ import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, part
 import { ENGINE_VERSION } from './version'
 import {
   type FloorItem, type House,
-  allCardsOf, findHouseByValue, findItem, findMaximalExactGroups,
+  allCardsOf, canSplitIntoSets, findHouseByValue, findItem, findMaximalExactGroups,
   hasAnyLegalCapture, isHouse, isLoose, itemValue, removeItems, sumValues,
 } from './floor'
 import { hasCard, hasCaptureValue, removeCard } from './hand'
@@ -431,13 +431,18 @@ export function playFourPlayerBuildHouse(
   })
   const sum = looseItems.reduce((t, i) => t + captureValue(i.card), 0) + captureValue(card)
   // Founding a house isn't limited to summing to exactly its target value —
-  // any combination summing to a positive multiple of the target folds in
+  // any combination that splits into complete sets of the target folds in
   // that many complete sets at once, the same generalization already
   // applied to cementing (spec §15.5): a played card, a loose 9, and two
   // separate loose Kings (13 each) can all combine into one house of 13,
   // already cemented, holding three sets of 13 (39 total) in a single move.
   if (sum % targetValue !== 0) {
     throw new Error(`Selected cards total ${sum}, not a multiple of your target of ${targetValue}.`)
+  }
+  // The cards must really BE whole sets of the target, not merely a total that divides evenly: 9, 4+5 and 3+6 are three sets of 9, but 11+12+13
+  // (36) contains no set of 9 at all, and 10+8 (18) none either.
+  if (!canSplitIntoSets([captureValue(card), ...looseItems.map((i) => captureValue(i.card))], targetValue)) {
+    throw new Error(`Those cards cannot be split into sets that each add up to ${targetValue}.`)
   }
   const multiple = sum / targetValue
 
@@ -510,10 +515,15 @@ export function playFourPlayerModifyHouse(
   const addedValue = captureValue(card) + extraItems.reduce((t, i) => t + captureValue(i.card), 0)
   // Cementing isn't limited to a single card that exactly matches the house's
   // value — any combination (this card plus optional loose floor cards) whose
-  // sum is a positive multiple of the house's value cements it, adding a full
+  // cards split into complete sets of the house's value cements it, adding a full
   // extra "set" of that value into the pile without changing its capture
   // value. A bare single-card exact match is just the simplest case (1x).
-  const isMultipleCement = addedValue % house.captureValue === 0
+  const isMultipleCement = canSplitIntoSets([captureValue(card), ...extraItems.map((i) => captureValue(i.card))], house.captureValue)
+  if (!isMultipleCement && addedValue % house.captureValue === 0) {
+    // A total that divides evenly but is not made of whole sets (11+12+13 onto a house of 9). Breaking the house up cannot be meant either:
+    // a house is already 9 or more, so adding a whole multiple of its value would pass 13.
+    throw new Error(`Those cards cannot be split into sets that each add up to ${house.captureValue}, so they cannot be added to the house of ${house.captureValue}.`)
+  }
 
   const newHand = takeCard(state, seat, card)
 

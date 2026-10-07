@@ -1,6 +1,7 @@
 import { MatchResultsComponent } from '../../components/match-results/match-results.component'
 import { adviceCard, bidCard } from '../../core/advice-text'
 import { captureHintFor } from '../../core/capture-hint'
+import { joinNames } from '../../core/names'
 import { buildTwoPlayerResults } from '../../core/match-results'
 import { describeTurn, isOnTheMove } from '../../core/turn-text'
 import { Component, DestroyRef, type OnInit, computed, effect, inject, input, output, signal, untracked } from '@angular/core'
@@ -571,12 +572,12 @@ export class TwoPlayerComponent implements OnInit {
     let base: string
     switch (r.kind) {
       case 'capture':
-        base = `${framing} played ${cardTxt} and captured ${r.targetCards.length} card(s).`
+        base = `${framing} played ${cardTxt} and captured ${r.targetCards.length > 0 ? joinNames(r.targetCards.map(cardLabel)) : 'the cards'}.`
         if (r.sweepBonus > 0) base += ` Seep! +${r.sweepBonus} sweep bonus.`
         break
-      case 'build': base = `${framing} built a house using ${cardTxt} plus ${r.targetCards.length} floor card(s).`; break
-      case 'cement': base = `${framing} cemented a house using ${cardTxt}.`; break
-      case 'break': base = `${framing} broke a house using ${cardTxt}.`; break
+      case 'build': base = `${framing} built a house using ${cardTxt}${r.targetCards.length > 0 ? ` plus ${joinNames(r.targetCards.map(cardLabel))}` : ''}.`; break
+      case 'cement': base = `${framing} cemented a house using ${cardTxt}${r.targetCards.length > 0 ? ` plus ${joinNames(r.targetCards.map(cardLabel))}` : ''}.`; break
+      case 'break': base = `${framing} broke a house using ${cardTxt}${r.targetCards.length > 0 ? ` plus ${joinNames(r.targetCards.map(cardLabel))}` : ''}.`; break
       case 'throw': base = `${framing} threw down ${cardTxt}.`; break
       case 'bid': base = `${framing} ${r.label.toLowerCase()}.`; break
     }

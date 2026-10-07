@@ -12,4 +12,10 @@
  * scoring, or dealing rule) — not for refactors, UI, or test-only
  * changes that don't change what a game does.
  */
-export const ENGINE_VERSION = '1.0.0';
+/*
+ * History of rule changes:
+ *   1.1.0  Building or cementing a house now needs cards that split into COMPLETE SETS of its value (9, 4+5 and 3+6 are three sets of 9).
+ *          Before, any total that divided evenly was accepted, so 11+12+13 (36) was wrongly allowed as a cemented "house of 9".
+ *   1.0.0  The first rules.
+ */
+export const ENGINE_VERSION = '1.1.0';

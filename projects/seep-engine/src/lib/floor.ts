@@ -153,6 +153,39 @@ export function canDecomposeIntoExactGroups<P = PlayerId>(
 }
 
 /**
+ * True if these card values can be split into complete sets that each add up to exactly `target`, using every card and leaving none over.
+ * 9, 4+5 and 3+6 each make a set of 9, so together they make three sets; 11+12+13 totals 36, four nines' worth, but no card in it can be part of
+ * a set of 9, so it makes none. A house of N may be built or cemented only from whole sets of N, and the total alone cannot tell the two apart.
+ */
+export function canSplitIntoSets(values: number[], target: number): boolean {
+  const n = values.length
+  if (n === 0 || target <= 0 || n > 30) return false
+  const total = values.reduce((t, v) => t + v, 0)
+  if (total % target !== 0) return false
+  const sumOf = (mask: number): number => {
+    let s = 0
+    for (let i = 0; i < n; i++) if (mask & (1 << i)) s += values[i]!
+    return s
+  }
+  const failed = new Set<number>()
+  // Take the first card still unplaced and try every set it could belong to; the cards left must then split too.
+  const place = (remaining: number): boolean => {
+    if (remaining === 0) return true
+    if (failed.has(remaining)) return false
+    const first = remaining & -remaining
+    const others = remaining ^ first
+    for (let sub = others; ; sub = (sub - 1) & others) {
+      const group = sub | first
+      if (sumOf(group) === target && place(remaining ^ group)) return true
+      if (sub === 0) break
+    }
+    failed.add(remaining)
+    return false
+  }
+  return place(n === 31 ? -1 : (1 << n) - 1)
+}
+
+/**
  * The floor items a capture with `card` MUST take, all at once: a house of exactly the card's value, plus every disjoint group of loose cards
  * that add up to it. Empty when there is nothing to capture, which is exactly when the card may be thrown instead.
  *
