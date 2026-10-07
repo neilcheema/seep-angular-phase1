@@ -1,19 +1,9 @@
 import type { Auth, User } from 'firebase/auth'
 import type { Identity, IdentityProvider } from './identity'
+import { environment } from '../../environments/environment';
 
-/**
- * Seep's Firebase web configuration. These are public identifiers (they ship
- * in every web page that uses Firebase), not secrets; what protects the
- * project is Firebase's authorized-domains list and the server verifying each token.
- */
-export const FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyAgFPHmaezeO0T2p30dUGoSZ-sOwHJ9PzM',
-  authDomain: 'seep-quest.firebaseapp.com',
-  projectId: 'seep-quest',
-  storageBucket: 'seep-quest.firebasestorage.app',
-  messagingSenderId: '315679875245',
-  appId: '1:315679875245:web:f9feec8bfa22c9cdc52624',
-}
+export const FIREBASE_CONFIG = environment.firebase;
+
 
 export interface FirebaseSdk {
   readonly app: typeof import('firebase/app')
