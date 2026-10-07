@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADVICE_WEIGHTS, adviseBids, adviseMoves, moveFacts, rankMoves, scoreFacts, standInState, type MoveFacts } from '../advice.ts'
+import { ADVICE_WEIGHTS, NO_DANGER, adviseBids, adviseMoves, moveFacts, rankMoves, scoreFacts, standInState, type MoveFacts } from '../advice.ts'
 import { Face, Suit, type Card, captureValue } from '../card.ts'
 import { chooseComputerBid, chooseComputerMove, chooseComputerOpeningMove } from '../computer.ts'
 import type { FloorItem, House } from '../floor.ts'
@@ -199,13 +199,13 @@ describe('the ranking', () => {
   })
 
   it('likes a build more when the opponent cannot have a card to capture it with, and when it risks fewer points', () => {
-    const safe: MoveFacts = { kind: 'build', card: card(Face.Nine, Suit.Hearts), targetValue: 9, looseCards: [], cemented: false, copiesInHand: 1, unseenCopies: 0, pointsInHouse: 9 }
+    const safe: MoveFacts = { kind: 'build', card: card(Face.Nine, Suit.Hearts), targetValue: 9, looseCards: [], cemented: false, copiesInHand: 1, unseenCopies: 0, pointsInHouse: 9, danger: NO_DANGER }
     expect(scoreFacts(safe)).toBeGreaterThan(scoreFacts({ ...safe, unseenCopies: 3 }))
     expect(scoreFacts({ ...safe, unseenCopies: 3, pointsInHouse: 0 })).toBeGreaterThan(scoreFacts({ ...safe, unseenCopies: 3, pointsInHouse: 9 }))
   })
 
   it('always ranks any capture above any build or throw (the weights guarantee it)', () => {
-    const lowestCapture = ADVICE_WEIGHTS.captureBase + ADVICE_WEIGHTS.perCardCaptured * 2
+    const lowestCapture = ADVICE_WEIGHTS.captureBase + ADVICE_WEIGHTS.perCardCaptured * 2 - ADVICE_WEIGHTS.maxCaptureMarkdown // even a capture that leaves the opponent something to take
     expect(lowestCapture).toBeGreaterThan(ADVICE_WEIGHTS.buildBase + ADVICE_WEIGHTS.buildCemented)
     expect(lowestCapture).toBeGreaterThan(ADVICE_WEIGHTS.modifyBase + ADVICE_WEIGHTS.buildCemented)
     expect(lowestCapture).toBeGreaterThan(ADVICE_WEIGHTS.throwBase)
