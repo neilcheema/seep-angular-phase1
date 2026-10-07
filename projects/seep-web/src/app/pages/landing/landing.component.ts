@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { AnalyticsService } from '../../core/analytics.service';
 import { RouterLink } from '@angular/router';
+import { InstallHintComponent } from '../../components/install-hint/install-hint.component';
 import { APP_VERSION } from '../../version';
 
 
@@ -12,7 +13,7 @@ import { APP_VERSION } from '../../version';
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, InstallHintComponent],
   templateUrl: './landing.component.html',
 })
 export class LandingComponent {

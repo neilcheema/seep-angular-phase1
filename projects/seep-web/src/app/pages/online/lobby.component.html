@@ -117,6 +117,11 @@
           </div>
           <button type="submit" class="btn-gold" [disabled]="working()">Join</button>
         </form>
+        @if (installedApp) {
+          <p id="installed-join-note" style="color: rgba(255,255,255,0.6); font-size: 13px; max-width: 320px; margin: 0;">
+            Did an invite link open in Safari instead of this app? Type its six-letter code here to join in the app.
+          </p>
+        }
       </section>
 
       @if (games().length > 0) {

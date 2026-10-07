@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Seep: you're offline</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a3d20">
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 40%, #0d5a2e, #0a3d20 70%); color: #fef9f0; font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; text-align: center; padding: 24px; box-sizing: border-box; }
+    main { max-width: 420px; }
+    h1 { color: #e8cc5a; font-size: 28px; margin: 0 0 8px; }
+    p { margin: 0 0 20px; color: rgba(255, 255, 255, 0.82); }
+    button { font: inherit; font-weight: 700; color: #0a3d20; background: #e8cc5a; border: 0; border-radius: 10px; padding: 10px 22px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>You're offline</h1>
+    <p>Seep needs an internet connection to start. Check your connection, then try again.</p>
+    <button type="button" id="retry" onclick="location.reload()">Try again</button>
+  </main>
+</body>
+</html>

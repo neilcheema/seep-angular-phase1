@@ -4,6 +4,7 @@ import type { GameInfoDto, GameKind } from '../../core/api-types'
 import { ApiError } from '../../core/game-api'
 import { friendlyReauthError } from '../../core/identity'
 import { nameTakenSuggestions, suggestName, tableStatusText } from '../../core/display-names'
+import { isInstalledApp, readDeviceEnv } from '../../core/install-mode'
 import { AUTH, ONLINE_API } from '../../core/online'
 
 /**
@@ -27,6 +28,12 @@ export class LobbyComponent {
   readonly ready = this.auth.ready
   readonly authBusy = this.auth.busy
   readonly authError = this.auth.error
+
+  /**
+   * True when Seep is running from the Home Screen. A link tapped in Messages opens in Safari, not in the installed app, so these players are
+   * told they can type the code here instead.
+   */
+  readonly installedApp = isInstalledApp(readDeviceEnv())
 
   /** The code from a /join/ABC234 link, if that is how the person got here. */
   readonly linkCode = signal<string | null>(null)
