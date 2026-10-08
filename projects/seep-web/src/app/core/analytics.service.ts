@@ -1,7 +1,7 @@
 import { Injectable, InjectionToken, inject, signal } from '@angular/core'
 import { ANALYTICS } from './analytics-config'
 import {
-  AnalyticsController, type AnalyticsConfig, type AnalyticsDeps, type ConsentChoice, CLARITY_SITE_COOKIES, clarityScriptUrl, isLocalDevelopment,
+  AnalyticsController, type AnalyticsConfig, type AnalyticsDeps, type ClarityConsent, type ConsentChoice, type ScriptStatus, CLARITY_SITE_COOKIES, clarityScriptUrl, isLocalDevelopment,
 } from './analytics-consent'
 
 /** The real configuration; the browser tests replace it with a stand-in so no real analytics script is ever contacted. */
@@ -23,6 +23,31 @@ function browserStorage(): AnalyticsDeps['storage'] {
   }
 }
 
+interface ClarityFunction {
+  (...args: unknown[]): void
+  q?: unknown[]
+}
+
+/**
+ * Clarity's own start-up snippet begins by creating a function that queues calls until the real script arrives and replays them. Doing the same
+ * means the consent signal can be given before the script has loaded, and is not lost.
+ */
+function clarityQueue(): ClarityFunction {
+  const w = window as unknown as { clarity?: ClarityFunction }
+  if (!w.clarity) {
+    const queue: ClarityFunction = function () {
+      // eslint-disable-next-line prefer-rest-params
+      ;(queue.q = queue.q ?? []).push(arguments)
+    }
+    w.clarity = queue
+  }
+  return w.clarity
+}
+
+function tellClarity(consent: ClarityConsent): void {
+  clarityQueue()('consentv2', consent)
+}
+
 /** Removes a cookie by name, trying the site's own domain and each parent domain, since the cookie may have been set on any of them. */
 function removeCookie(name: string): void {
   const host = location.hostname
@@ -40,12 +65,16 @@ export class AnalyticsService {
     {
       storage: browserStorage(),
       now: () => new Date(),
-      loadScript: (url) => {
+      loadScript: (url, done) => {
         const script = document.createElement('script')
         script.async = true
         script.src = url
+        script.onload = () => done(true)
+        script.onerror = () => done(false) // blocked by an extension or a network filter, or the address did not answer
         document.head.appendChild(script)
       },
+      tellClarity,
+      changed: () => this.sync(),
       removeCookies: (names) => names.forEach(removeCookie),
       reload: () => location.reload(),
       warn: (message) => console.warn(message),
@@ -56,6 +85,8 @@ export class AnalyticsService {
   readonly enabled = signal(false)
   readonly choice = signal<ConsentChoice | null>(null)
   readonly bannerOpen = signal(false)
+  /** Whether the Clarity script arrived and ran on this device. It shows what the browser did; Clarity's own dashboard shows what it recorded. */
+  readonly script = signal<ScriptStatus>('none')
   private started = false
 
   /** Starts it once; every later call does nothing. */
@@ -91,5 +122,6 @@ export class AnalyticsService {
     this.enabled.set(s.enabled)
     this.choice.set(s.choice)
     this.bannerOpen.set(s.bannerOpen)
+    this.script.set(s.script)
   }
 }

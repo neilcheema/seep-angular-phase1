@@ -30,6 +30,15 @@ import { AnalyticsService } from '../../core/analytics.service'
           <button type="button" id="analytics-accept" class="btn-outline" style="flex: 1; padding: 8px 10px;" (click)="analytics.accept()">Accept</button>
           <button type="button" id="analytics-decline" class="btn-outline" style="flex: 1; padding: 8px 10px;" (click)="analytics.decline()">Decline</button>
         </div>
+        @if (analytics.choice() === 'granted') {
+          <p id="analytics-status" style="margin: 0 0 8px; color: rgba(255,255,255,0.75);">
+            @switch (analytics.script()) {
+              @case ('loaded') { Clarity script: loaded on this device. }
+              @case ('failed') { Clarity script: could not be loaded on this device. A browser extension, a network filter or a privacy setting may be blocking it. }
+              @default { Clarity script: loading… }
+            }
+          </p>
+        }
         @if (analytics.choice() !== null) {
           <button type="button" id="analytics-close" style="margin-top: 8px; background: none; border: 0; padding: 0; font: inherit; color: rgba(255,255,255,0.7); text-decoration: underline; cursor: pointer;" (click)="analytics.closeChoices()">Keep my choice</button>
         }

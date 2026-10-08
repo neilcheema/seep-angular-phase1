@@ -16,6 +16,7 @@ export * from './lib/player';
 export * from './lib/gameEngine';
 export * from './lib/moves';
 export * from './lib/advice';
+export * from './lib/preview';
 export * from './lib/computer';
 export * from './lib/seats';
 export * from './lib/fourPlayerEngine';

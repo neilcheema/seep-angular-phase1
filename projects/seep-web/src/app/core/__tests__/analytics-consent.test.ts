@@ -14,7 +14,7 @@ const saved = (choice: string, v = CONSENT_NOTICE_VERSION) => ({ [CONSENT_STORAG
 
 function setup(over: { projectId?: string | null; storage?: AnalyticsDeps['storage'] } = {}) {
   const storage = over.storage === undefined ? memoryStorage() : over.storage
-  const deps = { storage, now: () => new Date('2026-10-05T12:00:00Z'), loadScript: vi.fn(), removeCookies: vi.fn(), reload: vi.fn(), warn: vi.fn() }
+  const deps = { storage, now: () => new Date('2026-10-05T12:00:00Z'), loadScript: vi.fn(), tellClarity: vi.fn(), changed: vi.fn(), removeCookies: vi.fn(), reload: vi.fn(), warn: vi.fn() }
   const config: AnalyticsConfig = { projectId: over.projectId === undefined ? 'abcd1234ef' : over.projectId, scriptUrl: clarityScriptUrl, removableCookies: CLARITY_SITE_COOKIES }
   return { deps, controller: new AnalyticsController(deps, config), storage }
 }
@@ -23,7 +23,7 @@ describe('nothing loads before an explicit yes', () => {
   it('on a first visit it asks, and loads nothing', () => {
     const { controller, deps } = setup()
     controller.start()
-    expect(controller.state).toEqual({ enabled: true, choice: null, bannerOpen: true })
+    expect(controller.state).toEqual({ enabled: true, choice: null, bannerOpen: true, script: 'none' })
     expect(deps.loadScript).not.toHaveBeenCalled()
   })
 
@@ -40,8 +40,8 @@ describe('nothing loads before an explicit yes', () => {
     controller.start()
     controller.accept()
     expect(deps.loadScript).toHaveBeenCalledTimes(1)
-    expect(deps.loadScript).toHaveBeenCalledWith('https://www.clarity.ms/tag/abcd1234ef')
-    expect(controller.state).toEqual({ enabled: true, choice: 'granted', bannerOpen: false })
+    expect(deps.loadScript).toHaveBeenCalledWith('https://www.clarity.ms/tag/abcd1234ef', expect.any(Function))
+    expect(controller.state).toEqual({ enabled: true, choice: 'granted', bannerOpen: false, script: 'loading' })
   })
 
   it('never loads it twice, however many times it is accepted or the app starts', () => {
@@ -54,12 +54,66 @@ describe('nothing loads before an explicit yes', () => {
   })
 })
 
+describe('Clarity is told that consent was given (its Consent API v2)', () => {
+  it('on Accept, the consent is passed to Clarity BEFORE the script is added, with both kinds of storage granted', () => {
+    const { controller, deps } = setup()
+    controller.start()
+    controller.accept()
+    expect(deps.tellClarity).toHaveBeenCalledTimes(1)
+    expect(deps.tellClarity).toHaveBeenCalledWith({ ad_Storage: 'granted', analytics_Storage: 'granted' })
+    expect(deps.tellClarity.mock.invocationCallOrder[0]!).toBeLessThan(deps.loadScript.mock.invocationCallOrder[0]!)
+  })
+  it('for a returning visitor who already said yes, it is passed again, before the script, on every visit', () => {
+    const { controller, deps } = setup({ storage: memoryStorage(saved('granted')) })
+    controller.start()
+    expect(deps.tellClarity).toHaveBeenCalledWith({ ad_Storage: 'granted', analytics_Storage: 'granted' })
+    expect(deps.tellClarity.mock.invocationCallOrder[0]!).toBeLessThan(deps.loadScript.mock.invocationCallOrder[0]!)
+  })
+  it('is never passed, and nothing is loaded, before a yes, or after a no', () => {
+    const { controller, deps } = setup()
+    controller.start()
+    controller.decline()
+    expect(deps.tellClarity).not.toHaveBeenCalled()
+    expect(deps.loadScript).not.toHaveBeenCalled()
+  })
+  it('is passed once however often it is accepted', () => {
+    const { controller, deps } = setup()
+    controller.start()
+    controller.accept()
+    controller.accept()
+    controller.start()
+    expect(deps.tellClarity).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('whether the Clarity script actually loaded on this device', () => {
+  it('is "none" until there is a yes, "loading" once it is added, then "loaded" or "failed", and the screen is told', () => {
+    const { controller, deps } = setup()
+    controller.start()
+    expect(controller.state.script).toBe('none')
+    controller.accept()
+    expect(controller.state.script).toBe('loading')
+    const done = deps.loadScript.mock.calls[0]![1] as (ok: boolean) => void
+    done(true)
+    expect(controller.state.script).toBe('loaded')
+    expect(deps.changed).toHaveBeenCalledTimes(1)
+  })
+  it('says "failed" when the script is blocked or cannot be reached', () => {
+    const { controller, deps } = setup()
+    controller.start()
+    controller.accept()
+    ;(deps.loadScript.mock.calls[0]![1] as (ok: boolean) => void)(false)
+    expect(controller.state.script).toBe('failed')
+    expect(deps.changed).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('declining', () => {
   it('is as easy as accepting, is remembered, and loads nothing', () => {
     const { controller, deps, storage } = setup()
     controller.start()
     controller.decline()
-    expect(controller.state).toEqual({ enabled: true, choice: 'denied', bannerOpen: false })
+    expect(controller.state).toEqual({ enabled: true, choice: 'denied', bannerOpen: false, script: 'none' })
     expect(deps.loadScript).not.toHaveBeenCalled()
     expect(readConsent(storage)).toBe('denied')
   })
@@ -67,7 +121,7 @@ describe('declining', () => {
   it('on the next visit does not ask again, and still loads nothing', () => {
     const { controller, deps } = setup({ storage: memoryStorage(saved('denied')) })
     controller.start()
-    expect(controller.state).toEqual({ enabled: true, choice: 'denied', bannerOpen: false })
+    expect(controller.state).toEqual({ enabled: true, choice: 'denied', bannerOpen: false, script: 'none' })
     expect(deps.loadScript).not.toHaveBeenCalled()
   })
 
@@ -83,7 +137,7 @@ describe('a returning visitor who said yes', () => {
   it('has Clarity loaded straight away, without being asked again', () => {
     const { controller, deps } = setup({ storage: memoryStorage(saved('granted')) })
     controller.start()
-    expect(controller.state).toEqual({ enabled: true, choice: 'granted', bannerOpen: false })
+    expect(controller.state).toEqual({ enabled: true, choice: 'granted', bannerOpen: false, script: 'loading' })
     expect(deps.loadScript).toHaveBeenCalledTimes(1)
   })
 
@@ -156,7 +210,7 @@ describe('when it is not configured, or goes wrong', () => {
     controller.start()
     controller.accept()
     controller.openChoices()
-    expect(controller.state).toEqual({ enabled: false, choice: null, bannerOpen: false })
+    expect(controller.state).toEqual({ enabled: false, choice: null, bannerOpen: false, script: 'none' })
     expect(deps.loadScript).not.toHaveBeenCalled()
     expect(deps.removeCookies).not.toHaveBeenCalled()
   })

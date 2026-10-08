@@ -32,6 +32,8 @@ import {
   isLoose,
   itemValue,
   removeCard,
+  buildHouseRefusal,
+  modifyHouseRefusal,
 } from 'seep-engine'
 import { StatusPanelComponent } from '../../components/status-panel/status-panel.component'
 import { OpponentHandComponent } from '../../components/opponent-hand/opponent-hand.component'
@@ -306,12 +308,27 @@ export class TwoPlayerComponent implements OnInit {
       s && c && this.selectedHouses().length === 0 && isHouseValue(target) && sum % target === 0 &&
       (!this.isOpening() || target === s.bidValue) &&
       !findHouseByValue(s.floor, target) &&
-      hasCaptureValue(removeCard(s.myHand, c), target)
+      hasCaptureValue(removeCard(s.myHand, c), target) &&
+      // ...and, finally, the rules themselves: whole sets, the pull-in-every-group rule and the rest, so Build is never lit for a move that will be refused.
+      buildHouseRefusal(s, c, this.selectedLoose().map((i) => i.id), target) === null
     )
   })
 
+  /**
+   * Why the rules would refuse adding the selected card (and loose cards) to the selected house, in the rules' own words, or null when it is allowed.
+   * It is asked of the engine itself, so the button can never promise a move the engine then refuses (for example adding your LAST card of a
+   * house's value to that house, which would leave you nothing to capture it with).
+   */
+  readonly modifyRefusal = computed<string | null>(() => {
+    const s = this.state()
+    const c = this.selectedCard()
+    const houses = this.selectedHouses()
+    if (!s || !c || houses.length !== 1 || this.isOpening()) return null
+    return modifyHouseRefusal(s, c, houses[0]!.id, this.selectedLoose().map((i) => i.id))
+  })
+
   readonly canModify = computed(
-    () => !!(this.state() && this.selectedCard() && this.selectedHouses().length === 1 && !this.isOpening()),
+    () => !!(this.state() && this.selectedCard() && this.selectedHouses().length === 1 && !this.isOpening() && this.modifyRefusal() === null),
   )
 
   /** Adopts a supplied online session before the first render, so there is no flash of the "Deal" screen. */

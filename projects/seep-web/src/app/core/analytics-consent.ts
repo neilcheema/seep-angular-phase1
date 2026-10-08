@@ -66,6 +66,20 @@ export function clarityScriptUrl(projectId: string): string {
   return `https://www.clarity.ms/tag/${encodeURIComponent(projectId)}`
 }
 
+/**
+ * What Clarity is told when a visitor says yes: Microsoft's Consent API v2. A Clarity project can be set to wait for this signal before it
+ * records anything, and it is harmless when the project is not. Both kinds of storage are granted because Clarity needs both before it
+ * sets its cookies and follows a visit across pages; the visitor's single "Accept" is for Clarity as a whole.
+ */
+export interface ClarityConsent {
+  readonly ad_Storage: 'granted' | 'denied'
+  readonly analytics_Storage: 'granted' | 'denied'
+}
+export const CLARITY_CONSENT_GRANTED: ClarityConsent = { ad_Storage: 'granted', analytics_Storage: 'granted' }
+
+/** none: nothing has been asked of Clarity; loading: the script was added and has not answered yet; loaded: the script arrived and ran; failed: it did not. */
+export type ScriptStatus = 'none' | 'loading' | 'loaded' | 'failed'
+
 export interface AnalyticsConfig {
   /** Null until the owner sets it: with no id there is no banner and nothing loads. */
   readonly projectId: string | null
@@ -78,8 +92,12 @@ export interface AnalyticsConfig {
 export interface AnalyticsDeps {
   readonly storage: KeyValueStorage | null
   readonly now: () => Date
-  /** Adds the analytics script to the page. Called at most once, and only after consent. */
-  readonly loadScript: (url: string) => void
+  /** Adds the analytics script to the page. Called at most once, and only after consent. `done` is told whether the script arrived and ran. */
+  readonly loadScript: (url: string, done: (ok: boolean) => void) => void
+  /** Passes the visitor's consent to Clarity's Consent API. Called just BEFORE the script is added, so Clarity finds it waiting when it starts. */
+  readonly tellClarity: (consent: ClarityConsent) => void
+  /** Called when something changed that the screen should show (the script finishing loading). */
+  readonly changed: () => void
   readonly removeCookies: (names: readonly string[]) => void
   /** Reloads the page, which is the only way to stop an analytics script that is already running. */
   readonly reload: () => void
@@ -91,12 +109,14 @@ export interface AnalyticsState {
   readonly enabled: boolean
   readonly choice: ConsentChoice | null
   readonly bannerOpen: boolean
+  readonly script: ScriptStatus
 }
 
 export class AnalyticsController {
   private choice: ConsentChoice | null = null
   private bannerOpen = false
   private loaded = false
+  private script: ScriptStatus = 'none'
   private readonly projectId: string | null
 
   constructor(
@@ -112,7 +132,7 @@ export class AnalyticsController {
   }
 
   get state(): AnalyticsState {
-    return { enabled: this.projectId !== null, choice: this.choice, bannerOpen: this.bannerOpen }
+    return { enabled: this.projectId !== null, choice: this.choice, bannerOpen: this.bannerOpen, script: this.script }
   }
 
   /** Called once when the app starts. */
@@ -160,6 +180,11 @@ export class AnalyticsController {
   private load(): void {
     if (this.loaded || this.projectId === null) return
     this.loaded = true
-    this.deps.loadScript(this.config.scriptUrl(this.projectId))
+    this.script = 'loading'
+    this.deps.tellClarity(CLARITY_CONSENT_GRANTED) // first, so it is waiting in Clarity's queue when the script starts
+    this.deps.loadScript(this.config.scriptUrl(this.projectId), (ok) => {
+      this.script = ok ? 'loaded' : 'failed'
+      this.deps.changed()
+    })
   }
 }

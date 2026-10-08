@@ -3,12 +3,12 @@ import { APP_VERSION, FEEDBACK_EMAIL } from '../../version'
 
 /**
  * The server compares the app's version number by number, and treats anything it cannot read as 0, so a malformed
- * version ("v1.9", "1.9", "1.9.1-beta") would not fail loudly: it would quietly compare as something else.
+ * version ("v1.9", "1.9", "1.9.4-beta") would not fail loudly: it would quietly compare as something else.
  */
 const numbers = (version: string) => version.split('.').map(Number)
 
 describe('the app version', () => {
-  it('is three plain numbers like 1.9.1, with nothing around them', () => {
+  it('is three plain numbers like 1.9.4, with nothing around them', () => {
     expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
