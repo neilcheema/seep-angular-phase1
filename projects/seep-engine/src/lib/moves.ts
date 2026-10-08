@@ -123,7 +123,8 @@ export function legalMoves(state: GameState, playerId: PlayerId = state.turn, op
         if (findHouseByValue(state.floor, target)) continue // there is one already: add to it instead
         if (opening && target !== state.bidValue) continue // the opening house must be for the bid
         if (!handHasValue(index, target)) continue // another card worth `target` must stay in hand to capture it with
-        const pull = requiredPull(index, target)
+        // On the opening move any combination that makes the bid house is allowed, so nothing is forced: every subset is a candidate (and is confirmed below).
+        const pull = opening ? null : requiredPull(index, target)
         const options: Intent[] = []
         if (pull) {
           if (pull.length === size && (value + pull.reduce((t, id) => t + captureValue(loose.find((l) => l.id === id)!.card), 0)) % target === 0) {

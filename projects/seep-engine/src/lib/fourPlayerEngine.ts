@@ -4,9 +4,21 @@ import { createDeck, dealFourPlayerHands, shuffleDeck } from './deck'
 import { ALL_SEATS, ALL_TEAMS, SeatId, type TeamId, areTeammates, nextSeat, partnerOf, teamOf } from './seats'
 import { ENGINE_VERSION } from './version'
 import {
-  type FloorItem, type House,
-  allCardsOf, canSplitIntoSets, findHouseByValue, findItem, findMaximalExactGroups,
-  hasAnyLegalCapture, isHouse, isLoose, itemValue, removeItems, sumValues,
+  type FloorItem,
+  type House,
+  allCardsOf,
+  canSplitIntoSets,
+  findHouseByValue,
+  findItem,
+  findMaximalExactGroups,
+  hasAnyLegalCapture,
+  isHouse,
+  isLoose,
+  itemValue,
+  removeItems,
+  sumValues,
+  canDecomposeIntoExactGroups,
+  canJoinMaximalGroups,
 } from './floor'
 import { hasCard, hasCaptureValue, removeCard } from './hand'
 import {
@@ -458,7 +470,23 @@ export function playFourPlayerBuildHouse(
   const augmentedFloor: FloorItem<SeatId>[] = [...state.floor, { kind: 'loose', id: virtualId, card }]
   const requiredGroups = findMaximalExactGroups(augmentedFloor, targetValue)
   const cardGroup = requiredGroups.find((g) => g.includes(virtualId))
-  if (cardGroup) {
+  // The OPENING MOVE differs in one respect only. Every separate group that makes the house must still be taken, none left out, but when several
+  // different combinations could make a group (a 2 with either 9, or with an Ace and an Eight, for a house of 11) the bidder may choose any ONE of
+  // them. From the second play on the engine's own pick is required, as below.
+  if (state.phase === 'opening-move') {
+    const groupCount = requiredGroups.length
+    if (
+      groupCount > 0 &&
+      canJoinMaximalGroups(augmentedFloor, virtualId, targetValue, groupCount) &&
+      !canDecomposeIntoExactGroups(augmentedFloor, [virtualId, ...looseItemIds], targetValue, groupCount)
+    ) {
+      throw new Error(
+        `A bigger combined house of ${targetValue} is available on the floor — you must pull in ` +
+          `every matching group, not just some of them.`,
+      )
+    }
+  }
+  if (cardGroup && state.phase !== 'opening-move') {
     const requiredLooseIds = requiredGroups.flat().filter((id) => id !== virtualId)
     const requiredSet = new Set(requiredLooseIds)
     const selectedSet = new Set(looseItemIds)

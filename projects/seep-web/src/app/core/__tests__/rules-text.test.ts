@@ -16,6 +16,13 @@ describe('the rules text players read about houses', () => {
       expect(html).not.toMatch(/total is a multiple of the house/)
     })
   }
+  for (const [name, file] of [['two-player', 'two-player/two-player.component.html'], ['four-player', 'four-player/four-player.component.html']] as const) {
+    it(`${name}: says the opening move may choose any one combination (nothing left out), and that later plays must take every matching group`, () => {
+      const html = page(file)
+      expect(html).toContain('On the opening move, if several different combinations of floor cards could make the bid house, you may choose any one of them, but no separate matching group may be left out')
+      expect(html).toContain('From the second play on, a new house must take in every matching group of floor cards')
+    })
+  }
   it('the Learn primer describes cementing as whole sets', () => {
     const html = page('two-player/two-player.component.html')
     expect(html).toContain('Adding whole sets of the same total (another 9, or a 4 and a 5, for a house of 9) cements it')

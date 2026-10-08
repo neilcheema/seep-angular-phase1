@@ -198,3 +198,18 @@ export function requiredCaptureIds<P = PlayerId>(floor: FloorItem<P>[], card: Ca
   const groups = findMaximalExactGroups(floor, target).flat()
   return house ? [house.id, ...groups] : groups
 }
+
+/**
+ * True if the played card (already part of `floor` as the loose item `playedId`) can belong to a best-possible set of groups: some choice of the
+ * other loose cards, together with it, splits into exactly `groupCount` disjoint groups that each add up to `target`. Used on the opening move,
+ * where any ONE of the equivalent combinations may be chosen but none of the separate groups may be left out. Only meant for small floors
+ * (the opening floor is four cards), because it tries every subset.
+ */
+export function canJoinMaximalGroups<P = PlayerId>(floor: FloorItem<P>[], playedId: string, target: number, groupCount: number): boolean {
+  const others = floor.filter(isLoose).filter((item) => item.id !== playedId)
+  for (let mask = 0; mask < 1 << others.length; mask++) {
+    const ids = [playedId, ...others.filter((_, i) => mask & (1 << i)).map((item) => item.id)]
+    if (canDecomposeIntoExactGroups(floor, ids, target, groupCount)) return true
+  }
+  return false
+}
