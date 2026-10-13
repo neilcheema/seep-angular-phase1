@@ -14,6 +14,17 @@
  */
 /*
  * History of rule changes:
+ *   1.6.0  On the player's LAST card of a hand, when it matches a house THE PLAYER MADE that is still on the floor, the capture no longer needs the floor
+ *          cards to be ticked: everything left on the floor goes to the last capturer, which that capture makes the player, so the card simply takes what it
+ *          must capture (a selection that is a proper capture is still used as it is). Before, only the one exact set was accepted, and ticking everything
+ *          was refused. A last card with no house of the player's own to take captures exactly as on any other play.
+ *   1.4.0  The player's choice of combination on EVERY play, not only the opening move, for captures and for building a house: when several
+ *          different combinations of floor cards make the same total (a Jack takes a 2 and a 9 whether the 9 is the spade or the diamond), the
+ *          player decides which one; the other stays on the floor. Nothing may be left behind: every separate group, and any house worth the
+ *          total, must still be taken. Before, after the opening move the engine silently picked one and refused the rest.
+ *   1.3.0  The same on the opening move for CAPTURES: when several different combinations of floor cards add up to the bid (a Jack takes a 3 and
+ *          an 8 whether the 3 is the club or the spade), the bidder may capture with any ONE of them, nothing left out. Before, only the first the
+ *          engine found was accepted. From the second play on nothing changes.
  *   1.2.0  On the OPENING MOVE, when several different combinations of floor cards could make the bid house (a 2 with either 9, or with an Ace and an
  *          Eight, for 11), the bidder may choose any ONE of them. Before, the engine silently forced one (the first it found), so a perfectly good build
  *          could be refused. Nothing may be left out: every separate group that makes the house must still be taken. From the second play on nothing
@@ -22,4 +33,4 @@
  *          Before, any total that divided evenly was accepted, so 11+12+13 (36) was wrongly allowed as a cemented "house of 9".
  *   1.0.0  The first rules.
  */
-export const ENGINE_VERSION = '1.2.0';
+export const ENGINE_VERSION = '1.6.0';

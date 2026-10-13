@@ -23,7 +23,6 @@ import {
   findHouseByValue,
   findItem,
   hasAnyLegalCapture,
-  requiredCaptureIds,
   hasCaptureValue,
   isHouse,
   isHouseValue,
@@ -33,7 +32,12 @@ import {
   teamOf,
   fourPlayerBuildHouseRefusal,
   fourPlayerModifyHouseRefusal,
+  fourPlayerCaptureRefusal,
+  isAcceptableCapture,
+  requiredCaptureIds,
 } from 'seep-engine'
+import { PointCardsComponent } from '../../components/point-cards/point-cards.component';
+import { describePointCards, pointCardsOf } from '../../core/point-cards';
 import { FourPlayerStatusPanelComponent } from '../../components/four-player-status-panel/four-player-status-panel.component'
 import { OpponentHandComponent } from '../../components/opponent-hand/opponent-hand.component'
 import { FourPlayerFloorItemComponent } from '../../components/four-player-floor-item/four-player-floor-item.component'
@@ -116,6 +120,7 @@ const SEAT_LABEL: Record<SeatId, string> = {
     MatchResultsComponent,
     FourPlayerStatusPanelComponent, OpponentHandComponent, FourPlayerFloorItemComponent,
     PlayerHandComponent, CardComponent, RouterLink,
+    PointCardsComponent,
   ],
   templateUrl: './four-player.component.html',
 })
@@ -186,6 +191,22 @@ export class FourPlayerComponent implements OnInit {
   readonly ruleNotePanelOpen = signal(false)
   readonly ruleNoteText = signal('')
 
+  /**
+   * True once a hand is over (and after the last hand of a match). Everyone's hand is empty then, so the point cards each side won are shown where the
+   * hands were, for as long as that hand stays on the board: dealing the next hand or starting a new game changes the phase and they go.
+   */
+  readonly showPointCards = computed(() => {
+    const s = this.state()
+    return !!s && (s.phase === 'hand-over' || s.phase === 'match-over')
+  })
+
+  /** The point cards each TEAM captured (four-player cards are pooled by team), for the end of a hand. */
+  readonly theirTeam = computed(() => (this.myTeam() === 'teamA' ? 'teamB' : 'teamA'))
+  readonly myPointCards = computed(() => { const s = this.state(); return s ? pointCardsOf(s.captures[this.myTeam()]) : [] })
+  readonly theirPointCards = computed(() => { const s = this.state(); return s ? pointCardsOf(s.captures[this.theirTeam()]) : [] })
+  readonly myPointSummary = computed(() => { const s = this.state(); return s?.lastHandTotals ? describePointCards(s.lastHandTotals[this.myTeam()]) : '' })
+  readonly theirPointSummary = computed(() => { const s = this.state(); return s?.lastHandTotals ? describePointCards(s.lastHandTotals[this.theirTeam()]) : '' })
+
   readonly isPlayerTurn = computed(() => {
     const s = this.state()
     return (
@@ -244,25 +265,36 @@ export class FourPlayerComponent implements OnInit {
   }
 
   /**
-   * Mirrors the engine's own playFourPlayerCapture validation exactly
-   * (findHouseByValue + findMaximalExactGroups, the same "required
-   * selection" computation) rather than a simplified, independent check.
-   * The two had drifted: the old version only allowed a house captured
-   * alone, or loose cards captured alone, never a house together with a
-   * disjoint loose group at the same value — a combination the engine
-   * has always required when both exist on the floor together, per §21
-   * of the rules. That drift made a fully legal capture impossible to
-   * even select: the button stayed disabled no matter what, since no
-   * selection could satisfy either of the old branches.
+   * True when the card about to be played is the very last of the hand. Whatever is then left on the floor goes to whoever captured last, and a
+   * capture with that card makes the player exactly that, so the floor cards need not be ticked.
+   */
+  readonly isLastCard = computed(() => {
+    const s = this.state()
+    return !!s && s.cardsPlayedThisHand + 1 === s.totalPlayableThisHand
+  })
+
+  /**
+   * The very last card of the hand, matching a house THIS player made that is still on the floor: the one situation where the floor cards need not be
+   * ticked (whatever is left goes to whoever captured last, which this capture makes the player). Any other last-card capture is exact, as always.
+   */
+  readonly lastCardCapturesOwnHouse = computed(() => {
+    const s = this.state()
+    const c = this.selectedCard()
+    if (!s || !c || !this.isLastCard()) return false
+    const house = findHouseByValue(s.floor, captureValue(c))
+    return !!house && house.owners.includes(s.viewer)
+  })
+
+  /**
+   * Whether the selected cards can be captured with the selected card. The engine itself is asked, so any ONE combination that takes as many groups
+   * as the floor allows is accepted (a Jack may take a 2 with either 9, and the player decides which), exactly as the engine will judge it. A guess
+   * of the screen's own once drifted from the engine's rule and made a legal capture impossible to select.
    */
   readonly canCapture = computed(() => {
     const s = this.state()
     const c = this.selectedCard()
-    if (!(s && c && this.selectedFloorIds().length > 0 && this.bidMatches())) return false
-    const requiredIds = new Set(requiredCaptureIds(s.floor, c))
-    if (requiredIds.size === 0) return false
-    const selected = new Set(this.selectedFloorIds())
-    return requiredIds.size === selected.size && [...requiredIds].every((id) => selected.has(id))
+    if (!(s && c && this.bidMatches())) return false
+    return fourPlayerCaptureRefusal(s, c, this.selectedFloorIds()) === null // (with nothing ticked the engine refuses, except on the last card of the hand)
   })
 
   readonly buildTargetValue = computed(() => {
@@ -461,8 +493,13 @@ export class FourPlayerComponent implements OnInit {
 
   onCapture(): void {
     const c = this.selectedCard()
-    if (!c) return
-    const targetItemIds = this.selectedFloorIds()
+    const s = this.state()
+    if (!c || !s) return
+    // On the player's LAST card, when it matches a house they made, the floor cards need not be ticked. Anything that is not already a proper capture is replaced here by the cards this card
+    // must capture, which every version of the server accepts (the engine now also accepts any selection on that card).
+    const picked = this.selectedFloorIds()
+    const targetItemIds =
+      this.lastCardCapturesOwnHouse() && !(picked.length > 0 && isAcceptableCapture(s.floor, captureValue(c), picked)) ? requiredCaptureIds(s.floor, c) : picked
     void this.runPlayerAction(() => this.session()!.submit({ type: 'capture', card: c, targetItemIds }))
   }
 

@@ -1,5 +1,5 @@
 import { MAX_HOUSE_VALUE, MIN_HOUSE_VALUE, captureValue, isHouseValue } from './card'
-import { type FloorItem, findHouseByValue, findMaximalExactGroups, isHouse, isLoose, requiredCaptureIds } from './floor'
+import { findHouseByValue, findMaximalExactGroups, isHouse, isLoose, requiredCaptureIds } from './floor'
 import { type GameState, type Intent, applyMove } from './gameEngine'
 import type { PlayerId } from './player'
 
@@ -14,8 +14,6 @@ export const DEFAULT_MAX_LOOSE_CARDS = 4
 /** Past this many loose cards on the floor only captures and throws are listed; the engine's own capture search is slow by then. */
 const MAX_LOOSE_FOR_COMBINATIONS = 14
 
-/** The id the engine gives the card being played while it works out which floor cards a new house must pull in. */
-const PLAYED_CARD_ID = '__played-card__'
 
 export interface LegalMovesOptions {
   /** The most loose cards one build or house change may use. Default DEFAULT_MAX_LOOSE_CARDS. */
@@ -77,9 +75,31 @@ export function legalMoves(state: GameState, playerId: PlayerId = state.turn, op
 
   // 1. Captures and throws: always complete, whatever the time limit.
   for (const { card } of cards) {
-    const required = requiredCaptureIds(state.floor, card)
-    if (required.length > 0) {
+    // Any ONE combination for each group is allowed, so every selection the engine accepts is a move. Only selections whose loose cards add up to
+    // (the most groups the floor allows) x (the card's value) can qualify, which keeps the search small; each is confirmed by the engine itself.
+    const value = captureValue(card)
+    const house = findHouseByValue(state.floor, value)
+    const groupCount = findMaximalExactGroups(state.floor, value).length
+    if (groupCount === 0 && !house) continue
+    if (groupCount === 0) {
+      const capture: Intent = { type: 'capture', card, targetItemIds: [house!.id] }
+      if (confirmed(capture)) result.push(capture)
+      continue
+    }
+    const looseCards = state.floor.filter(isLoose)
+    if (looseCards.length > 14) {
+      const required = requiredCaptureIds(state.floor, card) // a floor this big is not realistic; offer the engine's own pick rather than search
       const capture: Intent = { type: 'capture', card, targetItemIds: required }
+      if (confirmed(capture)) result.push(capture)
+      continue
+    }
+    for (let mask = 1; mask < 1 << looseCards.length; mask++) {
+      let sum = 0
+      for (let i = 0; i < looseCards.length; i++) if (mask & (1 << i)) sum += captureValue(looseCards[i]!.card)
+      if (sum !== groupCount * value) continue
+      const ids = looseCards.filter((_, i) => mask & (1 << i)).map((item) => item.id)
+      if (house) ids.push(house.id)
+      const capture: Intent = { type: 'capture', card, targetItemIds: ids }
       if (confirmed(capture)) result.push(capture)
     }
   }
@@ -102,19 +122,6 @@ export function legalMoves(state: GameState, playerId: PlayerId = state.turn, op
   }
   const idsOf = (mask: number) => loose.filter((_, i) => mask & (1 << i)).map((item) => item.id)
 
-  // For a new house, the engine makes a played card that belongs to a matching group pull in EVERY card of the matching groups. That depends only
-  // on the card and the target, so it is worked out once per pair, here, not once per candidate.
-  const pulledIn = new Map<string, string[] | null>()
-  const requiredPull = (cardIndex: number, target: number): string[] | null => {
-    const key = `${cardIndex}|${target}`
-    if (!pulledIn.has(key)) {
-      const augmented: FloorItem[] = [...state.floor, { kind: 'loose', id: PLAYED_CARD_ID, card: hand[cardIndex]! }]
-      const groups = findMaximalExactGroups(augmented, target)
-      pulledIn.set(key, groups.some((g) => g.includes(PLAYED_CARD_ID)) ? groups.flat().filter((id) => id !== PLAYED_CARD_ID) : null)
-    }
-    return pulledIn.get(key)!
-  }
-
   for (let size = 0; size <= maxLoose; size++) {
     for (const { card, index, value } of cards) {
       // A new house of `target`.
@@ -123,17 +130,12 @@ export function legalMoves(state: GameState, playerId: PlayerId = state.turn, op
         if (findHouseByValue(state.floor, target)) continue // there is one already: add to it instead
         if (opening && target !== state.bidValue) continue // the opening house must be for the bid
         if (!handHasValue(index, target)) continue // another card worth `target` must stay in hand to capture it with
-        // On the opening move any combination that makes the bid house is allowed, so nothing is forced: every subset is a candidate (and is confirmed below).
-        const pull = opening ? null : requiredPull(index, target)
+        // Any ONE combination that makes the house is allowed (nothing may be left out), so every subset is a candidate; each is confirmed by the engine.
         const options: Intent[] = []
-        if (pull) {
-          if (pull.length === size && (value + pull.reduce((t, id) => t + captureValue(loose.find((l) => l.id === id)!.card), 0)) % target === 0) {
-            options.push({ type: 'build', card, looseItemIds: pull, targetValue: target })
-          }
-        } else {
+        {
           for (const mask of bySize[size]!) {
-            if ((value + subsetSum[mask]!) % target === 0) options.push({ type: 'build', card, looseItemIds: idsOf(mask), targetValue: target })
-          }
+          if ((value + subsetSum[mask]!) % target === 0) options.push({ type: 'build', card, looseItemIds: idsOf(mask), targetValue: target })
+        }
         }
         for (const build of options) {
           if (outOfTime()) return result

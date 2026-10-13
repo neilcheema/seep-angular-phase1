@@ -73,12 +73,16 @@ describe('the opening move: any ONE combination that makes the bid house is allo
   })
 })
 
-describe('from the second play on the rule is unchanged: every matching group must be pulled in', () => {
-  it('the same position in an ordinary turn still refuses the alternatives the engine does not pick', () => {
+describe('on EVERY play, not only the opening move, the player chooses the combination (nothing left out)', () => {
+  it('the same position in an ordinary turn accepts every way of making the house', () => {
     const s = two('playing')
+    for (const ids of [['b'], ['c'], ['a', 'd']]) expect(() => playBuildHouse(s, 'player', TWO_H, ids, 11), ids.join('+')).not.toThrow()
+  })
+  it('and still refuses to leave a separate matching group behind', () => {
+    const s: GameState = { ...two('playing'), floor: [loose('b', Face.Nine, Suit.Diamonds), loose('c', Face.Nine, Suit.Spades), loose('e', Face.Five, Suit.Clubs), loose('g', Face.Six, Suit.Hearts)] }
+    expect(() => playBuildHouse(s, 'player', TWO_H, ['c', 'e', 'g'], 11)).not.toThrow()
     expect(() => playBuildHouse(s, 'player', TWO_H, ['c'], 11)).toThrow(/pull in every matching group/)
-    expect(() => playBuildHouse(s, 'player', TWO_H, ['a', 'd'], 11)).toThrow(/pull in every matching group/)
-    expect(() => playBuildHouse(s, 'player', TWO_H, ['b'], 11)).not.toThrow()
+    expect(() => playBuildHouse(s, 'player', TWO_H, ['b', 'c'], 11)).toThrow()
   })
 })
 
@@ -94,10 +98,11 @@ describe('the opening move: any ONE combination, nothing left out (four-player)'
     expect(() => playFourPlayerBuildHouse(s, SeatId.P1, TWO_H, ['c', 'e', 'g'], 11)).not.toThrow()
     expect(() => playFourPlayerBuildHouse(s, SeatId.P1, TWO_H, ['c'], 11)).toThrow(/pull in every matching group/)
   })
-  it('and from the second play on it is unchanged', () => {
+  it('and on every later play too, still with nothing left out', () => {
     const s = four('playing')
-    expect(() => playFourPlayerBuildHouse(s, SeatId.P1, TWO_H, ['c'], 11)).toThrow(/pull in every matching group/)
-    expect(() => playFourPlayerBuildHouse(s, SeatId.P1, TWO_H, ['b'], 11)).not.toThrow()
+    for (const ids of [['b'], ['c'], ['a', 'd']]) expect(() => playFourPlayerBuildHouse(s, SeatId.P1, TWO_H, ids, 11), ids.join('+')).not.toThrow()
+    const f = [loose('b', Face.Nine, Suit.Diamonds), loose('c', Face.Nine, Suit.Spades), loose('e', Face.Five, Suit.Clubs), loose('g', Face.Six, Suit.Hearts)]
+    expect(() => playFourPlayerBuildHouse({ ...s, floor: f }, SeatId.P1, TWO_H, ['c'], 11)).toThrow(/pull in every matching group/)
   })
 })
 
@@ -107,9 +112,16 @@ describe('the screens ask the same question (the helpers agree with the engine o
       expect(buildHouseRefusal(viewFor(two('opening-move'), 'player'), TWO_H, ids, 11)).toBeNull()
       expect(fourPlayerBuildHouseRefusal(viewForSeat(four('opening-move'), SeatId.P1), TWO_H, ids, 11)).toBeNull()
     }
-    expect(buildHouseRefusal(viewFor(two('playing'), 'player'), TWO_H, ['c'], 11)).toMatch(/pull in every matching group/)
+    expect(buildHouseRefusal(viewFor(two('playing'), 'player'), TWO_H, ['c'], 11)).toBeNull() // every play, not only the opening move
     const left = { ...two('opening-move'), floor: [loose('b', Face.Nine, Suit.Diamonds), loose('c', Face.Nine, Suit.Spades), loose('e', Face.Five, Suit.Clubs), loose('g', Face.Six, Suit.Hearts)] }
     expect(buildHouseRefusal(viewFor(left, 'player'), TWO_H, ['c'], 11)).toMatch(/pull in every matching group/)
+  })
+})
+
+describe('on a later play the move lister offers every way of building the house', () => {
+  it('the reported floor, an ordinary turn: the 2 with either 9, or with the Ace and the Eight', () => {
+    const listed = legalMoves(two('playing'), 'player', { maxLooseCards: 99 }).filter((m) => m.type === 'build' && m.card.face === Face.Two && m.card.suit === Suit.Hearts && m.targetValue === 11).map((m) => (m.type === 'build' ? [...m.looseItemIds].sort().join('+') : ''))
+    expect(listed.sort()).toEqual(['a+d', 'b', 'c'])
   })
 })
 

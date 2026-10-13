@@ -200,16 +200,62 @@ export function requiredCaptureIds<P = PlayerId>(floor: FloorItem<P>[], card: Ca
 }
 
 /**
- * True if the played card (already part of `floor` as the loose item `playedId`) can belong to a best-possible set of groups: some choice of the
- * other loose cards, together with it, splits into exactly `groupCount` disjoint groups that each add up to `target`. Used on the opening move,
- * where any ONE of the equivalent combinations may be chosen but none of the separate groups may be left out. Only meant for small floors
- * (the opening floor is four cards), because it tries every subset.
+ * True if the played card (already part of `floor` as the loose item `playedId`) can belong to a best-possible set of groups: there are exactly
+ * `groupCount` disjoint groups of loose cards, each adding up to `target`, one of which contains the played card. Used when building a house, where
+ * any ONE of the equivalent combinations may be chosen but none of the separate groups may be left out. It looks for the groups that contain the
+ * played card first and then packs the rest, so it stays fast on a large floor.
  */
 export function canJoinMaximalGroups<P = PlayerId>(floor: FloorItem<P>[], playedId: string, target: number, groupCount: number): boolean {
+  const played = findItem(floor, playedId)
+  if (!played || !isLoose(played)) return false
   const others = floor.filter(isLoose).filter((item) => item.id !== playedId)
+  const sumOf = (items: LooseCard[], mask: number): number => items.reduce((t, item, i) => (mask & (1 << i) ? t + captureValue(item.card) : t), 0)
+  function canPack(remaining: LooseCard[], groupsLeft: number): boolean {
+    if (groupsLeft === 0) return true
+    for (let mask = 1; mask < 1 << remaining.length; mask++) {
+      if (sumOf(remaining, mask) !== target) continue
+      if (canPack(remaining.filter((_, i) => !(mask & (1 << i))), groupsLeft - 1)) return true
+    }
+    return false
+  }
+  const need = target - captureValue(played.card)
   for (let mask = 0; mask < 1 << others.length; mask++) {
-    const ids = [playedId, ...others.filter((_, i) => mask & (1 << i)).map((item) => item.id)]
-    if (canDecomposeIntoExactGroups(floor, ids, target, groupCount)) return true
+    if (sumOf(others, mask) !== need) continue
+    if (canPack(others.filter((_, i) => !(mask & (1 << i))), groupCount - 1)) return true
   }
   return false
+}
+
+/**
+ * A capture may take ANY ONE combination for each group when several different combinations of floor cards add up to the card's value (a Jack
+ * takes a 2 and a 9 whether the 9 is the spade or the diamond), on every play, not only the opening move. What it may not do is leave
+ * something behind: it must take every house worth that value and as many separate groups as the floor allows. A player who has a choice
+ * decides it; the program does not pick for them (a spade is worth its face value, a diamond usually nothing).
+ * `ids` are the items the player selected (loose cards, and the house at that value if there is one).
+ */
+export function isAcceptableCapture<P = PlayerId>(floor: FloorItem<P>[], target: number, ids: string[]): boolean {
+  const house = findHouseByValue(floor, target)
+  const selected = new Set(ids)
+  if (house && !selected.has(house.id)) return false
+  const looseIds = ids.filter((id) => !house || id !== house.id)
+  const groupCount = findMaximalExactGroups(floor, target).length
+  if (groupCount === 0) return looseIds.length === 0 // only the house is there to take
+  return canDecomposeIntoExactGroups(floor, looseIds, target, groupCount)
+}
+
+/**
+ * The player's LAST card of a hand, when it matches a house THAT PLAYER MADE and that is still on the floor: the one situation where the floor cards need
+ * not be ticked. Everything still on the floor goes to whoever captured last at the end of the hand, and capturing that house with the last card makes
+ * the player exactly that, so which floor cards are ticked cannot change what is won, yet the old rule made the player find the one exact set to tick
+ * (or refused a capture that took everything). Here, if the card can capture, a selection that is a proper capture is used as it is, and anything else
+ * (including no selection) means "take what the card must capture".
+ * Everything else is unchanged: a last card with no house of the player's own to take (no house at all, or only someone else's) captures exactly as
+ * on any other play, and a card that cannot capture is thrown as usual.
+ */
+export function resolveLastCardCapture<P = PlayerId>(floor: FloorItem<P>[], card: Card, selectedIds: string[], isLastPlay: boolean, owner: P): string[] {
+  if (!isLastPlay) return selectedIds
+  const house = findHouseByValue(floor, captureValue(card))
+  if (!house || !house.owners.includes(owner)) return selectedIds
+  // (The house itself is always part of what the card must capture, so there is always something to take here.)
+  return selectedIds.length > 0 && isAcceptableCapture(floor, captureValue(card), selectedIds) ? selectedIds : requiredCaptureIds(floor, card)
 }

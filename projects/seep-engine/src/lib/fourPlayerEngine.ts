@@ -19,6 +19,8 @@ import {
   sumValues,
   canDecomposeIntoExactGroups,
   canJoinMaximalGroups,
+  isAcceptableCapture,
+  resolveLastCardCapture,
 } from './floor'
 import { hasCard, hasCaptureValue, removeCard } from './hand'
 import {
@@ -350,12 +352,15 @@ export function playFourPlayerCapture(
   state: FourPlayerGameState,
   seat: SeatId,
   card: Card,
-  targetItemIds: string[],
+  selectedItemIds: string[],
 ): FourPlayerGameState {
   assertTurn(state, seat)
   if (state.phase === 'opening-move' && captureValue(card) !== state.bidValue) {
     throw new Error(`Your opening move must use a card matching your bid of ${state.bidValue}.`)
   }
+  // On the player's LAST card, when it matches a house they made that is still on the floor, everything left on the floor goes to the last capturer, which this
+  // capture makes the player, so the selection cannot change what is won; the card simply takes what it must capture (see resolveLastCardCapture).
+  const targetItemIds = resolveLastCardCapture(state.floor, card, selectedItemIds, isLastPlayOfHand(state), seat)
   if (targetItemIds.length === 0) throw new Error('Select at least one card or house to capture.')
 
   const target = captureValue(card)
@@ -385,8 +390,8 @@ export function playFourPlayerCapture(
   const requiredIds = new Set(houseAtTarget ? [houseAtTarget.id, ...maxGroups.flat()] : maxGroups.flat())
 
   if (requiredIds.size > 0) {
-    const selectedSet = new Set(targetItemIds)
-    const matches = requiredIds.size === selectedSet.size && [...requiredIds].every((id) => selectedSet.has(id))
+    // Any ONE combination for each group is allowed (a Jack may take the 2 with either 9); nothing may be left out. The player decides, not the program.
+    const matches = isAcceptableCapture(state.floor, target, targetItemIds)
     if (!matches) {
       throw new Error(
         `A bigger combined capture of ${target} is available on the floor — you must capture ` +
@@ -469,34 +474,18 @@ export function playFourPlayerBuildHouse(
   const virtualId = '__played-card__'
   const augmentedFloor: FloorItem<SeatId>[] = [...state.floor, { kind: 'loose', id: virtualId, card }]
   const requiredGroups = findMaximalExactGroups(augmentedFloor, targetValue)
-  const cardGroup = requiredGroups.find((g) => g.includes(virtualId))
-  // The OPENING MOVE differs in one respect only. Every separate group that makes the house must still be taken, none left out, but when several
-  // different combinations could make a group (a 2 with either 9, or with an Ace and an Eight, for a house of 11) the bidder may choose any ONE of
-  // them. From the second play on the engine's own pick is required, as below.
-  if (state.phase === 'opening-move') {
-    const groupCount = requiredGroups.length
-    if (
-      groupCount > 0 &&
-      canJoinMaximalGroups(augmentedFloor, virtualId, targetValue, groupCount) &&
-      !canDecomposeIntoExactGroups(augmentedFloor, [virtualId, ...looseItemIds], targetValue, groupCount)
-    ) {
-      throw new Error(
-        `A bigger combined house of ${targetValue} is available on the floor — you must pull in ` +
-          `every matching group, not just some of them.`,
-      )
-    }
-  }
-  if (cardGroup && state.phase !== 'opening-move') {
-    const requiredLooseIds = requiredGroups.flat().filter((id) => id !== virtualId)
-    const requiredSet = new Set(requiredLooseIds)
-    const selectedSet = new Set(looseItemIds)
-    const matches = requiredSet.size === selectedSet.size && [...requiredSet].every((id) => selectedSet.has(id))
-    if (!matches) {
-      throw new Error(
-        `A bigger combined house of ${targetValue} is available on the floor — you must pull in ` +
-          `every matching group, not just some of them.`,
-      )
-    }
+  // Every separate group that makes the house must be taken, none left out; but when several different combinations could make a group (a 2 with
+  // either 9, or with an Ace and an Eight, for a house of 11) the player may choose any ONE of them, on every play.
+  const groupCount = requiredGroups.length
+  if (
+    groupCount > 0 &&
+    canJoinMaximalGroups(augmentedFloor, virtualId, targetValue, groupCount) &&
+    !canDecomposeIntoExactGroups(augmentedFloor, [virtualId, ...looseItemIds], targetValue, groupCount)
+  ) {
+    throw new Error(
+      `A bigger combined house of ${targetValue} is available on the floor — you must pull in ` +
+        `every matching group, not just some of them.`,
+    )
   }
 
   const newHand = takeCard(state, seat, card)

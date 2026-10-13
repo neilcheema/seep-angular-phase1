@@ -1,6 +1,6 @@
 import { type Card, Face, Suit } from './card'
-import { type FourPlayerGameState, type FourPlayerGameView, playFourPlayerBuildHouse, playFourPlayerModifyHouse } from './fourPlayerEngine'
-import { type GameView, playBuildHouse, playModifyHouse } from './gameEngine'
+import { type FourPlayerGameState, type FourPlayerGameView, playFourPlayerBuildHouse, playFourPlayerCapture, playFourPlayerModifyHouse } from './fourPlayerEngine'
+import { type GameView, playBuildHouse, playCapture, playModifyHouse } from './gameEngine'
 import { standInState } from './advice'
 import { ALL_SEATS, type SeatId } from './seats'
 
@@ -68,4 +68,13 @@ export function fourPlayerModifyHouseRefusal(view: FourPlayerGameView, card: Car
 
 export function fourPlayerBuildHouseRefusal(view: FourPlayerGameView, card: Card, looseItemIds: string[], targetValue: number): string | null {
   return refusal(() => playFourPlayerBuildHouse(standInFourPlayerState(view), view.viewer, card, looseItemIds, targetValue))
+}
+
+/** Capturing the selected floor items with this card: null if allowed, else why not. (On the opening move any one combination is allowed.) */
+export function captureRefusal(view: GameView, card: Card, targetItemIds: string[]): string | null {
+  return refusal(() => playCapture(standInState(view), view.viewer, card, targetItemIds))
+}
+
+export function fourPlayerCaptureRefusal(view: FourPlayerGameView, card: Card, targetItemIds: string[]): string | null {
+  return refusal(() => playFourPlayerCapture(standInFourPlayerState(view), view.viewer, card, targetItemIds))
 }

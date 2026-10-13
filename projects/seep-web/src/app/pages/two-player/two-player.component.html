@@ -19,7 +19,11 @@
       @if (opponentName(); as name) {
         <span id="opponent-name" style="font-size: 12px;" [style.color]="opponentOnTheMove() ? 'var(--gold-lt)' : 'rgba(255,255,255,0.65)'" [style.fontWeight]="opponentOnTheMove() ? 700 : 400">{{ opponentOnTheMove() ? '▶ ' : '' }}{{ name }}</span>
       }
-      <app-opponent-hand [count]="s.opponentCardCount" />
+      @if (showPointCards()) {
+        <app-point-cards [title]="opponentLabel() + '’s point cards'" [cards]="opponentPointCards()" [summary]="opponentPointSummary()" />
+      } @else {
+        <app-opponent-hand [count]="s.opponentCardCount" />
+      }
       <ng-content select="[table-toasts]" />
     </div>
 
@@ -118,9 +122,16 @@
           <button type="button" id="capture-hint-select" class="btn-outline" style="padding: 2px 10px; margin-left: 6px; font-size: 13px;" (click)="selectCaptureTargets()">Select them</button>
         </div>
       }
-      @if (modifyRefusal(); as why) {
-        <div id="modify-hint" role="status" style="text-align: center; padding: 2px 12px 8px; color: var(--gold-lt); font-size: 14px;">
-          Add / break house isn’t possible here: {{ why }}
+      @if (!isLastCard()) {
+        @if (modifyRefusal(); as why) {
+          <div id="modify-hint" role="status" style="text-align: center; padding: 2px 12px 8px; color: var(--gold-lt); font-size: 14px;">
+            Add / break house isn’t possible here: {{ why }}
+          </div>
+        }
+      }
+      @if (lastCardCapturesOwnHouse() && canCapture()) {
+        <div id="last-card-note" role="status" style="text-align: center; padding: 2px 12px 8px; color: var(--gold-lt); font-size: 14px;">
+          This is your last card and it takes your house. Whatever is left on the floor goes to whoever captured last, so Capture takes everything: you don’t need to tick the floor cards.
         </div>
       }
       <div class="action-bar">
@@ -168,12 +179,16 @@
     }
 
     <div class="gold-line"></div>
-    <app-player-hand
-      [cards]="s.myHand"
-      [selectedCard]="selectedCard()"
-      [selectableCards]="isPlayerTurn() ? s.myHand : []"
-      (cardSelected)="onCardSelect($event)"
-    />
+    @if (showPointCards()) {
+      <app-point-cards title="Your point cards" [cards]="myPointCards()" [summary]="myPointSummary()" />
+    } @else {
+      <app-player-hand
+        [cards]="s.myHand"
+        [selectedCard]="selectedCard()"
+        [selectableCards]="isPlayerTurn() ? s.myHand : []"
+        (cardSelected)="onCardSelect($event)"
+      />
+    }
 
     @if (log().length > 0) {
       <details class="move-log-drawer">
@@ -195,12 +210,13 @@
         <li>Capture values: A=1, 2-10 face value, J=11, Q=12, K=13.</li>
         <li>Bidding and the opening move are decided from just the bidder's first four cards and the four-card floor — the rest of both hands aren't dealt until right after the opening move.</li>
         <li>Build a house (value 9-13) from your card plus loose floor cards — you need another card of that value left in hand.</li>
-        <li>On the opening move, if several different combinations of floor cards could make the bid house, you may choose any one of them, but no separate matching group may be left out. From the second play on, a new house must take in every matching group of floor cards.</li>
+        <li>If several different combinations of floor cards could make the same total (to capture with your card, or to build a house), you may choose any one of them, and the other cards stay on the floor. What you may not do is leave a separate matching group behind: if the floor holds two separate groups that each make the total, you must take both, using any one combination for each.</li>
         <li>A house can be cemented by adding a card from hand, plus optional loose floor cards, that make one or more complete sets of the house's value (for a house of 9: another 9, or a 4 and a 5), even at the moment you found it, combining several complete sets into one house that's cemented from the start. The cards must be whole sets: 11 + 12 + 13 add up to 36, but that is not four sets of 9.</li>
         <li>Select an existing house to break it up to a higher value instead, using a card (optionally with loose floor cards) that doesn't make whole sets of its current value.</li>
         <li>You must capture if a capture is available with the card you play. If there's more than one exact match on the floor — a house plus one or more separate loose groups all worth the same value — you must take all of them together in one move, not just one.</li>
         <li>A house is only captured by a card matching its own exact value — its value is never combined with loose cards to reach some other total.</li>
         <li>Clearing the whole floor is a sweep: 50 points normally, 25 if it happens on the very first move of the hand, 0 if it's the very last card played in the hand.</li>
+        <li>On the very last card of a hand, if your card matches a house that you made and that is still on the floor, you do not need to tick the floor cards: just press Capture. Anything left on the floor goes to whoever captured last, so you win them all.</li>
         <li>Spades score their face value, other-suit aces score 1 point, and the Ten of Diamonds scores 6 — everything else is worth 0. Under 9 points in a hand scores 0.</li>
         <li>First player to lead by 100 points wins the match.</li>
         <li>Every move — yours and {{ opponentPossessive() }} — pauses so you can check it before play continues.</li>

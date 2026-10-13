@@ -9,6 +9,11 @@ const page = (path: string) => readFileSync(new URL(`../../pages/${path}`, impor
  */
 describe('the rules text players read about houses', () => {
   for (const [name, file] of [['two-player', 'two-player/two-player.component.html'], ['four-player', 'four-player/four-player.component.html']] as const) {
+    it(`${name}: says that on the very last card, with a house of your own to take, the floor cards need not be ticked`, () => {
+      const html = page(file)
+      expect(html).toContain('On the very last card of a hand, if your card matches a house that you made and that is still on the floor')
+      expect(html).toContain('you do not need to tick the floor cards: just press Capture. Anything left on the floor goes to whoever captured last, so you win them all')
+    })
     it(`${name}: says a house is cemented by WHOLE SETS, and gives an example of what is not`, () => {
       const html = page(file)
       expect(html).toContain("complete sets of the house's value")
@@ -17,10 +22,10 @@ describe('the rules text players read about houses', () => {
     })
   }
   for (const [name, file] of [['two-player', 'two-player/two-player.component.html'], ['four-player', 'four-player/four-player.component.html']] as const) {
-    it(`${name}: says the opening move may choose any one combination (nothing left out), and that later plays must take every matching group`, () => {
+    it(`${name}: says the player chooses among equivalent combinations on every play, and that nothing may be left behind`, () => {
       const html = page(file)
-      expect(html).toContain('On the opening move, if several different combinations of floor cards could make the bid house, you may choose any one of them, but no separate matching group may be left out')
-      expect(html).toContain('From the second play on, a new house must take in every matching group of floor cards')
+      expect(html).toContain('If several different combinations of floor cards could make the same total (to capture with your card, or to build a house), you may choose any one of them')
+      expect(html).toContain('you must take both, using any one combination for each')
     })
   }
   it('the Learn primer describes cementing as whole sets', () => {
