@@ -187,8 +187,8 @@
         <li>Every move — yours and {{ opponentPossessive() }} — pauses so you can check it before play continues.</li>
       </ul>
     </details>
-    @if (showPointCards() && canShareRuleNote() && !ruleNotePanelOpen()) {
-      <!-- Once a hand is over the floating button would sit on top of the point cards and the Deal / Play again button, so it is shown here, in the page, instead. -->
+    @if (canShareRuleNote() && !ruleNotePanelOpen()) {
+      <!-- This button lives in the page, at the bottom, and never floats: a button fixed to the corner of the screen ended up on top of Capture, Build and Throw when the floor was crowded (and on top of the point cards at the end of a hand). -->
       <button
         type="button"
         id="rule-note-inline"
@@ -250,11 +250,6 @@
 
 @if (canShareRuleNote()) {
   <div class="rule-note-anchor">
-    @if (!ruleNotePanelOpen() && !showPointCards()) {
-      <button type="button" class="rule-note-toggle" (click)="toggleRuleNotePanel()">
-        Notice something that doesn't match the rules you know?
-      </button>
-    }
     @if (ruleNotePanelOpen()) {
       <div class="bug-report-prompt" role="dialog" aria-label="Something felt off">
         <div class="bug-report-header">

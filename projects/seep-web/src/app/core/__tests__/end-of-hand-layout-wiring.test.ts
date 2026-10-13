@@ -5,7 +5,7 @@ const read = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.u
 
 /**
  * At the end of a hand or a match the screen must keep the player's own point cards, Deal next hand / Play again and the point-card summaries clear of
- * the floating “Notice something…” button, and at the end of a match the player's own point cards must not be pushed off a phone screen by an empty
+ * the “Notice something…” button, which must never float over the page (it once covered Capture, Build and Throw on a crowded floor), and at the end of a match the player's own point cards must not be pushed off a phone screen by an empty
  * floor or the long hand-by-hand table. The layout itself is measured in a real browser (at phone and desktop sizes); this keeps the pieces that
  * make it work from being quietly undone.
  */
@@ -21,16 +21,16 @@ describe('the end of a hand and of a match: layout', () => {
         expect(markup).toContain(`[style.min-height]="s.phase === 'match-over' ? '0' : null"`)
         expect(markup).toContain(`[style.padding]="s.phase === 'match-over' ? '0' : null"`)
       })
-      it('the floating button is not shown at the end of a hand or a match', () => {
-        const at = markup.indexOf('class="rule-note-toggle"')
-        expect(at).toBeGreaterThan(0)
-        expect(markup.match(/class="rule-note-toggle"/g)).toHaveLength(1)
-        expect(markup.slice(Math.max(0, at - 160), at)).toContain('@if (!ruleNotePanelOpen() && !showPointCards()) {')
+      it('there is no floating button any more: nothing in the screen is fixed to the corner, so nothing can sit on top of Capture, Build or Throw', () => {
+        expect(markup).not.toContain('rule-note-toggle')
+        expect(markup).not.toContain('position: fixed')
       })
-      it('instead it is a real button in the page, after the footer and inside the game layout, that opens the same panel', () => {
+      it('the “Notice something…” button is a real button in the page, shown whenever it is available, after the footer and inside the game layout, and it opens the same panel', () => {
         const at = markup.indexOf('id="rule-note-inline"')
         expect(at).toBeGreaterThan(0)
-        expect(markup.slice(Math.max(0, at - 700), at)).toContain('@if (showPointCards() && canShareRuleNote() && !ruleNotePanelOpen()) {')
+        expect(markup.match(/id="rule-note-inline"/g)).toHaveLength(1)
+        expect(markup.slice(Math.max(0, at - 700), at)).toContain('@if (canShareRuleNote() && !ruleNotePanelOpen()) {')
+        expect(markup.slice(Math.max(0, at - 700), at)).not.toContain('showPointCards()) && canShareRuleNote')
         expect(markup.slice(Math.max(0, at - 120), at + 300)).toContain('type="button"')
         expect(markup.slice(at, at + 300)).toContain('(click)="toggleRuleNotePanel()"')
         expect(at).toBeGreaterThan(markup.indexOf('How to play'))
