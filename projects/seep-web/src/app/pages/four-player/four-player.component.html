@@ -33,8 +33,9 @@
         <app-opponent-hand [count]="s.handCounts[leftSeat()]" orientation="left" />
       </div>
 
-      <div class="floor-row" style="justify-content: center;">
-        @if (s.floor.length === 0) {
+      <!-- Once the match is over nothing is left on the floor, so the area gives its space back (it normally keeps a minimum height). -->
+      <div class="floor-row" style="justify-content: center;" [style.min-height]="s.phase === 'match-over' ? '0' : null" [style.padding]="s.phase === 'match-over' ? '0' : null">
+        @if (s.floor.length === 0 && s.phase !== 'match-over') {
           <div class="board-slot">Floor empty</div>
         }
         @for (item of s.floor; track item.id) {
@@ -186,6 +187,17 @@
         <li>Every move — yours and {{ opponentPossessive() }} — pauses so you can check it before play continues.</li>
       </ul>
     </details>
+    @if (showPointCards() && canShareRuleNote() && !ruleNotePanelOpen()) {
+      <!-- Once a hand is over the floating button would sit on top of the point cards and the Deal / Play again button, so it is shown here, in the page, instead. -->
+      <button
+        type="button"
+        id="rule-note-inline"
+        (click)="toggleRuleNotePanel()"
+        style="align-self: center; margin: 6px 16px 14px; max-width: 320px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(212, 175, 55, 0.35); border-radius: 999px; color: rgba(255, 255, 255, 0.7); font-size: 12px; line-height: 1.35; padding: 7px 14px; text-align: center; cursor: pointer;"
+      >
+        Notice something that doesn't match the rules you know?
+      </button>
+    }
   </div>
 }
 
@@ -238,7 +250,7 @@
 
 @if (canShareRuleNote()) {
   <div class="rule-note-anchor">
-    @if (!ruleNotePanelOpen()) {
+    @if (!ruleNotePanelOpen() && !showPointCards()) {
       <button type="button" class="rule-note-toggle" (click)="toggleRuleNotePanel()">
         Notice something that doesn't match the rules you know?
       </button>

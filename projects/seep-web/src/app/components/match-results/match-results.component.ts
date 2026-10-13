@@ -37,49 +37,53 @@ import type { MatchResults, ResultHandSide } from '../../core/match-results'
       }
 
       @if (results().hands.length > 0 || results().earlier) {
-        <div style="overflow-x: auto;">
-          <table id="results-hands" style="width: 100%; border-collapse: collapse; font-size: 13px; color: #fff;">
-            <caption style="text-align: left; color: rgba(255,255,255,0.7); font-size: 12px; padding-bottom: 4px;">Hand by hand</caption>
-            <thead>
-              <tr style="color: rgba(255,255,255,0.7); font-size: 12px;">
-                <th scope="col" style="text-align: left; padding: 2px 4px;">Hand</th>
-                <th scope="col" style="text-align: left; padding: 2px 4px;">{{ results().sides[0].label }}</th>
-                <th scope="col" style="text-align: left; padding: 2px 4px;">{{ results().sides[1].label }}</th>
-                <th scope="col" style="text-align: right; padding: 2px 4px;">Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              @if (results().earlier; as e) {
-                <tr id="results-earlier" style="border-top: 1px solid rgba(255,255,255,0.15);">
-                  <th scope="row" style="text-align: left; padding: 4px; font-weight: 600;">Earlier</th>
-                  <td style="padding: 4px;"><strong>{{ e[0] }}</strong></td>
-                  <td style="padding: 4px;"><strong>{{ e[1] }}</strong></td>
-                  <td style="padding: 4px; text-align: right;">{{ e[0] }} – {{ e[1] }}</td>
+        <!-- Behind a tap, so that on a phone the table does not push the player's own point cards off the first screen; the summary line is its heading. -->
+        <details id="results-details" style="width: 100%;">
+          <summary id="results-summary" style="cursor: pointer; text-align: center; font-size: 12px; color: rgba(255,255,255,0.8); padding: 4px 0;">
+            Hand by hand
+            @if (results().hands.length > 0) {
+              · {{ results().hands.length }} {{ results().hands.length === 1 ? 'hand' : 'hands' }} itemised · hands won {{ results().handsWon[0] }}–{{ results().handsWon[1] }} · sweep points {{ results().sweepPoints[0] }}–{{ results().sweepPoints[1] }}
+            }
+          </summary>
+          <div style="overflow-x: auto;">
+            <table id="results-hands" style="width: 100%; border-collapse: collapse; font-size: 13px; color: #fff;">
+              <caption style="text-align: left; color: rgba(255,255,255,0.7); font-size: 12px; padding-bottom: 4px;">Hand by hand</caption>
+              <thead>
+                <tr style="color: rgba(255,255,255,0.7); font-size: 12px;">
+                  <th scope="col" style="text-align: left; padding: 2px 4px;">Hand</th>
+                  <th scope="col" style="text-align: left; padding: 2px 4px;">{{ results().sides[0].label }}</th>
+                  <th scope="col" style="text-align: left; padding: 2px 4px;">{{ results().sides[1].label }}</th>
+                  <th scope="col" style="text-align: right; padding: 2px 4px;">Score</th>
                 </tr>
-              }
-              @for (hand of results().hands; track hand.number) {
-                <tr [attr.data-hand]="hand.number" style="border-top: 1px solid rgba(255,255,255,0.15); vertical-align: top;">
-                  <th scope="row" style="text-align: left; padding: 4px; font-weight: 600;">{{ hand.number }}</th>
-                  @for (hs of hand.sides; track $index) {
-                    <td style="padding: 4px;">
-                      <strong>{{ hs.total }}</strong>
-                      <div style="font-size: 11px; color: rgba(255,255,255,0.6);">{{ how(hs) }}</div>
-                    </td>
-                  }
-                  <td style="padding: 4px; text-align: right; white-space: nowrap;">{{ hand.after[0] }} – {{ hand.after[1] }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        @if (results().earlier) {
-          <p id="results-earlier-note" style="font-size: 11px; color: rgba(255,255,255,0.6);">“Earlier” is the points from hands played before this match could be itemised.</p>
-        }
-        @if (results().hands.length > 0) {
-          <p id="results-summary" style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.7);">
-            {{ results().hands.length }} {{ results().hands.length === 1 ? 'hand' : 'hands' }} itemised · hands won {{ results().handsWon[0] }}–{{ results().handsWon[1] }} · sweep points {{ results().sweepPoints[0] }}–{{ results().sweepPoints[1] }}
-          </p>
-        }
+              </thead>
+              <tbody>
+                @if (results().earlier; as e) {
+                  <tr id="results-earlier" style="border-top: 1px solid rgba(255,255,255,0.15);">
+                    <th scope="row" style="text-align: left; padding: 4px; font-weight: 600;">Earlier</th>
+                    <td style="padding: 4px;"><strong>{{ e[0] }}</strong></td>
+                    <td style="padding: 4px;"><strong>{{ e[1] }}</strong></td>
+                    <td style="padding: 4px; text-align: right;">{{ e[0] }} – {{ e[1] }}</td>
+                  </tr>
+                }
+                @for (hand of results().hands; track hand.number) {
+                  <tr [attr.data-hand]="hand.number" style="border-top: 1px solid rgba(255,255,255,0.15); vertical-align: top;">
+                    <th scope="row" style="text-align: left; padding: 4px; font-weight: 600;">{{ hand.number }}</th>
+                    @for (hs of hand.sides; track $index) {
+                      <td style="padding: 4px;">
+                        <strong>{{ hs.total }}</strong>
+                        <div style="font-size: 11px; color: rgba(255,255,255,0.6);">{{ how(hs) }}</div>
+                      </td>
+                    }
+                    <td style="padding: 4px; text-align: right; white-space: nowrap;">{{ hand.after[0] }} – {{ hand.after[1] }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (results().earlier) {
+            <p id="results-earlier-note" style="font-size: 11px; color: rgba(255,255,255,0.6);">“Earlier” is the points from hands played before this match could be itemised.</p>
+          }
+        </details>
       } @else {
         <p id="results-no-hands" style="text-align: center; color: rgba(255,255,255,0.7); font-size: 13px;">No hand was completed.</p>
       }
