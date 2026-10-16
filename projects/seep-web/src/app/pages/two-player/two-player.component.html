@@ -301,6 +301,9 @@
           [value]="ruleNoteText()"
           (input)="onRuleNoteInput($any($event.target).value)"
         ></textarea>
+        <div style="font-size: 12px; opacity: 0.75; padding: 2px 0 6px;">
+          Sending opens an email that includes your cards, the table and the last few moves, so I can see what you saw.
+        </div>
         <div class="bug-report-actions">
           <button type="button" class="btn-outline" (click)="toggleRuleNotePanel()">Cancel</button>
           <button type="button" class="btn-gold" (click)="sendRuleNote()">Send note</button>

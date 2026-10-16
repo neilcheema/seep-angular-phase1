@@ -38,6 +38,7 @@ import {
 } from 'seep-engine'
 import { PointCardsComponent } from '../../components/point-cards/point-cards.component';
 import { describePointCards, pointCardsOf } from '../../core/point-cards';
+import { buildReportBody, floorLine, handLine, selectionLine } from '../../core/table-snapshot';
 import { FourPlayerStatusPanelComponent } from '../../components/four-player-status-panel/four-player-status-panel.component'
 import { OpponentHandComponent } from '../../components/opponent-hand/opponent-hand.component'
 import { FourPlayerFloorItemComponent } from '../../components/four-player-floor-item/four-player-floor-item.component'
@@ -441,33 +442,34 @@ export class FourPlayerComponent implements OnInit {
    * than sending anything directly, since a static site with no backend
    * has no way to dispatch an email itself.
    */
-  sendRuleNote(): void {
+  /**
+   * The text of the "something felt off" email: what the player wrote, the version, the table as it stands (their cards, what they have selected, the floor
+   * with the cards inside each pile) and the latest moves, so that a problem can be rebuilt from the email alone, without screenshots.
+   */
+  ruleNoteBody(): string {
     const s = this.state()
     const description = this.ruleNoteText().trim() || '(no details given)'
-    const header =
+    const head =
       `What I noticed:\n${description}\n\n` +
       `Game: 4 Player Seep\n` +
       `Version: ${APP_VERSION}\n` +
-      (s ? `Phase: ${s.phase}, Turn: ${this.seatTag(s.turn)}\n` : 'No active game.\n') +
-      `\nMove log (most recent first):\n`
+      (s ? `Rules: ${s.engineVersion}\nPhase: ${s.phase}, Turn: ${this.seatTag(s.turn)}\n` : 'No active game.\n')
+    return buildReportBody({ head, snapshot: s ? this.tableSnapshot(s) : 'No active game.', log: this.log() })
+  }
 
-    const MAX_BODY_LENGTH = 1500
-    const entriesNewestFirst = [...this.log()].reverse().map((e) => `${e.text}\n  ${e.floorSummary}`)
-    let logText = ''
-    let included = 0
-    for (const entry of entriesNewestFirst) {
-      const candidate = logText + (logText ? '\n\n' : '') + entry
-      if ((header + candidate).length > MAX_BODY_LENGTH) break
-      logText = candidate
-      included++
-    }
-    const omittedNote =
-      included < entriesNewestFirst.length
-        ? `\n\n...(${entriesNewestFirst.length - included} earlier move(s) omitted for length)`
-        : ''
+  private tableSnapshot(s: FourPlayerGameView): string {
+    const seats = [SeatId.P1, SeatId.P2, SeatId.P3, SeatId.P4]
+    return [
+      handLine('Your hand', s.myHand),
+      selectionLine(this.selectedCard(), this.selectedFloorIds(), s.floor),
+      floorLine(s.floor, (owners) => this.pileOwnerLabel(owners)),
+      `Cards in hand: ${seats.map((seat) => `${this.seatTag(seat)} ${s.handCounts[seat]}`).join(', ')}. Score: Team A ${s.matchScores.teamA}, Team B ${s.matchScores.teamB}. Bidder: ${this.seatTag(s.bidder)}. Played this hand: ${s.cardsPlayedThisHand} of ${s.totalPlayableThisHand}.`,
+    ].join('\n')
+  }
 
+  sendRuleNote(): void {
     const subject = 'Seep — a rule that might need a look (4 Player)'
-    const body = header + logText + omittedNote
+    const body = this.ruleNoteBody()
     window.location.href = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 
     this.ruleNotePanelOpen.set(false)
